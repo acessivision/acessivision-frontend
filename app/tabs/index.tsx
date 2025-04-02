@@ -15,8 +15,8 @@ export default function Index() {
   if (!permission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>We need your permission to show the camera</Text>
-        <Button onPress={requestPermission} title="grant permission" />
+        <Text style={styles.message}>We need your permission to use the camera</Text>
+        <Button onPress={requestPermission} title="Grant Permission" />
       </View>
     );
   }
@@ -26,48 +26,88 @@ export default function Index() {
   }
 
   async function takePictureAndUpload() {
-    if (cameraRef.current) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync();
-        if (!photo) {
-          Alert.alert('Erro', 'Não foi possível capturar a foto.');
+    if (!cameraRef.current) {
+      Alert.alert('Erro', 'Camera não está pronta.');
+      return;
+    }
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.5,
+        base64: Platform.OS === 'web',
+      });
+      if (!photo) {
+        Alert.alert('Erro', 'Não foi possível capturar a foto.');
+        return;
+      }
+
+      console.log('Foto capturada:', photo.uri || 'Base64 disponível');
+
+      let formData = new FormData();
+      if (Platform.OS === 'web') {
+        const base64Data = photo.base64;
+        if (!base64Data) {
+          Alert.alert('Erro', 'Dados da foto não disponíveis.');
           return;
         }
-
-        console.log('Foto capturada:', photo.uri);
-
-        const formData = new FormData();
-        formData.append('image', {
+        const byteString = atob(base64Data.split(',')[1]);
+        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        formData.append('file', blob, 'photo.jpg');
+      } else {
+        formData.append('file', {
           uri: photo.uri,
           type: 'image/jpeg',
           name: 'photo.jpg',
         } as any);
-
-      } catch (error: unknown) {
-        console.error('Erro ao enviar a foto:', error);
-        
-        if (error instanceof Error) {
-          Alert.alert('Erro', 'Falha ao enviar a foto para o servidor: ' + error.message);
-        } else {
-          Alert.alert('Erro', 'Falha ao enviar a foto para o servidor: Erro desconhecido');
-        }
       }
+
+      const serverUrl = 'http://<IP da sua máquina>:3000/upload';
+      console.log('Enviando requisição para:', serverUrl);
+
+      const response = await fetch(serverUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server responded with status ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('Resposta do servidor:', result);
+      setDescription(result.answer);
+    } catch (error: unknown) {
+      console.error('Erro ao enviar a foto:', error);
+      Alert.alert('Erro', 'Falha ao enviar: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
     }
+  }
+
+  function clearDescription() {
+    setDescription(null); // Clear the description when camera is tapped
   }
 
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#333" barStyle="light-content" />
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
-            <Text style={styles.text}>Flip Camera</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={takePictureAndUpload}>
-            <Text style={styles.text}>Take Picture</Text>
-          </TouchableOpacity>
-        </View>
-      </CameraView>
+      <TouchableOpacity style={styles.camera} onPress={clearDescription} activeOpacity={1}>
+        <CameraView style={StyleSheet.absoluteFill} facing={facing} ref={cameraRef}>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
+              <Text style={styles.text}>Flip Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.button} onPress={takePictureAndUpload}>
+              <Text style={styles.text}>Take Picture</Text>
+            </TouchableOpacity>
+          </View>
+        </CameraView>
+      </TouchableOpacity>
       {description && (
         <View style={styles.descriptionContainer}>
           <Text style={styles.descriptionText}>Descrição: {description}</Text>
