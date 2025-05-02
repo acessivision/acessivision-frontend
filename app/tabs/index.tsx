@@ -1,41 +1,110 @@
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
-import { useState, useRef, useEffect } from 'react';
-import { Button, StyleSheet, Text, TouchableOpacity, View, Alert, StatusBar, Platform } from 'react-native';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system'; // Para salvar o blob no mobile
+import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
+import * as FileSystem from 'expo-file-system';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  Button,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
-export default function Index() {
+interface Photo {
+  uri: string;
+  base64?: string;
+}
+
+const SERVER_URL = 'http://192.168.18.11:3000/upload';
+
+// Função auxiliar para converter blob em base64
+const blobToBase64 = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+const CameraScreen: React.FC = () => {
   const [facing, setFacing] = useState<CameraType>('back');
-  const [permission, requestPermission] = useCameraPermissions();
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
 
+  // Limpeza do som ao desmontar o componente
   useEffect(() => {
     return () => {
-      if (sound) {
-        sound.unloadAsync().catch(err => console.error('Erro ao descarregar som:', err));
-      }
+      sound?.unloadAsync().catch((err) => console.error('Erro ao descarregar som:', err));
     };
   }, [sound]);
 
-  if (!permission) {
-    return <View />;
-  }
+  // Alternar entre câmera frontal e traseira
+  const toggleCameraFacing = useCallback(() => {
+    setFacing((current) => (current === 'back' ? 'front' : 'back'));
+  }, []);
 
-  if (!permission.granted) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.message}>We need your permission to use the camera</Text>
-        <Button onPress={requestPermission} title="Grant Permission" />
-      </View>
+  // Criar FormData para upload da foto
+  const createFormData = (photo: Photo): FormData => {
+    const formData = new FormData();
+    if (Platform.OS === 'web' && photo.base64) {
+      const byteString = atob(photo.base64.split(',')[1]);
+      const mimeString = photo.base64.split(',')[0].split(':')[1].split(';')[0];
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      const blob = new Blob([ab], { type: mimeString });
+      formData.append('file', blob, 'photo.jpg');
+    } else {
+      formData.append('file', {
+        uri: photo.uri,
+        type: 'image/jpeg',
+        name: 'photo.jpg',
+      } as any);
+    }
+    return formData;
+  };
+
+  // Processar e reproduzir áudio retornado
+  const processAudioResponse = async (audioBlob: Blob): Promise<void> => {
+    if (sound) {
+      await sound.unloadAsync();
+    }
+
+    let audioUri: string;
+    if (Platform.OS === 'web') {
+      audioUri = URL.createObjectURL(audioBlob);
+    } else {
+      const tempFile = `${FileSystem.cacheDirectory}temp-audio.mp3`;
+      const base64Audio = await blobToBase64(audioBlob);
+      await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      audioUri = tempFile;
+    }
+
+    const { sound: newSound } = await Audio.Sound.createAsync(
+      { uri: audioUri },
+      { shouldPlay: true }
     );
-  }
+    setSound(newSound);
 
-  function toggleCameraFacing() {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-  }
+    if (Platform.OS === 'web') {
+      newSound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
+          URL.revokeObjectURL(audioUri);
+        }
+      });
+    }
+  };
 
-  async function takePictureAndUpload() {
+  // Tirar foto e enviar para o servidor
+  const takePictureAndUpload = async (): Promise<void> => {
     if (!cameraRef.current) {
       Alert.alert('Erro', 'Camera não está pronta.');
       return;
@@ -46,101 +115,54 @@ export default function Index() {
         quality: 0.5,
         base64: Platform.OS === 'web',
       });
+
       if (!photo) {
         Alert.alert('Erro', 'Não foi possível capturar a foto.');
         return;
       }
 
-      console.log('Foto capturada:', photo.uri || 'Base64 disponível');
-
-      let formData = new FormData();
-      if (Platform.OS === 'web') {
-        const base64Data = photo.base64;
-        if (!base64Data) {
-          Alert.alert('Erro', 'Dados da foto não disponíveis.');
-          return;
-        }
-        const byteString = atob(base64Data.split(',')[1]);
-        const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
-        }
-        const blob = new Blob([ab], { type: mimeString });
-        formData.append('file', blob, 'photo.jpg');
-      } else {
-        formData.append('file', {
-          uri: photo.uri,
-          type: 'image/jpeg',
-          name: 'photo.jpg',
-        } as any);
-      }
-
-      const serverUrl = 'http://192.168.15.14:3000/upload';
-      console.log('Enviando requisição para:', serverUrl);
-
-      const response = await fetch(serverUrl, {
+      const formData = createFormData(photo);
+      const response = await fetch(SERVER_URL, {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log('Erro do servidor:', errorText);
-        throw new Error(`Server responded with status ${response.status}: ${errorText}`);
+        throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
       }
 
-      // Recebe o áudio como blob
       const audioBlob = await response.blob();
-      console.log('Blob recebido:', audioBlob);
-
-      // Limpa o som anterior, se existir
-      if (sound) {
-        await sound.unloadAsync();
-      }
-
-      let audioUri;
-      if (Platform.OS === 'web') {
-        // Na web, usa URL.createObjectURL
-        audioUri = URL.createObjectURL(audioBlob);
-      } else {
-        // No mobile, salva o blob como arquivo temporário
-        const tempFile = `${FileSystem.cacheDirectory}temp-audio.mp3`;
-        const base64Audio = await blobToBase64(audioBlob);
-        await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        audioUri = tempFile;
-      }
-
-      // Carrega e reproduz o áudio
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: audioUri },
-        { shouldPlay: true }
+      await processAudioResponse(audioBlob);
+    } catch (error) {
+      console.error('Erro ao processar foto ou áudio:', error);
+      Alert.alert(
+        'Erro',
+        error instanceof Error ? error.message : 'Erro desconhecido'
       );
-      setSound(newSound);
-
-      // Limpeza na web
-      if (Platform.OS === 'web') {
-        newSound.setOnPlaybackStatusUpdate(status => {
-          if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
-            URL.revokeObjectURL(audioUri);
-          }
-        });
-      }
-
-    } catch (error: unknown) {
-      console.error('Erro ao enviar a foto ou reproduzir áudio:', error);
-      Alert.alert('Erro', 'Falha ao processar: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
     }
-  }
+  };
 
-  async function clearAudio() {
+  // Limpar áudio
+  const clearAudio = async (): Promise<void> => {
     if (sound) {
       await sound.unloadAsync();
       setSound(null);
     }
+  };
+
+  // Renderizar tela de permissão
+  if (!permission) {
+    return <View />;
+  }
+
+  if (!permission.granted) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.message}>Precisamos da sua permissão para usar a câmera</Text>
+        <Button onPress={requestPermission} title="Conceder Permissão" />
+      </View>
+    );
   }
 
   return (
@@ -160,21 +182,9 @@ export default function Index() {
       </TouchableOpacity>
     </View>
   );
-}
+};
 
-// Função auxiliar para converter blob em base64
-async function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64data = (reader.result as string).split(',')[1]; // Remove o prefixo "data:audio/mpeg;base64,"
-      resolve(base64data);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
+// Estilos
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -184,6 +194,7 @@ const styles = StyleSheet.create({
   message: {
     textAlign: 'center',
     paddingBottom: 10,
+    color: '#fff',
   },
   camera: {
     flex: 1,
@@ -205,3 +216,5 @@ const styles = StyleSheet.create({
     color: 'white',
   },
 });
+
+export default CameraScreen;
