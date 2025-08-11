@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { useAudioPlayer, type AudioSource } from 'expo-audio';
 import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -18,7 +18,7 @@ interface Photo {
   base64?: string;
 }
 
-const SERVER_URL = 'http://192.168.18.11:3000/upload';
+const SERVER_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000/upload`;
 
 // Função auxiliar para converter blob em base64
 const blobToBase64 = (blob: Blob): Promise<string> =>
@@ -31,16 +31,50 @@ const blobToBase64 = (blob: Blob): Promise<string> =>
 
 const CameraScreen: React.FC = () => {
   const [facing, setFacing] = useState<CameraType>('back');
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const audioUriRef = useRef<string | null>(null); // Armazena a URL para limpeza no web
 
-  // Limpeza do som ao desmontar o componente
+  // Chame useAudioPlayer incondicionalmente
+  const player = useAudioPlayer(audioSource);
+
+  // Reproduzir áudio quando audioSource mudar
+  useEffect(() => {
+    if (player && audioSource) {
+      // Verificar o tipo de audioSource
+      let uri: string | undefined;
+      if (typeof audioSource === 'string') {
+        uri = audioSource;
+      } else if (typeof audioSource === 'object' && audioSource.uri) {
+        uri = audioSource.uri;
+      }
+
+      if (uri) {
+        try {
+          console.log('Tentando reproduzir áudio:', uri);
+          player.play();
+          console.log('O áudio foi reproduzido');
+        } catch (error) {
+          console.error('Erro ao reproduzir áudio:', error);
+        }
+      } else {
+        console.log('Não reproduzindo: uri inválido', { audioSource });
+      }
+    } else {
+      console.log('Não reproduzindo: player ou audioSource inválido', { player, audioSource });
+    }
+  }, [audioSource, player]);
+
+  // Limpar URL.createObjectURL quando o componente desmontar
   useEffect(() => {
     return () => {
-      sound?.unloadAsync().catch((err) => console.error('Erro ao descarregar som:', err));
+      console.log('Limpando URL do audioSource');
+      if (audioUriRef.current && Platform.OS === 'web') {
+        URL.revokeObjectURL(audioUriRef.current);
+      }
     };
-  }, [sound]);
+  }, []); // Sem dependências, executa apenas na desmontagem
 
   // Alternar entre câmera frontal e traseira
   const toggleCameraFacing = useCallback(() => {
@@ -72,11 +106,8 @@ const CameraScreen: React.FC = () => {
 
   // Processar e reproduzir áudio retornado
   const processAudioResponse = async (audioBlob: Blob): Promise<void> => {
-    if (sound) {
-      await sound.unloadAsync();
-    }
-
     let audioUri: string;
+
     if (Platform.OS === 'web') {
       audioUri = URL.createObjectURL(audioBlob);
     } else {
@@ -88,25 +119,13 @@ const CameraScreen: React.FC = () => {
       audioUri = tempFile;
     }
 
-    const { sound: newSound } = await Audio.Sound.createAsync(
-      { uri: audioUri },
-      { shouldPlay: true }
-    );
-    setSound(newSound);
-
-    if (Platform.OS === 'web') {
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
-          URL.revokeObjectURL(audioUri);
-        }
-      });
-    }
+    setAudioSource({ uri: audioUri } as AudioSource);
   };
 
   // Tirar foto e enviar para o servidor
   const takePictureAndUpload = async (): Promise<void> => {
     if (!cameraRef.current) {
-      Alert.alert('Erro', 'Camera não está pronta.');
+      Alert.alert('Erro', 'Câmera não está pronta.');
       return;
     }
 
@@ -120,6 +139,7 @@ const CameraScreen: React.FC = () => {
         Alert.alert('Erro', 'Não foi possível capturar a foto.');
         return;
       }
+      console.log('Foto capturada:', photo);
 
       const formData = createFormData(photo);
       const response = await fetch(SERVER_URL, {
@@ -143,14 +163,6 @@ const CameraScreen: React.FC = () => {
     }
   };
 
-  // Limpar áudio
-  const clearAudio = async (): Promise<void> => {
-    if (sound) {
-      await sound.unloadAsync();
-      setSound(null);
-    }
-  };
-
   // Renderizar tela de permissão
   if (!permission) {
     return <View />;
@@ -159,7 +171,9 @@ const CameraScreen: React.FC = () => {
   if (!permission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>Precisamos da sua permissão para usar a câmera</Text>
+        <Text style={styles.message}>
+          Precisamos da sua permissão para usar a câmera
+        </Text>
         <Button onPress={requestPermission} title="Conceder Permissão" />
       </View>
     );
@@ -168,7 +182,7 @@ const CameraScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar backgroundColor="#333" barStyle="light-content" />
-      <TouchableOpacity style={styles.camera} onPress={clearAudio} activeOpacity={1}>
+      <TouchableOpacity style={styles.camera} activeOpacity={1}>
         <CameraView style={StyleSheet.absoluteFill} facing={facing} ref={cameraRef}>
           <View style={styles.buttonContainer}>
             <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>

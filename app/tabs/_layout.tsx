@@ -1,13 +1,13 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
+// app/tabs/_layout.tsx
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
-export default function TabLayout() {
+export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: '#ffd33d',
-        headerShown: false, // Desativa o cabeçalho padrão do Tabs
         tabBarStyle: {
           backgroundColor: '#25292e',
         },
@@ -16,28 +16,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'AcessiVision',
-          header: () => (
-            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', textAlign: 'center', paddingTop: 10 }}>
-              AcessiVision
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'home-sharp' : 'home-outline'} color={color} size={24} />
+          title: 'Câmera',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="camera" color={color} size={size} />
           ),
         }}
       />
       <Tabs.Screen
-        name="about"
+        name="historico"
         options={{
-          title: 'About',
-          header: () => (
-            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', textAlign: 'center', paddingTop: 10 }}>
-              About
-            </Text>
-          ),
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? 'information-circle' : 'information-circle-outline'} color={color} size={24} />
+          title: 'Histórico',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="list" color={color} size={size} />
           ),
         }}
       />
