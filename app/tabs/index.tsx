@@ -6,7 +6,6 @@ import {
   Alert,
   Button,
   Image,
-  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -26,7 +25,8 @@ const SERVER_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000/upload`;
 const blobToBase64 = (blob: Blob): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.onloadend = () =>
+      resolve((reader.result as string).split(',')[1]);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
@@ -36,75 +36,43 @@ const CameraScreen: React.FC = () => {
   const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const audioUriRef = useRef<string | null>(null);
   const isFocused = useIsFocused();
 
   const player = useAudioPlayer(audioSource);
 
   useEffect(() => {
     if (player && audioSource) {
-      let uri: string | undefined;
-      if (typeof audioSource === 'string') {
-        uri = audioSource;
-      } else if (typeof audioSource === 'object' && audioSource.uri) {
-        uri = audioSource.uri;
-      }
-
-      if (uri) {
-        try {
-          player.play();
-        } catch (error) {
-          console.error('Erro ao reproduzir áudio:', error);
-        }
+      try {
+        // Reset position to the start before playing
+        player.seekTo(0);
+        player.play();
+      } catch (error) {
+        console.error('Erro ao reproduzir áudio:', error);
       }
     }
   }, [audioSource, player]);
 
-  useEffect(() => {
-    return () => {
-      if (audioUriRef.current && Platform.OS === 'web') {
-        URL.revokeObjectURL(audioUriRef.current);
-      }
-    };
-  }, []);
-
   const createFormData = (photo: Photo): FormData => {
     const formData = new FormData();
-    if (Platform.OS === 'web' && photo.base64) {
-      const byteString = atob(photo.base64.split(',')[1]);
-      const mimeString = photo.base64.split(',')[0].split(':')[1].split(';')[0];
-      const ab = new ArrayBuffer(byteString.length);
-      const ia = new Uint8Array(ab);
-      for (let i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
-      }
-      const blob = new Blob([ab], { type: mimeString });
-      formData.append('file', blob, 'photo.jpg');
-    } else {
-      formData.append('file', {
-        uri: photo.uri,
-        type: 'image/jpeg',
-        name: 'photo.jpg',
-      } as any);
-    }
+    formData.append('file', {
+      uri: photo.uri,
+      type: 'image/jpeg',
+      name: 'photo.jpg',
+    } as any);
     return formData;
   };
 
   const processAudioResponse = async (audioBlob: Blob): Promise<void> => {
-    let audioUri: string;
-
-    if (Platform.OS === 'web') {
-      audioUri = URL.createObjectURL(audioBlob);
-    } else {
+    try {
       const tempFile = `${FileSystem.cacheDirectory}temp-audio.mp3`;
       const base64Audio = await blobToBase64(audioBlob);
       await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
-      audioUri = tempFile;
+      setAudioSource({ uri: tempFile });
+    } catch (error) {
+      console.error('Erro ao processar áudio:', error);
     }
-
-    setAudioSource({ uri: audioUri } as AudioSource);
   };
 
   const takePictureAndUpload = async (): Promise<void> => {
@@ -114,21 +82,14 @@ const CameraScreen: React.FC = () => {
     }
 
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.5,
-        base64: Platform.OS === 'web',
-      });
-
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
       if (!photo) {
         Alert.alert('Erro', 'Não foi possível capturar a foto.');
         return;
       }
 
       const formData = createFormData(photo);
-      const response = await fetch(SERVER_URL, {
-        method: 'POST',
-        body: formData,
-      });
+      const response = await fetch(SERVER_URL, { method: 'POST', body: formData });
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -138,17 +99,14 @@ const CameraScreen: React.FC = () => {
       const audioBlob = await response.blob();
       await processAudioResponse(audioBlob);
     } catch (error) {
-      Alert.alert(
-        'Erro',
-        error instanceof Error ? error.message : 'Erro desconhecido'
-      );
+      Alert.alert('Erro', error instanceof Error ? error.message : 'Erro desconhecido');
     }
   };
 
   if (!permission) return <View />;
   if (!permission.granted) {
     return (
-      <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao}]}>
+      <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
         <Text style={[styles.message, { color: cores.texto }]}>
           Precisamos da sua permissão para usar a câmera
         </Text>
@@ -189,12 +147,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center' },
   message: { textAlign: 'center', paddingBottom: 10 },
   camera: { flex: 1 },
-  buttonContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
-    margin: 40,
-  },
+  buttonContainer: { flex: 1, flexDirection: 'row', backgroundColor: 'transparent', margin: 40 },
   button: { flex: 1, alignSelf: 'flex-end', alignItems: 'center' },
   iconeCamera: { width: 100, height: 100 },
 });
