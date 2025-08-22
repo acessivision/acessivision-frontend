@@ -81,7 +81,7 @@ const CameraScreen: React.FC = () => {
       }
       const base64Audio = btoa(binary);
 
-      const tempFile = `${FileSystem.cacheDirectory}temp-audio.mp3`;
+      const tempFile = `${FileSystem.cacheDirectory}temp-audio-${Date.now()}.mp3`;
       await FileSystem.writeAsStringAsync(tempFile, base64Audio, {
         encoding: FileSystem.EncodingType.Base64,
       });
