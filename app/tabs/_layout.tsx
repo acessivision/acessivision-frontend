@@ -39,7 +39,8 @@ export default function TabsLayout() {
           tabBarShowLabel: false,
           tabBarStyle: {
             backgroundColor: cores.barrasDeNavegacao,
-            height: 60,
+            height: 80,
+            paddingBottom: 10,
             borderTopWidth: 1,
             borderColor: cores.icone,
             elevation: 0,
