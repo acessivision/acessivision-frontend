@@ -1,4 +1,4 @@
-import { Tabs, usePathname } from 'expo-router';
+import { Tabs, usePathname, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { View, StyleSheet } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
@@ -6,32 +6,36 @@ import { useTheme } from '../../components/ThemeContext';
 
 export default function TabsLayout() {
   const pathname = usePathname();
+  const router = useRouter();
   const { mudaTema, cores } = useTheme();
-  
+
   const getTitle = () => {
     switch (pathname) {
       case '/tabs':
       case '/tabs/':
+      case '/tabs/index':
         return 'Câmera';
       case '/tabs/historico':
         return 'Histórico';
+      case '/tabs/configuracoes':
+        return 'Configurações';
       default:
         return 'App';
     }
   };
 
   const handleSettingsPress = () => {
-    console.log('Botão configurações pressionado');
+    router.navigate('/tabs/configuracoes');
   };
 
   return (
     <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
-      <CustomHeader 
+      <CustomHeader
         title={getTitle()}
         mudaTema={mudaTema}
         abreConfiguracoes={handleSettingsPress}
       />
-      
+
       <Tabs
         screenOptions={{
           headerShown: false,
@@ -69,6 +73,13 @@ export default function TabsLayout() {
             tabBarIcon: ({ color }) => (
               <Ionicons name="list" color={color} size={50} />
             ),
+          }}
+        />
+        {/* Config screen is routable but hidden from tab bar */}
+        <Tabs.Screen
+          name="configuracoes"
+          options={{
+            href: null, // hides it from the tab bar
           }}
         />
       </Tabs>

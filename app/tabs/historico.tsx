@@ -28,7 +28,7 @@ const HistoryScreen: React.FC = () => {
   }, []);
 
   return (
-    <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
+    <View style={[styles.container, { backgroundColor: cores.fundo }]}>
       <Text style={[styles.title, { color: cores.texto }]}>
         Histórico de Conversas
       </Text>
