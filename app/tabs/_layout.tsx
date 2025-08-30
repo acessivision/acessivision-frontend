@@ -19,6 +19,8 @@ export default function TabsLayout() {
         return 'Histórico';
       case '/tabs/configuracoes':
         return 'Configurações';
+      case '/tabs/editarPerfil':
+        return 'Editar Perfil';
       default:
         return 'App';
     }
@@ -78,6 +80,13 @@ export default function TabsLayout() {
         {/* Config screen is routable but hidden from tab bar */}
         <Tabs.Screen
           name="configuracoes"
+          options={{
+            href: null, // hides it from the tab bar
+          }}
+        />
+        {/* Config screen is routable but hidden from tab bar */}
+        <Tabs.Screen
+          name="editarPerfil"
           options={{
             href: null, // hides it from the tab bar
           }}

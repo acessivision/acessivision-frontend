@@ -12,7 +12,7 @@ interface CustomHeaderProps {
 
 export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
-  const { cores } = useTheme();
+  const { cores, temaAplicado } = useTheme();
 
   return (
     <View
@@ -27,7 +27,7 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
       ]}
     >
       <TouchableOpacity onPress={mudaTema} style={styles.iconButton}>
-        <Ionicons name="sunny" size={30} color={cores.icone} />
+        <Ionicons name={temaAplicado === 'dark' ? "moon-outline" : "sunny-outline"} size={30} color={cores.icone} />
       </TouchableOpacity>
 
       <Text style={[styles.title, { color: cores.texto }]}>{title}</Text>

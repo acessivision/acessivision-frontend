@@ -18,11 +18,11 @@ export default function ConfigScreen() {
   const [fontSize, setFontSize] = React.useState(16);
 
   const handleGoBack = () => {
-    router.push('/tabs');
+    router.back();
   };
 
   const handleEditProfile = () => {
-    Alert.alert('Editar Perfil', 'Funcionalidade ainda não implementada');
+    router.push('./editarPerfil');
   };
 
   const handleDeleteAccount = () => {
@@ -97,6 +97,8 @@ export default function ConfigScreen() {
       backgroundColor: theme === 'dark' ? '#2a2a2a' : '#f5f5f5',
       borderRadius: 12,
       overflow: 'hidden',
+      outlineColor: '#000',
+      outlineWidth: 1,
     },
     option: {
       flexDirection: 'row',
@@ -129,6 +131,8 @@ export default function ConfigScreen() {
       borderRadius: 12,
       paddingHorizontal: 16,
       paddingVertical: 20,
+      outlineColor: '#000',
+      outlineWidth: 1,
     },
     sliderRow: {
       flexDirection: 'row',
