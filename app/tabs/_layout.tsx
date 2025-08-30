@@ -7,7 +7,7 @@ import { useTheme } from '../../components/ThemeContext';
 export default function TabsLayout() {
   const pathname = usePathname();
   const router = useRouter();
-  const { mudaTema, cores } = useTheme();
+  const { mudaTema, cores, getIconSize } = useTheme();
 
   const getTitle = () => {
     switch (pathname) {
@@ -30,8 +30,15 @@ export default function TabsLayout() {
     router.navigate('/tabs/configuracoes');
   };
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: cores.barrasDeNavegacao,
+    },
+  });
+
   return (
-    <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
+    <View style={styles.container}>
       <CustomHeader
         title={getTitle()}
         mudaTema={mudaTema}
@@ -64,7 +71,7 @@ export default function TabsLayout() {
           options={{
             title: 'Câmera',
             tabBarIcon: ({ color }) => (
-              <Ionicons name="camera" color={color} size={50} />
+              <Ionicons name="camera" color={color} size={getIconSize('xlarge')} />
             ),
           }}
         />
@@ -73,7 +80,7 @@ export default function TabsLayout() {
           options={{
             title: 'Histórico',
             tabBarIcon: ({ color }) => (
-              <Ionicons name="list" color={color} size={50} />
+              <Ionicons name="list" color={color} size={getIconSize('xlarge')} />
             ),
           }}
         />
@@ -95,9 +102,3 @@ export default function TabsLayout() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-});

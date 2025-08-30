@@ -15,7 +15,7 @@ interface Conversation {
 
 const HistoryScreen: React.FC = () => {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const { cores } = useTheme();
+  const { cores, getFontSize } = useTheme();
 
   useEffect(() => {
     const fetchConversations = () => {
@@ -27,28 +27,56 @@ const HistoryScreen: React.FC = () => {
     fetchConversations();
   }, []);
 
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      padding: 16,
+      backgroundColor: cores.fundo,
+    },
+    title: {
+      fontSize: getFontSize('xlarge'),
+      fontWeight: 'bold',
+      marginBottom: 16,
+      color: cores.texto,
+    },
+    item: {
+      padding: 16,
+      marginBottom: 8,
+      borderRadius: 8,
+      backgroundColor: cores.fundo,
+    },
+    itemText: {
+      fontSize: getFontSize('medium'),
+      color: cores.texto,
+    },
+    empty: {
+      fontSize: getFontSize('medium'),
+      textAlign: 'center',
+      marginTop: 20,
+      color: cores.texto,
+    },
+  });
+
   return (
-    <View style={[styles.container, { backgroundColor: cores.fundo }]}>
-      <Text style={[styles.title, { color: cores.texto }]}>
+    <View style={styles.container}>
+      <Text style={styles.title}>
         Histórico de Conversas
       </Text>
       <FlatList
         data={conversations}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View
-            style={[styles.item, { backgroundColor: cores.fundo }]}
-          >
-            <Text style={[styles.itemText, { color: cores.texto }]}>
+          <View style={styles.item}>
+            <Text style={styles.itemText}>
               Nome: {item.name}
             </Text>
-            <Text style={[styles.itemText, { color: cores.texto }]}>
+            <Text style={styles.itemText}>
               Criado em: {new Date(item.createdAt).toLocaleString()}
             </Text>
           </View>
         )}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: cores.texto }]}>
+          <Text style={styles.empty}>
             Nenhuma conversa encontrada.
           </Text>
         }
@@ -56,30 +84,5 @@ const HistoryScreen: React.FC = () => {
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  item: {
-    padding: 16,
-    marginBottom: 8,
-    borderRadius: 8,
-  },
-  itemText: {
-    fontSize: 16,
-  },
-  empty: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginTop: 20,
-  },
-});
 
 export default HistoryScreen;

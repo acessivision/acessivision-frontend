@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,8 @@ import Slider from '@react-native-community/slider';
 
 export default function ConfigScreen() {
   const router = useRouter();
-  const { theme, cores } = useTheme();
-  const [fontSize, setFontSize] = React.useState(16);
+  const { theme, cores, fontScale, setFontScale, getFontSize, getIconSize } = useTheme();
+  const [isSliding, setIsSliding] = useState(false);
 
   const handleGoBack = () => {
     router.back();
@@ -55,7 +55,8 @@ export default function ConfigScreen() {
     Alert.alert('Liberar Espaço', 'Limpando cache e arquivos temporários...');
   };
 
-  const styles = StyleSheet.create({
+  // Memoize the styles to prevent recalculation on every render
+  const styles = useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: cores.fundo,
@@ -76,7 +77,7 @@ export default function ConfigScreen() {
       marginRight: 16,
     },
     headerTitle: {
-      fontSize: 20,
+      fontSize: getFontSize('large'),
       fontWeight: 'bold',
       color: cores.texto,
     },
@@ -88,7 +89,7 @@ export default function ConfigScreen() {
       marginBottom: 24,
     },
     sectionTitle: {
-      fontSize: 16,
+      fontSize: getFontSize('medium'),
       fontWeight: 'bold',
       color: cores.texto,
       marginBottom: 8,
@@ -113,14 +114,14 @@ export default function ConfigScreen() {
     },
     optionIcon: {
       marginRight: 12,
-      width: 24,
-      height: 24,
+      width: getIconSize('medium'),
+      height: getIconSize('medium'),
       justifyContent: 'center',
       alignItems: 'center',
     },
     optionText: {
       flex: 1,
-      fontSize: 16,
+      fontSize: getFontSize('medium'),
       color: cores.texto,
     },
     deleteText: {
@@ -140,7 +141,12 @@ export default function ConfigScreen() {
       justifyContent: 'space-between',
     },
     sliderLabel: {
-      fontSize: 14,
+      fontSize: getFontSize('small'),
+      color: cores.texto,
+      fontWeight: 'bold',
+    },
+    sliderLabelLarge: {
+      fontSize: getFontSize('medium'),
       color: cores.texto,
       fontWeight: 'bold',
     },
@@ -149,7 +155,29 @@ export default function ConfigScreen() {
       marginHorizontal: 16,
       height: 40,
     },
-  });
+    previewText: {
+      fontSize: getFontSize('medium'),
+      color: cores.texto,
+      textAlign: 'center',
+      marginTop: 12,
+    },
+  }), [theme, cores, getFontSize, getIconSize]); // Only recalculate when these change
+
+  // Handle slider changes with proper tap/drag distinction
+  const handleSliderChange = (value: number) => {
+    if (isSliding) {
+      setFontScale(value);
+    }
+  };
+
+  const handleSlidingStart = () => {
+    setIsSliding(true);
+  };
+
+  const handleSlidingComplete = (value: number) => {
+    setIsSliding(false);
+    setFontScale(value); // Always update on completion (handles taps)
+  };
 
   return (
     <View style={styles.container}>
@@ -161,7 +189,7 @@ export default function ConfigScreen() {
             <View style={styles.backIcon}>
               <Ionicons 
                 name="arrow-back" 
-                size={24} 
+                size={getIconSize('medium')} 
                 color={cores.icone} 
               />
             </View>
@@ -180,7 +208,7 @@ export default function ConfigScreen() {
                 <View style={styles.optionIcon}>
                   <Ionicons 
                     name="person-outline" 
-                    size={20} 
+                    size={getIconSize('small')} 
                     color={cores.icone} 
                   />
                 </View>
@@ -194,7 +222,7 @@ export default function ConfigScreen() {
                 <View style={styles.optionIcon}>
                   <Ionicons 
                     name="warning-outline" 
-                    size={20} 
+                    size={getIconSize('small')} 
                     color={theme === 'dark' ? '#ffeb3b' : '#d32f2f'} 
                   />
                 </View>
@@ -210,7 +238,7 @@ export default function ConfigScreen() {
                 <View style={styles.optionIcon}>
                   <Ionicons 
                     name="exit-outline" 
-                    size={20} 
+                    size={getIconSize('small')} 
                     color={cores.icone} 
                   />
                 </View>
@@ -229,7 +257,7 @@ export default function ConfigScreen() {
                 <View style={styles.optionIcon}>
                   <Ionicons 
                     name="information-circle-outline" 
-                    size={20} 
+                    size={getIconSize('small')} 
                     color={cores.icone} 
                   />
                 </View>
@@ -249,7 +277,7 @@ export default function ConfigScreen() {
                 <View style={styles.optionIcon}>
                   <Ionicons 
                     name="trash-outline" 
-                    size={20} 
+                    size={getIconSize('small')} 
                     color={cores.icone} 
                   />
                 </View>
@@ -266,17 +294,23 @@ export default function ConfigScreen() {
                 <Text style={styles.sliderLabel}>a</Text>
                 <Slider
                   style={styles.slider}
-                  minimumValue={12}
-                  maximumValue={24}
-                  value={fontSize}
-                  onValueChange={setFontSize}
+                  minimumValue={0.85}
+                  maximumValue={1.1}
+                  value={fontScale}
+                  onValueChange={handleSliderChange}
+                  onSlidingStart={handleSlidingStart}
+                  onSlidingComplete={handleSlidingComplete}
                   minimumTrackTintColor={cores.icone}
                   maximumTrackTintColor={theme === 'dark' ? '#555' : '#ccc'}
+                  step={0.01}
                 />
-                <Text style={[styles.sliderLabel, { fontSize: 18, fontWeight: 'bold' }]}>
+                <Text style={styles.sliderLabelLarge}>
                   A
                 </Text>
               </View>
+              <Text style={styles.previewText}>
+                Texto de exemplo ({Math.round(fontScale * 100)}%)
+              </Text>
             </View>
           </View>
         </ScrollView>

@@ -23,6 +23,23 @@ export const Cores = {
   },
 };
 
+// Base font sizes (these will be the maximum sizes)
+export const BaseFontSizes = {
+  small: 12,
+  medium: 16,
+  large: 20,
+  xlarge: 24,
+  xxlarge: 26,
+};
+
+// Base icon sizes (these will be the maximum sizes)
+export const BaseIconSizes = {
+  small: 20,
+  medium: 24,
+  large: 30,
+  xlarge: 50,
+};
+
 type Theme = 'light' | 'dark' | 'system';
 
 interface ThemeContextProps {
@@ -31,6 +48,10 @@ interface ThemeContextProps {
   mudaTema: () => void;
   setTheme: (t: Theme) => void;
   cores: typeof Cores.light;
+  fontScale: number;
+  setFontScale: (scale: number) => void;
+  getFontSize: (size: keyof typeof BaseFontSizes) => number;
+  getIconSize: (size: keyof typeof BaseIconSizes) => number;
 }
 
 const ThemeContext = createContext<ThemeContextProps>({
@@ -39,18 +60,29 @@ const ThemeContext = createContext<ThemeContextProps>({
   mudaTema: () => {},
   setTheme: () => {},
   cores: Cores.light,
+  fontScale: 1,
+  setFontScale: () => {},
+  getFontSize: () => 16,
+  getIconSize: () => 24,
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const systemTheme = useColorScheme() || 'light';
   const [theme, setTheme] = useState<Theme>('system');
   const [temaAplicado, setTemaAplicado] = useState<'light' | 'dark'>(systemTheme);
+  const [fontScale, setFontScale] = useState<number>(1);
 
   useEffect(() => {
     (async () => {
       const savedTheme = await AsyncStorage.getItem('app-theme');
+      const savedFontScale = await AsyncStorage.getItem('app-font-scale');
+      
       if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
         setTheme(savedTheme);
+      }
+      
+      if (savedFontScale) {
+        setFontScale(parseFloat(savedFontScale));
       }
     })();
   }, []);
@@ -61,11 +93,23 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     AsyncStorage.setItem('app-theme', theme);
   }, [theme, systemTheme]);
 
+  useEffect(() => {
+    AsyncStorage.setItem('app-font-scale', fontScale.toString());
+  }, [fontScale]);
+
   const mudaTema = () => {
     setTheme((prev) => {
       const current = prev === 'system' ? systemTheme : prev;
       return current === 'light' ? 'dark' : 'light';
     });
+  };
+
+  const getFontSize = (size: keyof typeof BaseFontSizes): number => {
+    return Math.round(BaseFontSizes[size] * fontScale);
+  };
+
+  const getIconSize = (size: keyof typeof BaseIconSizes): number => {
+    return Math.round(BaseIconSizes[size] * fontScale);
   };
 
   return (
@@ -76,6 +120,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         mudaTema,
         setTheme,
         cores: Cores[temaAplicado],
+        fontScale,
+        setFontScale,
+        getFontSize,
+        getIconSize,
       }}
     >
       {children}
