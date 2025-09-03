@@ -21,6 +21,10 @@ export default function ConfigScreen() {
     router.back();
   };
 
+  const handleFazerLogin = () => {
+    router.push('../../login');
+  };
+
   const handleEditProfile = () => {
     router.push('./editarPerfil');
   };
@@ -203,6 +207,20 @@ export default function ConfigScreen() {
             <View style={styles.optionContainer}>
               <TouchableOpacity 
                 style={styles.option} 
+                onPress={handleFazerLogin}
+              >
+                <View style={styles.optionIcon}>
+                  <Ionicons 
+                    name="log-in-outline" 
+                    size={getIconSize('small')} 
+                    color={cores.icone} 
+                  />
+                </View>
+                <Text style={styles.optionText}>Fazer Login</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.option} 
                 onPress={handleEditProfile}
               >
                 <View style={styles.optionIcon}>
@@ -283,34 +301,6 @@ export default function ConfigScreen() {
                 </View>
                 <Text style={styles.optionText}>Liberar Espaço</Text>
               </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Tamanho da Fonte Section */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Tamanho da Fonte</Text>
-            <View style={styles.sliderContainer}>
-              <View style={styles.sliderRow}>
-                <Text style={styles.sliderLabel}>a</Text>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0.85}
-                  maximumValue={1.1}
-                  value={fontScale}
-                  onValueChange={handleSliderChange}
-                  onSlidingStart={handleSlidingStart}
-                  onSlidingComplete={handleSlidingComplete}
-                  minimumTrackTintColor={cores.icone}
-                  maximumTrackTintColor={theme === 'dark' ? '#555' : '#ccc'}
-                  step={0.01}
-                />
-                <Text style={styles.sliderLabelLarge}>
-                  A
-                </Text>
-              </View>
-              <Text style={styles.previewText}>
-                Texto de exemplo ({Math.round(fontScale * 100)}%)
-              </Text>
             </View>
           </View>
         </ScrollView>

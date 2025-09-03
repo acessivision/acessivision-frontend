@@ -51,6 +51,7 @@ const CameraScreen: React.FC = () => {
     if (player && audioSource) {
       try {
         player.seekTo(0);
+        player.setPlaybackRate(1.5, 'medium');
         player.play();
       } catch (error) {
         console.error("Erro ao reproduzir áudio:", error);
