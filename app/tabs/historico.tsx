@@ -1,9 +1,6 @@
-import * as SQLite from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../../components/ThemeContext';
-
-const db = SQLite.openDatabaseSync('conversations.db');
 
 interface Conversation {
   id: string;
@@ -18,12 +15,7 @@ const HistoryScreen: React.FC = () => {
   const { cores, getFontSize } = useTheme();
 
   useEffect(() => {
-    const fetchConversations = () => {
-      const result = db.getAllSync<Conversation>(
-        'SELECT * FROM conversations ORDER BY createdAt DESC'
-      );
-      setConversations(result);
-    };
+    const fetchConversations = () => {};
     fetchConversations();
   }, []);
 
