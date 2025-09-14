@@ -23,7 +23,7 @@
       "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "package": "com.anonymous.acessivision"
     },
@@ -43,16 +43,30 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-sqlite",
       [
         "expo-audio",
         {
           "microphonePermission": "Allow AcessiVision to access your microphone."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to use the microphone.",
+          "speechRecognitionPermission": "Allow $(PRODUCT_NAME) to use speech recognition.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7c3a906e-318a-42aa-8deb-ce58323c76c8"
+      }
+    },
+    "owner": "acessivision"
   }
 }
