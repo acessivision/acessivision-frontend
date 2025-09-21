@@ -24,7 +24,9 @@ interface Photo {
   base64?: string;
 }
 
+console.log('IP do .env:', process.env.EXPO_PUBLIC_IP);
 const SERVER_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000/upload`;
+console.log('URL final:', SERVER_URL);
 
 const CameraScreen: React.FC = () => {
   const { cores, temaAplicado } = useTheme();
@@ -188,7 +190,7 @@ const CameraScreen: React.FC = () => {
     if (player && audioSource) {
       try {
         player.seekTo(0);
-        player.setPlaybackRate(1.5, "medium");
+        player.setPlaybackRate(1.5);
         player.play();
         console.log("[Audio] Playing audio response");
       } catch (error) {

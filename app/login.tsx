@@ -11,12 +11,42 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
+import * as WebBrowser from 'expo-web-browser';
 
 export default function LoginScreen() {
   const { theme, temaAplicado } = useTheme();
   const [email, setEmail] = useState('joaosilva@gmail.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const handleGoogleLogin = async () => {
+    try {
+      // URL de autenticação do Google OAuth
+      const googleAuthUrl = 'https://accounts.google.com/oauth/authorize?' +
+        'client_id=SEU_CLIENT_ID_AQUI&' +
+        'redirect_uri=SEU_REDIRECT_URI&' +
+        'response_type=code&' +
+        'scope=openid%20email%20profile&' +
+        'state=random_state_string';
+      
+      // Abre o navegador para autenticação
+      const result = await WebBrowser.openAuthSessionAsync(
+        googleAuthUrl,
+        'SEU_REDIRECT_URI' // Deve ser o mesmo da URL acima
+      );
+
+      if (result.type === 'success') {
+        // Aqui você pode processar o resultado da autenticação
+        console.log('Autenticação bem-sucedida:', result.url);
+        // Extrair o código de autorização da URL de retorno
+        // e enviar para seu backend para trocar pelo token
+      } else {
+        console.log('Autenticação cancelada ou falhou');
+      }
+    } catch (error) {
+      console.error('Erro na autenticação:', error);
+    }
+  };
 
   const styles = StyleSheet.create({
     container: {
@@ -246,7 +276,7 @@ export default function LoginScreen() {
           </View>
 
           {/* Google Button */}
-          <TouchableOpacity style={styles.googleButton}>
+          <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
             <Image source={require('../assets/images/icone-google.png')} />
             <Text style={styles.googleButtonText}> Entrar com Google</Text>
           </TouchableOpacity>
