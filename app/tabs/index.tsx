@@ -7,7 +7,9 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
+  Image
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
@@ -55,7 +57,7 @@ const CameraScreen: React.FC = () => {
     if (player && audioSource) {
       try {
         player.seekTo(0);
-        player.setPlaybackRate(1.5);
+        player.setPlaybackRate(1.3);
         player.play();
         console.log("[Audio] Playing audio response");
       } catch (error) {
@@ -101,6 +103,10 @@ const CameraScreen: React.FC = () => {
     if (!cameraRef.current) {
       Alert.alert("Erro", "Câmera não está pronta.");
       return;
+    }
+
+    if (spokenText === 'ativado pelo botão') {
+      
     }
 
     try {
@@ -163,11 +169,11 @@ const CameraScreen: React.FC = () => {
         <>
           <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} />
 
-          {/* Camera Button 
+          {/* Camera Button */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={styles.button}
-              onPress={takePictureAndUpload()}
+              onPress={() => takePictureAndUpload('ativado pelo botão')}
             >
               <Image
                 source={
@@ -178,7 +184,7 @@ const CameraScreen: React.FC = () => {
                 style={styles.iconeCamera}
               />
             </TouchableOpacity>
-          </View>*/}
+          </View>
         </>
       )}
     </View>

@@ -15,7 +15,7 @@ import * as WebBrowser from 'expo-web-browser';
 
 export default function LoginScreen() {
   const { theme, temaAplicado } = useTheme();
-  const [email, setEmail] = useState('joaosilva@gmail.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -229,6 +229,7 @@ export default function LoginScreen() {
               onChangeText={setEmail}
               keyboardType="email-address"
               autoCapitalize="none"
+              placeholder='Email'
               placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
             />
           </View>
@@ -242,7 +243,7 @@ export default function LoginScreen() {
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
-                placeholder="*******"
+                placeholder="Senha"
                 placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
               />
               <TouchableOpacity
