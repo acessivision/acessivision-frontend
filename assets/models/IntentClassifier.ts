@@ -1,6 +1,6 @@
 // src/services/ml/IntentClassifierService.ts
 
-import modelData from './single_model.json';
+import modelData from './modelo96.json';
 
 // Interfaces existentes
 interface VectorizerData {

@@ -9,12 +9,14 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Image
+  Image,
+  Platform
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
-import { useAudioPlayer, AudioModule, type AudioSource } from "expo-audio";
+import { useAudioPlayer, AudioModule, type AudioSource, createAudioPlayer } from "expo-audio";
 import { useRouter } from 'expo-router';
+import { useVoiceCommands } from '../../components/VoiceCommandContext'; 
 
 interface Photo {
   uri: string;
@@ -33,7 +35,72 @@ const CameraScreen: React.FC = () => {
 
   const cameraRef = useRef<CameraView>(null);
   const isFocused = useIsFocused();
-  const player = useAudioPlayer(audioSource);
+  const [player, setPlayer] = useState<ReturnType<typeof createAudioPlayer> | null>(null);
+
+  const { 
+    registerAction,
+    unregisterAction,
+    pendingSpokenText,
+    clearPending,
+    registerAudioPlayer,
+    unregisterAudioPlayer,
+  } = useVoiceCommands();
+
+  const takePictureAndUpload = async (spokenText: string): Promise<void> => {
+    if (!cameraRef.current) {
+      Alert.alert("Erro", "Câmera não está pronta.");
+      return;
+    }
+
+    try {
+      console.log("[Camera] Taking picture...");
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      if (!photo) {
+        Alert.alert("Erro", "Não foi possível capturar a foto.");
+        return;
+      }
+
+      console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
+      // Passe o texto para a função que cria o FormData
+      const formData = createFormData(photo, spokenText); 
+      const response = await fetch(SERVER_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      await processAudioResponse(arrayBuffer);
+      console.log("[Upload] Upload completed successfully");
+    } catch (error) {
+      console.error("[Upload] Error:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+    }
+  };
+
+  // ---------------- Registro da ação de voz ----------------
+  useEffect(() => {
+    if (isFocused) {
+      registerAction('takePictureAndUpload', takePictureAndUpload);
+      return () => unregisterAction('takePictureAndUpload');
+    }
+  }, [isFocused]);
+
+  // Hook para executar a ação de voz pendente
+  useEffect(() => {
+    // Se a tela estiver em foco e houver um comando de voz pendente para tirar foto
+    if (isFocused && pendingSpokenText) {
+      console.log(`[Camera] Executando ação de voz pendente: "${pendingSpokenText}"`);
+      // Chama a função para tirar a foto com o texto que veio do comando de voz
+      takePictureAndUpload(pendingSpokenText);
+      // Limpa o comando pendente para garantir que não seja executado novamente
+      clearPending(); 
+    }
+  }, [isFocused, pendingSpokenText]);
 
   // ---------------- Audio setup ----------------
   useEffect(() => {
@@ -54,17 +121,29 @@ const CameraScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (player && audioSource) {
-      try {
-        player.seekTo(0);
-        player.setPlaybackRate(1.3);
-        player.play();
-        console.log("[Audio] Playing audio response");
-      } catch (error) {
-        console.error("Erro ao reproduzir áudio:", error);
+    if (audioSource) {
+      const newPlayer = createAudioPlayer(audioSource);
+      if (Platform.OS === "android") {
+        newPlayer.shouldCorrectPitch = true;
+        newPlayer.setPlaybackRate(1.3);
+      } else {
+        newPlayer.setPlaybackRate(1.3, "high");
       }
+      setPlayer(newPlayer);
+      
+      // Registra o player no contexto de voz para permitir interrupção
+      registerAudioPlayer(newPlayer);
+      
+      newPlayer.play();
+      console.log("[Audio] Playing audio response");
+      
+      return () => {
+        // Remove o registro do player e libera recursos
+        unregisterAudioPlayer();
+        newPlayer.release();
+      };
     }
-  }, [audioSource, player]);
+  }, [audioSource, registerAudioPlayer, unregisterAudioPlayer]);
 
   // ---------------- Camera & upload ----------------
   const createFormData = (photo: Photo, prompt: string): FormData => {
@@ -96,46 +175,6 @@ const CameraScreen: React.FC = () => {
       console.log("[Audio] Processed audio response");
     } catch (error) {
       console.error("Erro ao processar áudio:", error);
-    }
-  };
-
-  const takePictureAndUpload = async (spokenText: string): Promise<void> => {
-    if (!cameraRef.current) {
-      Alert.alert("Erro", "Câmera não está pronta.");
-      return;
-    }
-
-    if (spokenText === 'ativado pelo botão') {
-      
-    }
-
-    try {
-      console.log("[Camera] Taking picture...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
-      if (!photo) {
-        Alert.alert("Erro", "Não foi possível capturar a foto.");
-        return;
-      }
-
-      console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
-      // Passe o texto para a função que cria o FormData
-      const formData = createFormData(photo, spokenText); 
-      const response = await fetch(SERVER_URL, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      await processAudioResponse(arrayBuffer);
-      console.log("[Upload] Upload completed successfully");
-    } catch (error) {
-      console.error("[Upload] Error:", error);
-      Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
     }
   };
 
