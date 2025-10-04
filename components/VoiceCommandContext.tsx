@@ -17,7 +17,6 @@ type ActionCallback = (spokenText: string) => void;
 const registeredActions = new Map<string, ActionCallback>();
 
 interface VoiceContextProps {
-  statusMessage: string;
   isListening: boolean;
   recognizedText: string;
   voiceState: 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
@@ -40,7 +39,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [isListening, setIsListening] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [voiceState, setVoiceState] = useState<'waiting_wake' | 'listening_command' | 'waiting_confirmation'>('waiting_wake');
-  const [statusMessage, setStatusMessage] = useState('👂 Diga "Escuta" para começar...');
   const [speechPermissionGranted, setSpeechPermissionGranted] = useState(false);
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
 
@@ -201,71 +199,71 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     console.log(`[Intent] Executing: ${intent}`);
     switch (intent) {
       case 'tirar_foto':
-        setStatusMessage("📸 Preparando para tirar foto...");
+        speak("Preparando para tirar foto...");
         setPendingSpokenText(originalText);
         if (pathname !== '/tabs') {
-          router.replace('/tabs');
+          router.push('/tabs');
         }
         break;
       case 'abrir_camera':
         clearPending();
-        setStatusMessage("Abrindo a câmera...");
+        speak("Abrindo a câmera...");
         if (pathname !== '/tabs') {
-          router.replace('/tabs');
+          router.push('/tabs');
         }
         break;
       case 'ir_para_historico':
-        setStatusMessage("Indo para o Histórico...");
-        router.replace('/tabs/historico');
+        speak("Indo para o Histórico...");
+        router.push('/tabs/historico');
         break;
       case 'ir_para_configuracoes':
-        setStatusMessage("Abrindo as Configurações...");
-        router.replace('/tabs/configuracoes');
+        speak("Abrindo as Configurações...");
+        router.push('/tabs/configuracoes');
         break;
       case 'ir_para_editar_perfil':
-        setStatusMessage("Abrindo a página para Editar Perfil...");
-        router.replace('/tabs/editarPerfil');
+        speak("Abrindo a página para Editar Perfil...");
+        router.push('/tabs/editarPerfil');
         break;
       case 'ir_para_login':
-        setStatusMessage("Indo para a tela de login...");
-        router.replace('/login');
+        speak("Indo para a tela de login...");
+        router.push('/login');
         break;
       case 'fazer_logout':
-        setStatusMessage("Encerrando a sessão...");
+        speak("Encerrando a sessão...");
         break;
       case 'mudar_tema_claro':
         if (temaAplicado === 'dark') {
           setTheme('light');
-          setStatusMessage("Tema alterado para claro!");
+          speak("Tema alterado para claro!");
         } else {
-          setStatusMessage("O tema já está claro!");
+          speak("O tema já está claro!");
         }
         break;
       case 'mudar_tema_escuro':
         if (temaAplicado === 'light') {
           setTheme('dark');
-          setStatusMessage("Tema alterado para escuro!");
+          speak("Tema alterado para escuro!");
         } else {
-          setStatusMessage("O tema já está escuro!");
+          speak("O tema já está escuro!");
         }
         break;
       case 'tutorial':
-        setStatusMessage("Mostrando o tutorial...");
+        speak("Mostrando o tutorial...");
         break;
       case 'explicar_tela':
-        setStatusMessage("Explicando os elementos da tela...");
+        speak("Explicando os elementos da tela...");
         break;
       case 'cadastro':
-        setStatusMessage("Indo para a tela de cadastro...");
+        speak("Indo para a tela de cadastro...");
         break;
       case 'recuperar_senha':
-        setStatusMessage("Indo para a recuperação de senha...");
+        speak("Indo para a recuperação de senha...");
         break;
       case 'excluir_conta':
-        setStatusMessage("Iniciando exclusão de conta...");
+        speak("Iniciando exclusão de conta...");
         break;
       default:
-        setStatusMessage("Comando não reconhecido.");
+        speak("Comando não reconhecido.");
         break;
     }
   }, [temaAplicado, router, pathname, setTheme]);
@@ -302,9 +300,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const isDeny = denyWords.some(word => normalizedText.includes(word));
     
     if (isConfirm && pendingIntent) {
-      const confirmMessage = "Confirmado! Executando...";
-      setStatusMessage("✅ " + confirmMessage);
-      speak(confirmMessage);
+      speak("Confirmado! Executando...");
       executeIntent(pendingIntent, pendingOriginalText);
       setPendingIntent('');
       setPendingOriginalText('');
@@ -312,36 +308,28 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       stopListening();
       setTimeout(() => {
         setVoiceState("waiting_wake");
-        setStatusMessage('👂 Diga "Escuta" para começar...');
         setRecognizedText("");
         startListening();
       }, 2500);
       
     } else if (isDeny) {
-      const cancelMessage = "Cancelado";
-      setStatusMessage("❌ " + cancelMessage);
-      speak(cancelMessage);
+      speak("Cancelado");
       setPendingIntent('');
       setPendingOriginalText('');
       
       stopListening();
       setTimeout(() => {
         setVoiceState("waiting_wake");
-        setStatusMessage('👂 Diga "Escuta" para começar...');
         setRecognizedText("");
         startListening();
       }, 2500);
       
     } else {
+      // Se não reconheceu sim nem não, repete a pergunta
       const displayName = getIntentDisplayName(pendingIntent);
-      const confirmQuestion = `Você confirma que quer ${displayName}? Diga sim ou não`;
-      setStatusMessage(`🤔 ${confirmQuestion}`);
-      speak(confirmQuestion);
+      speak(`Não entendi. Você quer ${displayName}? Diga sim ou não`);
     }
   }, [pendingIntent, pendingOriginalText, executeIntent, stopListening, startListening, speak]);
-
-  const activationSound = Asset.fromModule(require("../assets/sons/som_ativacao.mp3")).uri;
-  const player = useAudioPlayer({ uri: activationSound });
 
   useEffect(() => {
     const configureAudio = async () => {
@@ -360,19 +348,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     configureAudio();
   }, []);
 
-  const playActivationSound = () => {
-    try {
-      if (player) {
-        player.seekTo(0);
-        player.setPlaybackRate(1.0);
-        player.play();
-        console.log("[Voice] Som de ativação reproduzido");
-      }
-    } catch (err) {
-      console.error("[Voice] Erro ao tocar som:", err);
-    }
-  };
-
   const processVoiceInput = useCallback((spokenText: string) => {
     if (!spokenText.trim() || spokenText === lastProcessedTranscript.current) {
       return;
@@ -384,11 +359,10 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (spokenText.toLowerCase().includes("escuta")) {
           stopCurrentAudio();
           stopListening();
-          playActivationSound();
           setVoiceState("listening_command");
-          setStatusMessage("🎯 Escutando... Pode falar!");
+          speak("Escutando...");
           setRecognizedText("");
-          setTimeout(startListening, 500);
+          setTimeout(startListening, 1500); // Aumentado para 1.5s para dar tempo de falar
         } else if (
           spokenText.toLowerCase().includes("pare") ||
           spokenText.toLowerCase().includes("parar") ||
@@ -404,56 +378,62 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const prediction = IntentClassifierService.predictWithConfidence(spokenText);
         const confidencePercent = (prediction.confidence * 100).toFixed(0);
         
-        console.log(`[Intent] "${spokenText}" -> ${prediction.intent} (${confidencePercent}%)`);
+        console.log(`[Intent] "${spokenText}" -> ${prediction.intent} (${confidencePercent}%) - notUnderstood: ${prediction.notUnderstood}, needsConfirmation: ${prediction.needsConfirmation}`);
         setRecognizedText(spokenText);
 
         stopListening();
 
-        if (prediction.needsConfirmation) {
+        // Verifica se não entendeu (confiança < 55%)
+        if (prediction.notUnderstood) {
+          speak("Desculpe, não entendi.");
+          
+          setTimeout(() => {
+            setVoiceState("waiting_wake");
+            setRecognizedText("");
+            startListening();
+          }, 2500);
+          
+        } else if (prediction.needsConfirmation) {
+          // Confiança entre 55% e 70% - pede confirmação
           const displayName = getIntentDisplayName(prediction.intent);
           const confirmQuestion = `Você quer ${displayName}? Diga sim ou não`;
-          setStatusMessage(`❓ ${confirmQuestion}`);
+          
           setPendingIntent(prediction.intent);
           setPendingOriginalText(spokenText);
           setVoiceState("waiting_confirmation");
           
-          // Delay antes de falar para garantir que só aconteça uma vez
+          speak(confirmQuestion);
+          
           setTimeout(() => {
-            speak(confirmQuestion);
             startListening();
-          }, 300);
+          }, 2000);
           
         } else {
-          setStatusMessage(`✅ Entendi! (${confidencePercent}%)`);
+          // Confiança > 70% - executa direto
+          speak(`Entendi! (${confidencePercent}%)`);
           executeIntent(prediction.intent, spokenText);
           
           setTimeout(() => {
             setVoiceState("waiting_wake");
-            setStatusMessage('👂 Diga "Escuta" para começar...');
             setRecognizedText("");
             startListening();
           }, 3500);
         }
         
       } else if (voiceState === "waiting_confirmation") {
-        stopListening();
         handleConfirmationResponse(spokenText);
-        if (!pendingIntent) {
-          setTimeout(startListening, 500);
-        }
       }
     } catch (error) {
       console.error('[Voice] Error processing input:', error);
-      setStatusMessage("Erro ao processar comando. Tente novamente.");
+      speak("Erro ao processar comando. Tente novamente.");
       stopListening();
       setTimeout(() => {
         setVoiceState("waiting_wake");
-        setStatusMessage('👂 Diga "Escuta" para começar...');
         setRecognizedText("");
         startListening();
       }, 2000);
     }
-  }, [voiceState, executeIntent, handleConfirmationResponse, stopListening, startListening, stopCurrentAudio, speak]);
+  }, [voiceState, executeIntent, handleConfirmationResponse, stopListening, startListening, stopCurrentAudio, speak, pendingIntent]);
 
   const requestSpeechPermissions = useCallback(async () => {
     try {
@@ -477,7 +457,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   useEffect(() => {
     if (isFocused && speechPermissionGranted) {
-      const timer = setTimeout(startListening, 200);
+      const timer = setTimeout(startListening, 2500);
       return () => clearTimeout(timer);
     } else {
       stopListening();
@@ -511,7 +491,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     isStartingRef.current = false;
 
     if (isFocused && speechPermissionGranted && !isStoppingRef.current) {
-      const delay = errorCountRef.current > 0 ? Math.min(errorCountRef.current * 300, 2000) : 250;
+      const delay = errorCountRef.current > 0 ? Math.min(errorCountRef.current * 300, 2000) : 1500;
       restartTimeoutRef.current = setTimeout(startListening, delay);
     }
   });
@@ -584,7 +564,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const clearPending = () => setPendingSpokenText(null);
 
   const value = {
-    statusMessage,
     isListening,
     recognizedText,
     voiceState,
