@@ -16,7 +16,12 @@ import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
 import { useAudioPlayer, AudioModule, type AudioSource, createAudioPlayer } from "expo-audio";
 import { useRouter } from 'expo-router';
-import { useVoiceCommands } from '../../components/VoiceCommandContext'; 
+import { useVoiceCommands } from '../../components/VoiceCommandContext';
+import * as Speech from 'expo-speech';
+import {
+  ExpoSpeechRecognitionModule,
+  useSpeechRecognitionEvent,
+} from "expo-speech-recognition";
 
 interface Photo {
   uri: string;
@@ -37,6 +42,11 @@ const CameraScreen: React.FC = () => {
   const isFocused = useIsFocused();
   const [player, setPlayer] = useState<ReturnType<typeof createAudioPlayer> | null>(null);
 
+  // Estados para captura de voz após tirar foto
+  const [capturedPhoto, setCapturedPhoto] = useState<Photo | null>(null);
+  const [isListeningForQuestion, setIsListeningForQuestion] = useState(false);
+  const [recognizedQuestion, setRecognizedQuestion] = useState("");
+
   const { 
     registerAction,
     unregisterAction,
@@ -45,6 +55,37 @@ const CameraScreen: React.FC = () => {
     registerAudioPlayer,
     unregisterAudioPlayer,
   } = useVoiceCommands();
+
+  // Função para falar
+  const falar = (texto: string, callback?: () => void) => {
+    Speech.stop();
+    Speech.speak(texto, {
+      language: "pt-BR",
+      onDone: () => {
+        if (callback) callback();
+      },
+      onStopped: () => {
+        if (callback) callback();
+      },
+    });
+  };
+
+  // Listener para reconhecimento de voz da pergunta
+  useSpeechRecognitionEvent("result", (event) => {
+    if (isListeningForQuestion && capturedPhoto) {
+      const transcription = event.results[0]?.transcript || "";
+      console.log("[Speech] Recognized question:", transcription);
+      setRecognizedQuestion(transcription);
+    }
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    if (isListeningForQuestion && capturedPhoto && recognizedQuestion) {
+      console.log("[Speech] Recognition ended, sending photo with question");
+      setIsListeningForQuestion(false);
+      uploadPhotoWithQuestion(capturedPhoto, recognizedQuestion);
+    }
+  });
 
   const takePictureAndUpload = async (spokenText: string): Promise<void> => {
     if (!cameraRef.current) {
@@ -79,6 +120,99 @@ const CameraScreen: React.FC = () => {
     } catch (error) {
       console.error("[Upload] Error:", error);
       Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+    }
+  };
+
+  // Nova função para tirar foto e perguntar via voz
+  const takePictureForButton = async (): Promise<void> => {
+    if (!cameraRef.current) {
+      Alert.alert("Erro", "Câmera não está pronta.");
+      return;
+    }
+
+    try {
+      console.log("[Camera] Taking picture for button...");
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      if (!photo) {
+        Alert.alert("Erro", "Não foi possível capturar a foto.");
+        return;
+      }
+
+      // Armazena a foto
+      setCapturedPhoto(photo);
+      
+      // Pergunta ao usuário via voz
+      falar("O que você deseja saber sobre a foto?", () => {
+        // Após terminar de falar, inicia o reconhecimento
+        startListeningForQuestion();
+      });
+    } catch (error) {
+      console.error("[Camera] Error taking picture:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
+    }
+  };
+
+  // Inicia reconhecimento de voz para a pergunta
+  const startListeningForQuestion = async () => {
+    try {
+      setIsListeningForQuestion(true);
+      setRecognizedQuestion("");
+      
+      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!result.granted) {
+        Alert.alert("Permissão negada", "Precisamos de permissão para usar o microfone.");
+        setIsListeningForQuestion(false);
+        setCapturedPhoto(null);
+        return;
+      }
+
+      await ExpoSpeechRecognitionModule.start({
+        lang: "pt-BR",
+        interimResults: true,
+        maxAlternatives: 1,
+        continuous: false,
+        requiresOnDeviceRecognition: false,
+        addsPunctuation: false,
+        contextualStrings: [],
+      });
+      
+      console.log("[Speech] Started listening for question");
+    } catch (error) {
+      console.error("[Speech] Error starting recognition:", error);
+      Alert.alert("Erro", "Não foi possível iniciar o reconhecimento de voz");
+      setIsListeningForQuestion(false);
+      setCapturedPhoto(null);
+    }
+  };
+
+  // Função para enviar a foto com a pergunta
+  const uploadPhotoWithQuestion = async (photo: Photo, question: string): Promise<void> => {
+    try {
+      console.log(`[Upload] Uploading photo with question: "${question}"`);
+      
+      const formData = createFormData(photo, question);
+      const response = await fetch(SERVER_URL, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      await processAudioResponse(arrayBuffer);
+      console.log("[Upload] Upload completed successfully");
+      
+      // Limpa os estados
+      setCapturedPhoto(null);
+      setRecognizedQuestion("");
+    } catch (error) {
+      console.error("[Upload] Error:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+      setCapturedPhoto(null);
+      setRecognizedQuestion("");
     }
   };
 
@@ -212,7 +346,9 @@ const CameraScreen: React.FC = () => {
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={styles.button}
-              onPress={() => takePictureAndUpload('ativado pelo botão')}
+              onPress={takePictureForButton}
+              accessibilityLabel="Tirar foto"
+              role="button"
             >
               <Image
                 source={
