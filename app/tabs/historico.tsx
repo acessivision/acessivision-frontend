@@ -51,9 +51,6 @@ const HistoryScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        Histórico de Conversas
-      </Text>
       <FlatList
         data={conversations}
         keyExtractor={(item) => item.id}
