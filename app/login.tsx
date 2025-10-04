@@ -12,12 +12,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
+import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
-  const { theme, temaAplicado } = useTheme();
+  const router = useRouter();
+  const { theme, temaAplicado, cores, getIconSize, getFontSize } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  const handleGoBack = () => {
+    router.back();
+  };
 
   const handleGoogleLogin = async () => {
     try {
@@ -49,9 +55,31 @@ export default function LoginScreen() {
   };
 
   const styles = StyleSheet.create({
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 16,
+      paddingBottom: 40,
+      paddingTop: 0,
+      backgroundColor: cores.barrasDeNavegacao,
+    },
+    backButton: {
+      marginRight: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    backIcon: {
+      marginRight: 16,
+    },
+    headerTitle: {
+      fontSize: getFontSize('large'),
+      fontWeight: 'bold',
+      color: cores.texto,
+    },
     container: {
       flex: 1,
-      backgroundColor: temaAplicado === 'dark' ? '#000' : '#fff',
+      backgroundColor: cores.barrasDeNavegacao,
     },
     keyboardView: {
       flex: 1,
@@ -204,6 +232,22 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.backButton} 
+              onPress={handleGoBack}
+            >
+              <View style={styles.backIcon}>
+                <Ionicons 
+                  name="arrow-back" 
+                  size={getIconSize('medium')} 
+                  color={cores.icone} 
+                />
+              </View>
+              <Text style={styles.headerTitle}>Voltar</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Eye Icon */}
           <View style={styles.logoContainer}>
             <Image
