@@ -22,17 +22,21 @@ interface ModelData {
   classifier: ClassifierData;
 }
 
-// Interface simples para resultado com confiança
+// Interface com novo campo para indicar se não entendeu
 interface PredictionResult {
   intent: string;
   confidence: number;
   needsConfirmation: boolean;
+  notUnderstood: boolean; // Novo campo
 }
 
 // Carrega os dados do modelo
 const model: ModelData = modelData as ModelData;
 const vocabSize = Object.keys(model.vectorizer.vocabulary).length;
-const CONFIDENCE_THRESHOLD = 0.7; // 70%
+
+// Limites de confiança ajustados
+const LOW_CONFIDENCE_THRESHOLD = 0.55;  // 55% - abaixo disso, não entendeu
+const HIGH_CONFIDENCE_THRESHOLD = 0.70; // 70% - acima disso, executa direto
 
 /**
  * Pré-processa o texto (mantém implementação original)
@@ -106,7 +110,7 @@ function predict(text: string): string {
 }
 
 /**
- * Nova função com verificação de confiança
+ * Nova função com verificação de confiança em três níveis
  */
 function predictWithConfidence(text: string): PredictionResult {
   const processedText = preprocessText(text);
@@ -133,10 +137,29 @@ function predictWithConfidence(text: string): PredictionResult {
     }
   });
 
+  // Determinar o comportamento baseado na confiança
+  let needsConfirmation = false;
+  let notUnderstood = false;
+
+  if (maxProb < LOW_CONFIDENCE_THRESHOLD) {
+    // Confiança muito baixa (< 55%) - não entendeu
+    notUnderstood = true;
+    needsConfirmation = false;
+  } else if (maxProb < HIGH_CONFIDENCE_THRESHOLD) {
+    // Confiança média (55% - 70%) - pede confirmação
+    notUnderstood = false;
+    needsConfirmation = true;
+  } else {
+    // Alta confiança (> 70%) - executa direto
+    notUnderstood = false;
+    needsConfirmation = false;
+  }
+
   return {
     intent: model.classes[predictedIndex],
     confidence: maxProb,
-    needsConfirmation: maxProb <= CONFIDENCE_THRESHOLD
+    needsConfirmation,
+    notUnderstood
   };
 }
 
