@@ -10,7 +10,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../components/ThemeContext';
-import Slider from '@react-native-community/slider';
 
 export default function ConfigScreen() {
   const router = useRouter();
@@ -22,7 +21,7 @@ export default function ConfigScreen() {
   };
 
   const handleFazerLogin = () => {
-    router.push('../../login');
+    router.push('/login');
   };
 
   const handleEditProfile = () => {
