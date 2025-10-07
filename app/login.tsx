@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
+  ActivityIndicator,
+  Alert,
   Text,
   TextInput,
   TouchableOpacity,
@@ -15,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
+import authService from '../services/authService'
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -23,6 +26,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const setInitialFocus = async () => {
@@ -40,6 +44,35 @@ export default function LoginScreen() {
     };
     setInitialFocus();
   }, []);
+
+  const handleLogin = async () => { // MODIFICAR
+  if (!email.trim()) {
+    Alert.alert('Erro', 'Por favor, informe seu email');
+    return;
+  }
+
+  if (!password) {
+    Alert.alert('Erro', 'Por favor, informe sua senha');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const result = await authService.login(email, password);
+
+    if (result.success) {
+      router.replace('/tabs');
+    } else {
+      Alert.alert('Erro', result.message);
+    }
+  } catch (error) {
+    Alert.alert('Erro', 'Ocorreu um erro ao fazer login');
+    console.error('Erro no login:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -191,6 +224,10 @@ export default function LoginScreen() {
       fontWeight: '600',
       color: temaAplicado === 'dark' ? '#000' : '#fff',
     },
+    loginButtonDisabled: {
+      backgroundColor: temaAplicado === 'dark' ? '#888' : '#ccc',
+      opacity: 0.7,
+    },
     dividerContainer: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -320,12 +357,17 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.forgotContainer} accessibilityRole='link'>
-            <Text style={styles.forgotText}>Esqueceu Senha?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.loginButton} accessibilityRole='button'>
-            <Text style={styles.loginButtonText}>Entrar</Text>
+          <TouchableOpacity 
+            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+            accessibilityRole='button'
+          >
+            {loading ? (
+              <ActivityIndicator color={temaAplicado === 'dark' ? '#000' : '#fff'} />
+            ) : (
+              <Text style={styles.loginButtonText}>Entrar</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.dividerContainer}>

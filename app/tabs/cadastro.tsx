@@ -6,31 +6,78 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
 import { useRouter } from 'expo-router';
+import authService from '../../services/authService';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
+  const { temaAplicado, cores, getFontSize } = useTheme();
+  const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleGoBack = () => {
     router.back();
   };
 
-  const handleCreateAccount = () => {
-    // Implementar a lógica de criação de conta (Criar endpoint no server.js para salvar no banco de dados)
-    console.log('Criar conta:', { email, password });
+  const handleCreateAccount = async () => {
+    // Validações
+    if (!nome.trim()) {
+      Alert.alert('Erro', 'Por favor, informe seu nome');
+      return;
+    }
+
+    if (!email.trim()) {
+      Alert.alert('Erro', 'Por favor, informe seu email');
+      return;
+    }
+
+    if (!password) {
+      Alert.alert('Erro', 'Por favor, informe sua senha');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Erro', 'A senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const result = await authService.register(nome, email, password);
+
+      if (result.success) {
+        Alert.alert(
+          'Sucesso!',
+          'Conta criada com sucesso!',
+          [
+            {
+              text: 'OK',
+              onPress: () => router.replace('/tabs'),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Erro', result.message);
+      }
+    } catch (error) {
+      Alert.alert('Erro', 'Ocorreu um erro ao criar a conta');
+      console.error('Erro ao criar conta:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogin = () => {
-    // Navegar para tela de login
     router.push('/login');
   };
 
@@ -110,6 +157,9 @@ export default function SignUpScreen() {
       marginBottom: 24,
       marginTop: 8,
     },
+    createButtonDisabled: {
+      opacity: 0.6,
+    },
     createButtonText: {
       fontSize: 16,
       fontWeight: '600',
@@ -138,11 +188,11 @@ export default function SignUpScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header with Back Button */}
         <View style={styles.header}>
           <TouchableOpacity 
             style={styles.backButton} 
             onPress={handleGoBack}
+            disabled={loading}
           >
             <Ionicons 
               name="chevron-back" 
@@ -152,8 +202,20 @@ export default function SignUpScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Title */}
         <Text style={styles.title}>Criar Conta</Text>
+
+        {/* Nome Field */}
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>Nome</Text>
+          <TextInput
+            style={styles.input}
+            value={nome}
+            onChangeText={setNome}
+            placeholder="João Silva"
+            placeholderTextColor="#999"
+            editable={!loading}
+          />
+        </View>
 
         {/* Email Field */}
         <View style={styles.inputContainer}>
@@ -166,6 +228,7 @@ export default function SignUpScreen() {
             autoCapitalize="none"
             placeholder="joaosilva@gmail.com"
             placeholderTextColor="#999"
+            editable={!loading}
           />
         </View>
 
@@ -178,12 +241,14 @@ export default function SignUpScreen() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
-              placeholder="*******"
+              placeholder="Mínimo 6 caracteres"
               placeholderTextColor="#999"
+              editable={!loading}
             />
             <TouchableOpacity
               style={styles.eyeButton}
               onPress={() => setShowPassword(!showPassword)}
+              disabled={loading}
             >
               <Ionicons
                 name={showPassword ? 'eye-outline' : 'eye-off-outline'}
@@ -196,16 +261,21 @@ export default function SignUpScreen() {
 
         {/* Create Account Button */}
         <TouchableOpacity 
-          style={styles.createButton}
+          style={[styles.createButton, loading && styles.createButtonDisabled]}
           onPress={handleCreateAccount}
+          disabled={loading}
         >
-          <Text style={styles.createButtonText}>Criar Conta</Text>
+          {loading ? (
+            <ActivityIndicator color={temaAplicado === 'dark' ? '#000' : '#fff'} />
+          ) : (
+            <Text style={styles.createButtonText}>Criar Conta</Text>
+          )}
         </TouchableOpacity>
 
         {/* Login Link */}
         <View style={styles.loginContainer}>
           <Text style={styles.loginText}>Já tem uma conta? </Text>
-          <TouchableOpacity onPress={handleLogin}>
+          <TouchableOpacity onPress={handleLogin} disabled={loading}>
             <Text style={styles.loginLink}>Entrar</Text>
           </TouchableOpacity>
         </View>
