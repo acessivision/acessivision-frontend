@@ -341,7 +341,7 @@ export default function LoginScreen() {
 
           <View style={styles.createAccountContainer}>
             <Text style={styles.createAccountText}>Não tem uma conta? </Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/tabs/cadastro')}>
               <Text style={styles.createAccountLink}>Criar Conta</Text>
             </TouchableOpacity>
           </View>

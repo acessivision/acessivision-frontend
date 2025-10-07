@@ -20,7 +20,6 @@ export default function ConfigScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      // Use caminho absoluto ao invés de relativo
       router.replace('/tabs');
     }
   };
@@ -73,6 +72,7 @@ export default function ConfigScreen() {
         header: {
           flexDirection: 'row',
           alignItems: 'center',
+          justifyContent: 'space-between', // MUDANÇA: adiciona espaço entre elementos
           paddingHorizontal: 16,
           paddingVertical: 16,
           backgroundColor: cores.fundo,
@@ -80,7 +80,6 @@ export default function ConfigScreen() {
         backButton: {
           flexDirection: 'row',
           alignItems: 'center',
-          flex: 1,
         },
         backIcon: {
           marginRight: 16,
@@ -89,6 +88,10 @@ export default function ConfigScreen() {
           fontSize: getFontSize('large'),
           fontWeight: 'bold',
           color: cores.texto,
+        },
+        // NOVO: estilo para o botão de login no header
+        loginIconButton: {
+          padding: 8,
         },
         content: {
           flex: 1,
@@ -136,40 +139,6 @@ export default function ConfigScreen() {
         deleteText: {
           color: theme === 'dark' ? '#ffeb3b' : '#d32f2f',
         },
-        sliderContainer: {
-          backgroundColor: theme === 'dark' ? '#2a2a2a' : '#f5f5f5',
-          borderRadius: 12,
-          paddingHorizontal: 16,
-          paddingVertical: 20,
-          borderWidth: 1,
-          borderColor: theme === 'dark' ? '#3a3a3a' : '#e0e0e0',
-        },
-        sliderRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        },
-        sliderLabel: {
-          fontSize: getFontSize('small'),
-          color: cores.texto,
-          fontWeight: 'bold',
-        },
-        sliderLabelLarge: {
-          fontSize: getFontSize('medium'),
-          color: cores.texto,
-          fontWeight: 'bold',
-        },
-        slider: {
-          flex: 1,
-          marginHorizontal: 16,
-          height: 40,
-        },
-        previewText: {
-          fontSize: getFontSize('medium'),
-          color: cores.texto,
-          textAlign: 'center',
-          marginTop: 12,
-        },
       }),
     [theme, cores, getFontSize, getIconSize]
   );
@@ -186,6 +155,20 @@ export default function ConfigScreen() {
             />
           </View>
           <Text style={styles.headerTitle}>Voltar</Text>
+        </TouchableOpacity>
+        
+        {/* NOVO: Ícone de login no header */}
+        <TouchableOpacity 
+          style={styles.loginIconButton} 
+          onPress={handleFazerLogin}
+          accessibilityLabel="Fazer Login"
+          accessibilityRole="button"
+        >
+          <Ionicons
+            name="log-in-outline"
+            size={getIconSize('medium')}
+            color={cores.icone}
+          />
         </TouchableOpacity>
       </View>
 
