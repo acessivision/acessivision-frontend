@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   StyleSheet,
   ScrollView,
   Image,
+  findNodeHandle,
+  AccessibilityInfo
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,19 +17,40 @@ import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 
 export default function LoginScreen() {
+  const titleRef = useRef(null);
   const router = useRouter();
   const { theme, temaAplicado, cores, getIconSize, getFontSize } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  useEffect(() => {
+    const setInitialFocus = async () => {
+      try {
+        const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        if (isScreenReaderEnabled && titleRef.current) {
+          const reactTag = findNodeHandle(titleRef.current);
+          if (reactTag) {
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+          }
+        }
+      } catch (error) {
+        console.error('Error setting initial focus:', error);
+      }
+    };
+    setInitialFocus();
+  }, []);
+
   const handleGoBack = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/tabs');
+    }
   };
 
   const handleGoogleLogin = async () => {
     try {
-      // URL de autenticação do Google OAuth
       const googleAuthUrl = 'https://accounts.google.com/oauth/authorize?' +
         'client_id=SEU_CLIENT_ID_AQUI&' +
         'redirect_uri=SEU_REDIRECT_URI&' +
@@ -35,17 +58,13 @@ export default function LoginScreen() {
         'scope=openid%20email%20profile&' +
         'state=random_state_string';
       
-      // Abre o navegador para autenticação
       const result = await WebBrowser.openAuthSessionAsync(
         googleAuthUrl,
-        'SEU_REDIRECT_URI' // Deve ser o mesmo da URL acima
+        'SEU_REDIRECT_URI'
       );
 
       if (result.type === 'success') {
-        // Aqui você pode processar o resultado da autenticação
         console.log('Autenticação bem-sucedida:', result.url);
-        // Extrair o código de autorização da URL de retorno
-        // e enviar para seu backend para trocar pelo token
       } else {
         console.log('Autenticação cancelada ou falhou');
       }
@@ -236,6 +255,8 @@ export default function LoginScreen() {
             <TouchableOpacity 
               style={styles.backButton} 
               onPress={handleGoBack}
+              accessibilityRole='button'
+              accessibilityLabel='Voltar'
             >
               <View style={styles.backIcon}>
                 <Ionicons 
@@ -248,7 +269,6 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Eye Icon */}
           <View style={styles.logoContainer}>
             <Image
                 source={
@@ -260,11 +280,9 @@ export default function LoginScreen() {
                 />
           </View>
 
-          {/* Title */}
-          <Text style={styles.title}>Entre com sua Conta</Text>
+          <Text style={styles.title} ref={titleRef} accessibilityRole="header">Entre com sua Conta</Text>
           <Text style={styles.subtitle}>Preencha seu email e senha para entrar</Text>
 
-          {/* Email Field */}
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -278,7 +296,6 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Password Field */}
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Senha</Text>
             <View style={styles.passwordContainer}>
@@ -303,30 +320,25 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          {/* Forgot Password */}
-          <TouchableOpacity style={styles.forgotContainer}>
+          <TouchableOpacity style={styles.forgotContainer} accessibilityRole='link'>
             <Text style={styles.forgotText}>Esqueceu Senha?</Text>
           </TouchableOpacity>
 
-          {/* Login Button */}
-          <TouchableOpacity style={styles.loginButton}>
+          <TouchableOpacity style={styles.loginButton} accessibilityRole='button'>
             <Text style={styles.loginButtonText}>Entrar</Text>
           </TouchableOpacity>
 
-          {/* Divider */}
           <View style={styles.dividerContainer}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>Ou</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Google Button */}
           <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
             <Image source={require('../assets/images/icone-google.png')} />
             <Text style={styles.googleButtonText}> Entrar com Google</Text>
           </TouchableOpacity>
 
-          {/* Create Account */}
           <View style={styles.createAccountContainer}>
             <Text style={styles.createAccountText}>Não tem uma conta? </Text>
             <TouchableOpacity>

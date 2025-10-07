@@ -3,7 +3,6 @@ import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
-import { VoiceCommandProvider } from '../../components/VoiceCommandContext';
 
 function LayoutWithVoiceUI() {
   const pathname = usePathname();
@@ -20,7 +19,7 @@ function LayoutWithVoiceUI() {
         return 'Histórico';
       case '/tabs/configuracoes':
         return 'Configurações';
-      case '/tabs/editarPerfil':
+      case '/tabs/configuracoes/editarPerfil':
         return 'Editar Perfil';
       default:
         return 'App';
@@ -28,7 +27,7 @@ function LayoutWithVoiceUI() {
   };
 
   const handleSettingsPress = () => {
-    router.navigate('/tabs/configuracoes');
+    router.push('/tabs/configuracoes');
   };
 
   return (
@@ -40,10 +39,12 @@ function LayoutWithVoiceUI() {
       />
       
       <Tabs
+        initialRouteName="index"
+        backBehavior="history"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: cores.icone,
-          tabBarInactiveTintColor: cores.icone, // Ajuste se houver uma cor específica para inativo
+          tabBarInactiveTintColor: cores.icone,
           tabBarShowLabel: false,
           tabBarStyle: {
             backgroundColor: cores.barrasDeNavegacao,
@@ -81,18 +82,16 @@ function LayoutWithVoiceUI() {
             ),
           }}
         />
-        {/* Config screen is routable but hidden from tab bar */}
         <Tabs.Screen
           name="configuracoes"
           options={{
-            href: null, // hides it from the tab bar
+            href: null,
           }}
         />
-        {/* Config screen is routable but hidden from tab bar */}
         <Tabs.Screen
           name="editarPerfil"
           options={{
-            href: null, // hides it from the tab bar
+            href: null,
           }}
         />
       </Tabs>
@@ -102,8 +101,6 @@ function LayoutWithVoiceUI() {
 
 export default function TabsLayout() {
   return (
-    <VoiceCommandProvider>
       <LayoutWithVoiceUI />
-    </VoiceCommandProvider>
   );
 }

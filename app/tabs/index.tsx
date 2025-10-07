@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
-import { useAudioPlayer, AudioModule, type AudioSource, createAudioPlayer } from "expo-audio";
+import { AudioModule, type AudioSource, createAudioPlayer } from "expo-audio";
 import { useRouter } from 'expo-router';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import * as Speech from 'expo-speech';
@@ -37,7 +37,6 @@ const CameraScreen: React.FC = () => {
   const { cores, temaAplicado, setTheme } = useTheme();
   const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
-
   const cameraRef = useRef<CameraView>(null);
   const isFocused = useIsFocused();
   const [player, setPlayer] = useState<ReturnType<typeof createAudioPlayer> | null>(null);
@@ -47,7 +46,7 @@ const CameraScreen: React.FC = () => {
   const [isListeningForQuestion, setIsListeningForQuestion] = useState(false);
   const [recognizedQuestion, setRecognizedQuestion] = useState("");
 
-  const { 
+  const {
     registerAction,
     unregisterAction,
     pendingSpokenText,
@@ -96,14 +95,17 @@ const CameraScreen: React.FC = () => {
     try {
       console.log("[Camera] Taking picture...");
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
         return;
       }
 
       console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
+
       // Passe o texto para a função que cria o FormData
-      const formData = createFormData(photo, spokenText); 
+      const formData = createFormData(photo, spokenText);
+
       const response = await fetch(SERVER_URL, {
         method: "POST",
         body: formData,
@@ -116,6 +118,7 @@ const CameraScreen: React.FC = () => {
 
       const arrayBuffer = await response.arrayBuffer();
       await processAudioResponse(arrayBuffer);
+
       console.log("[Upload] Upload completed successfully");
     } catch (error) {
       console.error("[Upload] Error:", error);
@@ -133,6 +136,7 @@ const CameraScreen: React.FC = () => {
     try {
       console.log("[Camera] Taking picture for button...");
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
         return;
@@ -140,7 +144,7 @@ const CameraScreen: React.FC = () => {
 
       // Armazena a foto
       setCapturedPhoto(photo);
-      
+
       // Pergunta ao usuário via voz
       falar("O que você deseja saber sobre a foto?", () => {
         // Após terminar de falar, inicia o reconhecimento
@@ -157,7 +161,7 @@ const CameraScreen: React.FC = () => {
     try {
       setIsListeningForQuestion(true);
       setRecognizedQuestion("");
-      
+
       const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!result.granted) {
         Alert.alert("Permissão negada", "Precisamos de permissão para usar o microfone.");
@@ -175,7 +179,7 @@ const CameraScreen: React.FC = () => {
         addsPunctuation: false,
         contextualStrings: [],
       });
-      
+
       console.log("[Speech] Started listening for question");
     } catch (error) {
       console.error("[Speech] Error starting recognition:", error);
@@ -189,8 +193,9 @@ const CameraScreen: React.FC = () => {
   const uploadPhotoWithQuestion = async (photo: Photo, question: string): Promise<void> => {
     try {
       console.log(`[Upload] Uploading photo with question: "${question}"`);
-      
+
       const formData = createFormData(photo, question);
+
       const response = await fetch(SERVER_URL, {
         method: "POST",
         body: formData,
@@ -203,8 +208,9 @@ const CameraScreen: React.FC = () => {
 
       const arrayBuffer = await response.arrayBuffer();
       await processAudioResponse(arrayBuffer);
+
       console.log("[Upload] Upload completed successfully");
-      
+
       // Limpa os estados
       setCapturedPhoto(null);
       setRecognizedQuestion("");
@@ -232,7 +238,7 @@ const CameraScreen: React.FC = () => {
       // Chama a função para tirar a foto com o texto que veio do comando de voz
       takePictureAndUpload(pendingSpokenText);
       // Limpa o comando pendente para garantir que não seja executado novamente
-      clearPending(); 
+      clearPending();
     }
   }, [isFocused, pendingSpokenText]);
 
@@ -251,26 +257,29 @@ const CameraScreen: React.FC = () => {
         console.error("Erro ao configurar o modo de áudio: ", error);
       }
     };
+
     configureAudioMode();
   }, []);
 
   useEffect(() => {
     if (audioSource) {
       const newPlayer = createAudioPlayer(audioSource);
+
       if (Platform.OS === "android") {
         newPlayer.shouldCorrectPitch = true;
         newPlayer.setPlaybackRate(1.3);
       } else {
         newPlayer.setPlaybackRate(1.3, "high");
       }
+
       setPlayer(newPlayer);
-      
+
       // Registra o player no contexto de voz para permitir interrupção
       registerAudioPlayer(newPlayer);
-      
       newPlayer.play();
+
       console.log("[Audio] Playing audio response");
-      
+
       return () => {
         // Remove o registro do player e libera recursos
         unregisterAudioPlayer();
@@ -282,7 +291,7 @@ const CameraScreen: React.FC = () => {
   // ---------------- Camera & upload ----------------
   const createFormData = (photo: Photo, prompt: string): FormData => {
     const formData = new FormData();
-    
+
     // 1. Adiciona a imagem
     formData.append("file", {
       uri: photo.uri,
@@ -303,8 +312,10 @@ const CameraScreen: React.FC = () => {
         `temp-audio-${Date.now()}.mp3`
       );
       tempFile.create();
+
       const uint8Array = new Uint8Array(arrayBuffer);
       await tempFile.write(uint8Array);
+
       setAudioSource({ uri: tempFile.uri });
       console.log("[Audio] Processed audio response");
     } catch (error) {
@@ -314,6 +325,7 @@ const CameraScreen: React.FC = () => {
 
   // ---------------- UI ----------------
   if (!permission) return <View />;
+
   if (!permission.granted) {
     return (
       <View
@@ -341,7 +353,6 @@ const CameraScreen: React.FC = () => {
       {isFocused && (
         <>
           <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} />
-
           {/* Camera Button */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity

@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { Alert } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useNavigationState, useIsFocused } from '@react-navigation/native';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from './ThemeContext';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
@@ -9,8 +9,7 @@ import {
   useSpeechRecognitionEvent,
   ExpoSpeechRecognitionResultEvent,
 } from 'expo-speech-recognition';
-import { useAudioPlayer, AudioModule, type AudioSource } from "expo-audio";
-import { Asset } from "expo-asset";
+import { AudioModule } from "expo-audio";
 import * as Speech from 'expo-speech';
 
 type ActionCallback = (spokenText: string) => void;
@@ -31,6 +30,7 @@ interface VoiceContextProps {
 const VoiceCommandContext = createContext<VoiceContextProps | undefined>(undefined);
 
 export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const state = useNavigationState(state => state);
   const router = useRouter();
   const pathname = usePathname();
   const isFocused = useIsFocused();
@@ -54,6 +54,14 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastErrorTimeRef = useRef(0);
   const isStoppingRef = useRef(false);
   const lastProcessedTranscript = useRef<string>('');
+  
+  // 🔑 NOVO: Único ref para evitar processamento/navegação duplicada
+  const isBusyRef = useRef(false);
+  const lastProcessedCommandRef = useRef<string>('');
+  const lastProcessedTimeRef = useRef(0);
+
+  // 🔑 NOVO: Proteção contra eventos isFinal duplicados
+  const recentFinalTranscriptsRef = useRef<{ text: string; timestamp: number }[]>([]);
 
   // Ref para controlar o player de áudio atual
   const currentAudioPlayerRef = useRef<any>(null);
@@ -61,15 +69,21 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const lastSpokenTextRef = useRef<string>('');
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Função para falar texto usando TTS (usando ref para evitar recriação)
+  // Novos refs para proteções adicionais
+  const lastNavigationRef = useRef<{ route: string; timestamp: number } | null>(null);
+  const lastExecutedIntentRef = useRef<{ intent: string; timestamp: number } | null>(null);
+  const processTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Tipo para caminhos válidos
+  type AppPath = '/tabs' | '/tabs/historico' | '/tabs/configuracoes' | '/tabs/editarPerfil' | '/login';
+
+  // Função para falar texto usando TTS
   const speakRef = useRef((text: string) => {
-    // Cancela qualquer fala pendente
     if (speakTimeoutRef.current) {
       clearTimeout(speakTimeoutRef.current);
       speakTimeoutRef.current = null;
     }
 
-    // Evita falar o mesmo texto duas vezes seguidas
     if (text === lastSpokenTextRef.current && isSpeakingRef.current) {
       console.log('[Voice] Skipping duplicate TTS (already speaking):', text);
       return;
@@ -77,9 +91,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     lastSpokenTextRef.current = text;
     
-    // Pequeno delay para evitar chamadas duplicadas
     speakTimeoutRef.current = setTimeout(() => {
-      // Para qualquer fala em andamento
       Speech.stop();
       isSpeakingRef.current = true;
 
@@ -103,19 +115,16 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     speakRef.current(text);
   }, []);
 
-  // Função para registrar o player de áudio atual
   const registerAudioPlayer = useCallback((player: any) => {
     currentAudioPlayerRef.current = player;
     console.log('[Voice] Audio player registered for interruption control');
   }, []);
 
-  // Função para desregistrar o player de áudio
   const unregisterAudioPlayer = useCallback(() => {
     currentAudioPlayerRef.current = null;
     console.log('[Voice] Audio player unregistered');
   }, []);
 
-  // Função para interromper o áudio em reprodução
   const stopCurrentAudio = useCallback(() => {
     if (currentAudioPlayerRef.current) {
       try {
@@ -127,10 +136,8 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, []);
 
-  // Função melhorada para parar escuta
   const stopListening = useCallback(() => {
     if (isStoppingRef.current) return;
-    
     isStoppingRef.current = true;
     
     if (restartTimeoutRef.current) {
@@ -152,7 +159,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, []);
 
-  // Função melhorada para iniciar escuta
   const startListening = useCallback(async () => {
     if (isStartingRef.current || isListeningRef.current || !speechPermissionGranted || !isFocused) {
       isStartingRef.current = false;
@@ -180,6 +186,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       console.log('[Voice] Recognition started successfully');
       errorCountRef.current = 0;
       lastProcessedTranscript.current = '';
+      recentFinalTranscriptsRef.current = []; // Reset duplicates on start
       
     } catch (error) {
       console.error('[Voice] Error starting recognition:', error);
@@ -194,43 +201,71 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [speechPermissionGranted, isFocused]);
 
-  // Função para executar as intenções
+  // Função auxiliar para navegação com lock
+  const checkAndNavigate = useCallback((targetPath: AppPath, alreadyMessage: string) => {
+    const now = Date.now();
+    if (lastNavigationRef.current?.route === targetPath && now - lastNavigationRef.current.timestamp < 5000) {
+      console.log(`[Voice] Skipping duplicate navigation to ${targetPath}`);
+      speak(alreadyMessage);
+      isBusyRef.current = false;
+      return false;
+    }
+
+    if (pathname === targetPath) {
+      speak(alreadyMessage);
+      isBusyRef.current = false;
+      return false;
+    }
+
+    router.push(targetPath);
+    lastNavigationRef.current = { route: targetPath, timestamp: now };
+    console.log(`[Voice] Navigated to ${targetPath}`);
+    return true;
+  }, [pathname, router, speak]);
+
+  // ✅ Função de execução com proteção unificada
   const executeIntent = useCallback((intent: string, originalText: string) => {
+    const now = Date.now();
+    if (lastExecutedIntentRef.current?.intent === intent && now - lastExecutedIntentRef.current.timestamp < 5000) {
+      console.log(`[Intent] Skipping duplicate execution of ${intent}`);
+      speak("Comando já executado recentemente.");
+      isBusyRef.current = false;
+      return;
+    }
+    lastExecutedIntentRef.current = { intent, timestamp: now };
     console.log(`[Intent] Executing: ${intent}`);
+    
     switch (intent) {
       case 'tirar_foto':
-        speak("Preparando para tirar foto...");
         setPendingSpokenText(originalText);
-        if (pathname !== '/tabs') {
-          router.push('/tabs');
-        }
+        const navigatedFoto = checkAndNavigate('/tabs', "Você já está na câmera.");
+        if (!navigatedFoto) return;
         break;
       case 'abrir_camera':
         clearPending();
-        speak("Abrindo a câmera...");
-        if (pathname !== '/tabs') {
-          router.push('/tabs');
-        }
+        const navigatedCamera = checkAndNavigate('/tabs', "Você já está na câmera.");
+        if (!navigatedCamera) return;
         break;
       case 'ir_para_historico':
-        speak("Indo para o Histórico...");
-        router.push('/tabs/historico');
+        const navigatedHistorico = checkAndNavigate('/tabs/historico', "Você já está no histórico.");
+        if (!navigatedHistorico) return;
         break;
       case 'ir_para_configuracoes':
-        speak("Abrindo as Configurações...");
-        router.push('/tabs/configuracoes');
+        const navigatedConfig = checkAndNavigate('/tabs/configuracoes', "Você já está nas configurações.");
+        if (!navigatedConfig) return;
         break;
       case 'ir_para_editar_perfil':
-        speak("Abrindo a página para Editar Perfil...");
-        router.push('/tabs/editarPerfil');
+        const navigatedPerfil = checkAndNavigate('/tabs/editarPerfil', "Você já está editando o perfil.");
+        if (!navigatedPerfil) return;
         break;
       case 'ir_para_login':
-        speak("Indo para a tela de login...");
-        router.push('/login');
+        const navigatedLogin = checkAndNavigate('/login', "Você já está na tela de login.");
+        if (!navigatedLogin) return;
         break;
       case 'fazer_logout':
         speak("Encerrando a sessão...");
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       case 'mudar_tema_claro':
         if (temaAplicado === 'dark') {
           setTheme('light');
@@ -238,7 +273,8 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } else {
           speak("O tema já está claro!");
         }
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       case 'mudar_tema_escuro':
         if (temaAplicado === 'light') {
           setTheme('dark');
@@ -246,29 +282,35 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } else {
           speak("O tema já está escuro!");
         }
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       case 'tutorial':
         speak("Mostrando o tutorial...");
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       case 'explicar_tela':
         speak("Explicando os elementos da tela...");
-        break;
-      case 'cadastro':
-        speak("Indo para a tela de cadastro...");
-        break;
-      case 'recuperar_senha':
-        speak("Indo para a recuperação de senha...");
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       case 'excluir_conta':
         speak("Iniciando exclusão de conta...");
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
       default:
         speak("Comando não reconhecido.");
-        break;
+        setTimeout(() => { isBusyRef.current = false; }, 1000);
+        return;
     }
-  }, [temaAplicado, router, pathname, setTheme]);
 
-  // Função para obter nome amigável da intenção
+    // Para todos os casos que NAVEGAM: reinicia escuta após delay
+    setTimeout(() => {
+      setVoiceState("waiting_wake");
+      setRecognizedText("");
+      startListening();
+      isBusyRef.current = false;
+    }, 3000);
+  }, [temaAplicado, router, pathname, setTheme, speak, startListening, checkAndNavigate]);
+
   const getIntentDisplayName = (intent: string): string => {
     const intentNames: { [key: string]: string } = {
       'tirar_foto': 'tirar uma foto',
@@ -289,7 +331,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return intentNames[intent] || intent;
   };
 
-  // Função para lidar com respostas de confirmação
   const handleConfirmationResponse = useCallback((spokenText: string) => {
     const normalizedText = spokenText.toLowerCase().trim();
     
@@ -322,12 +363,13 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setVoiceState("waiting_wake");
         setRecognizedText("");
         startListening();
+        isBusyRef.current = false;
       }, 2500);
       
     } else {
-      // Se não reconheceu sim nem não, repete a pergunta
       const displayName = getIntentDisplayName(pendingIntent);
       speak(`Não entendi. Você quer ${displayName}? Diga sim ou não`);
+      // Mantém isBusyRef como true até resposta válida
     }
   }, [pendingIntent, pendingOriginalText, executeIntent, stopListening, startListening, speak]);
 
@@ -349,91 +391,114 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const processVoiceInput = useCallback((spokenText: string) => {
-    if (!spokenText.trim() || spokenText === lastProcessedTranscript.current) {
-      return;
+    if (processTimeoutRef.current) {
+      clearTimeout(processTimeoutRef.current);
     }
-    lastProcessedTranscript.current = spokenText;
-
-    try {
-      if (voiceState === "waiting_wake") {
-        if (spokenText.toLowerCase().includes("escuta")) {
-          stopCurrentAudio();
-          stopListening();
-          setVoiceState("listening_command");
-          speak("Escutando...");
-          setRecognizedText("");
-          setTimeout(startListening, 1500); // Aumentado para 1.5s para dar tempo de falar
-        } else if (
-          spokenText.toLowerCase().includes("pare") ||
-          spokenText.toLowerCase().includes("parar") ||
-          spokenText.toLowerCase().includes("cala a boca") ||
-          spokenText.toLowerCase().includes("chega") ||
-          spokenText.toLowerCase().includes("já deu") ||
-          spokenText.toLowerCase().includes("para")) {
-          stopCurrentAudio();
-          stopListening();
-        }
-        
-      } else if (voiceState === "listening_command") {
-        const prediction = IntentClassifierService.predictWithConfidence(spokenText);
-        const confidencePercent = (prediction.confidence * 100).toFixed(0);
-        
-        console.log(`[Intent] "${spokenText}" -> ${prediction.intent} (${confidencePercent}%) - notUnderstood: ${prediction.notUnderstood}, needsConfirmation: ${prediction.needsConfirmation}`);
-        setRecognizedText(spokenText);
-
-        stopListening();
-
-        // Verifica se não entendeu (confiança < 55%)
-        if (prediction.notUnderstood) {
-          speak("Desculpe, não entendi.");
-          
-          setTimeout(() => {
-            setVoiceState("waiting_wake");
-            setRecognizedText("");
-            startListening();
-          }, 2500);
-          
-        } else if (prediction.needsConfirmation) {
-          // Confiança entre 55% e 70% - pede confirmação
-          const displayName = getIntentDisplayName(prediction.intent);
-          const confirmQuestion = `Você quer ${displayName}? Diga sim ou não`;
-          
-          setPendingIntent(prediction.intent);
-          setPendingOriginalText(spokenText);
-          setVoiceState("waiting_confirmation");
-          
-          speak(confirmQuestion);
-          
-          setTimeout(() => {
-            startListening();
-          }, 2000);
-          
-        } else {
-          // Confiança > 70% - executa direto
-          speak(`Entendi! (${confidencePercent}%)`);
-          executeIntent(prediction.intent, spokenText);
-          
-          setTimeout(() => {
-            setVoiceState("waiting_wake");
-            setRecognizedText("");
-            startListening();
-          }, 3500);
-        }
-        
-      } else if (voiceState === "waiting_confirmation") {
-        handleConfirmationResponse(spokenText);
+    processTimeoutRef.current = setTimeout(() => {
+      processTimeoutRef.current = null;
+      const now = Date.now();
+      
+      if (!spokenText.trim()) return;
+      
+      // 🔒 Proteção extra: ignora se for duplicata exata recente
+      if (spokenText === lastProcessedCommandRef.current && (now - lastProcessedTimeRef.current < 2000)) {
+        console.log('[Voice] Blocked near-duplicate in processVoiceInput:', spokenText);
+        return;
       }
-    } catch (error) {
-      console.error('[Voice] Error processing input:', error);
-      speak("Erro ao processar comando. Tente novamente.");
-      stopListening();
-      setTimeout(() => {
-        setVoiceState("waiting_wake");
-        setRecognizedText("");
-        startListening();
-      }, 2000);
-    }
-  }, [voiceState, executeIntent, handleConfirmationResponse, stopListening, startListening, stopCurrentAudio, speak, pendingIntent]);
+
+      // 🔒 Proteção central: não processa se estiver ocupado
+      if (isBusyRef.current) {
+        console.log('[Voice] Busy, skipping command:', spokenText);
+        return;
+      }
+
+      // Atualiza rastreamento de último comando
+      lastProcessedCommandRef.current = spokenText;
+      lastProcessedTimeRef.current = now;
+
+      // Marca como ocupado
+      isBusyRef.current = true;
+
+      try {
+        if (voiceState === "waiting_wake") {
+          if (spokenText.toLowerCase().includes("escuta")) {
+            stopCurrentAudio();
+            stopListening();
+            setVoiceState("listening_command");
+            speak("Escutando...");
+            setRecognizedText("");
+            setTimeout(() => {
+              startListening();
+              isBusyRef.current = false;
+            }, 1500);
+          } else if (
+            spokenText.toLowerCase().includes("pare") ||
+            spokenText.toLowerCase().includes("parar") ||
+            spokenText.toLowerCase().includes("cala a boca") ||
+            spokenText.toLowerCase().includes("chega") ||
+            spokenText.toLowerCase().includes("já deu") ||
+            spokenText.toLowerCase().includes("para")
+          ) {
+            stopCurrentAudio();
+            stopListening();
+            isBusyRef.current = false;
+          } else {
+            isBusyRef.current = false;
+          }
+          
+        } else if (voiceState === "listening_command") {
+          const prediction = IntentClassifierService.predictWithConfidence(spokenText);
+          const confidencePercent = (prediction.confidence * 100).toFixed(0);
+          
+          console.log(`[Intent] "${spokenText}" -> ${prediction.intent} (${confidencePercent}%) - notUnderstood: ${prediction.notUnderstood}, needsConfirmation: ${prediction.needsConfirmation}`);
+          setRecognizedText(spokenText);
+
+          stopListening();
+
+          if (prediction.notUnderstood) {
+            speak("Desculpe, não entendi.");
+            setTimeout(() => {
+              setVoiceState("waiting_wake");
+              setRecognizedText("");
+              startListening();
+              isBusyRef.current = false;
+            }, 2500);
+          } else if (prediction.needsConfirmation) {
+            const displayName = getIntentDisplayName(prediction.intent);
+            const confirmQuestion = `Você quer ${displayName}? Diga sim ou não`;
+            
+            setPendingIntent(prediction.intent);
+            setPendingOriginalText(spokenText);
+            setVoiceState("waiting_confirmation");
+            
+            speak(confirmQuestion);
+            
+            setTimeout(() => {
+              startListening();
+              // isBusyRef permanece true até resposta
+            }, 2000);
+          } else {
+            executeIntent(prediction.intent, spokenText);
+            // isBusyRef será liberado dentro de executeIntent
+          }
+          
+        } else if (voiceState === "waiting_confirmation") {
+          handleConfirmationResponse(spokenText);
+          // isBusyRef é gerenciado dentro de handleConfirmationResponse
+        }
+      } catch (error) {
+        console.error('[Voice] Error processing input:', error);
+        speak("Erro ao processar comando. Tente novamente.");
+        stopListening();
+        setTimeout(() => {
+          setVoiceState("waiting_wake");
+          setRecognizedText("");
+          startListening();
+          isBusyRef.current = false;
+        }, 2000);
+      }
+    }, 500); // Debounce reduzido para melhor responsividade
+  }, [voiceState, executeIntent, handleConfirmationResponse, stopListening, startListening, stopCurrentAudio, speak]);
 
   const requestSpeechPermissions = useCallback(async () => {
     try {
@@ -456,11 +521,12 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [requestSpeechPermissions]);
 
   useEffect(() => {
-    if (isFocused && speechPermissionGranted) {
+    if (isFocused && speechPermissionGranted && !isBusyRef.current) {
       const timer = setTimeout(startListening, 2500);
       return () => clearTimeout(timer);
     } else {
       stopListening();
+      isBusyRef.current = false; // Libera ao sair da tela
     }
   }, [isFocused, speechPermissionGranted, startListening, stopListening]);
 
@@ -468,12 +534,9 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       stopListening();
       Speech.stop();
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
-      }
-      if (speakTimeoutRef.current) {
-        clearTimeout(speakTimeoutRef.current);
-      }
+      if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+      if (speakTimeoutRef.current) clearTimeout(speakTimeoutRef.current);
+      if (processTimeoutRef.current) clearTimeout(processTimeoutRef.current);
     };
   }, [stopListening]);
 
@@ -491,11 +554,12 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     isStartingRef.current = false;
 
     if (isFocused && speechPermissionGranted && !isStoppingRef.current) {
-      const delay = errorCountRef.current > 0 ? Math.min(errorCountRef.current * 300, 2000) : 1500;
+      const delay = errorCountRef.current > 0 ? Math.min(errorCountRef.current * 300, 2000) : 250;
       restartTimeoutRef.current = setTimeout(startListening, delay);
     }
   });
 
+  // ✅ CORREÇÃO PRINCIPAL: Filtrar duplicatas de isFinal aqui
   useSpeechRecognitionEvent("result", (event: ExpoSpeechRecognitionResultEvent) => {
     try {
       if (event.results && event.results.length > 0) {
@@ -503,8 +567,32 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setRecognizedText(transcript);
         
         if (event.isFinal && transcript.trim()) {
-          console.log('[Voice] Final result:', transcript);
-          processVoiceInput(transcript.trim().toLowerCase());
+          const cleanTranscript = transcript.trim().toLowerCase().replace(/[.,!?]/g, '');
+          const now = Date.now();
+
+          // Limpa comandos antigos (>5s)
+          recentFinalTranscriptsRef.current = recentFinalTranscriptsRef.current.filter(
+            item => now - item.timestamp < 5000
+          );
+
+          // Verifica se já processamos esse exato comando recentemente
+          const isDuplicate = recentFinalTranscriptsRef.current.some(
+            item => item.text === cleanTranscript
+          );
+
+          if (isDuplicate) {
+            console.log('[Voice] Ignoring duplicate final result:', cleanTranscript);
+            return;
+          }
+
+          // Registra o comando como processado
+          recentFinalTranscriptsRef.current.push({
+            text: cleanTranscript,
+            timestamp: now
+          });
+
+          console.log('[Voice] Final result (accepted):', cleanTranscript);
+          processVoiceInput(transcript);
         }
       }
     } catch (error) {
@@ -526,19 +614,11 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     errorCountRef.current++;
 
     let restartDelay = 250;
-    
     switch (error.error) {
-      case "no-speech":
-        restartDelay = 200;
-        break;
-      case "client":
-        restartDelay = Math.min(errorCountRef.current * 500, 2000);
-        break;
-      case "network":
-        restartDelay = 1500;
-        break;
-      default:
-        restartDelay = Math.min(errorCountRef.current * 300, 1500);
+      case "no-speech": restartDelay = 200; break;
+      case "client": restartDelay = Math.min(errorCountRef.current * 500, 2000); break;
+      case "network": restartDelay = 1500; break;
+      default: restartDelay = Math.min(errorCountRef.current * 300, 1500);
     }
 
     if (isFocused && speechPermissionGranted) {

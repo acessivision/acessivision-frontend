@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, findNodeHandle, AccessibilityInfo } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../components/ThemeContext';
+import { usePathname, useRouter } from 'expo-router';
 
 interface CustomHeaderProps {
   title: string;
@@ -13,21 +14,26 @@ interface CustomHeaderProps {
 export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
   const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
-  const titleRef = useRef<Text>(null);
+  const pathname = usePathname();
+  const router = useRouter();
 
-  // Define o foco no título quando o componente montar
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (titleRef.current) {
-        const reactTag = findNodeHandle(titleRef.current);
-        if (reactTag) {
-          AccessibilityInfo.setAccessibilityFocus(reactTag);
-        }
-      }
-    }, 100); // Pequeno delay para garantir que o componente está montado
+  // 🔥 Mapeia tutoriais por rota
+  const tutoriais: Record<string, string> = {
+    '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
+    '/tabs/configuracoes': 'Aqui você pode ajustar as preferências do aplicativo, como tema e voz.',
+    '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações pessoais.',
+    '/login': 'Diga entrar com google para usar seu gmail salvo no celular ou diga email para preencher o campo de email e depois senha para preencher o campo de senha. Quando estiverem preenchidos diga entrar.',
+    '/tabs': 'Para enviar uma foto, diga "Escute" e faça uma pergunta. Ou clique no botão Tirar Foto e faça uma pergunta',
+  };
 
-    return () => clearTimeout(timer);
-  }, [title]); // Re-executa quando o título mudar
+  const handleAbrirTutorial = () => {
+    const texto = tutoriais[pathname] || 'Este é o aplicativo. Use os botões ou comandos de voz para navegar.';
+    // Aqui você pode abrir um modal, ou falar o texto via TTS
+    // Exemplo com expo-speech:
+    import('expo-speech').then(Speech => {
+      Speech.speak(texto, { language: 'pt-BR' });
+    });
+  };
 
   const styles = StyleSheet.create({
     header: {
@@ -50,7 +56,7 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
       fontSize: getFontSize('xxlarge'),
       fontWeight: '600',
       color: cores.texto,
-      marginHorizontal: 8, 
+      marginHorizontal: 8,
     },
     iconButton: {
       width: 40,
@@ -61,14 +67,8 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
   });
 
   return (
-    <View 
-      style={styles.header}
-      accessible={false}
-    >
-      <View 
-        style={[styles.sideContainer, { justifyContent: 'flex-start' }]}
-        accessible={false}
-      >
+    <View style={styles.header} accessible={false}>
+      <View style={[styles.sideContainer, { justifyContent: 'flex-start' }]} accessible={false}>
         <TouchableOpacity
           onPress={mudaTema}
           style={styles.iconButton}
@@ -76,13 +76,16 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
           accessibilityHint={`Tema atual: ${temaAplicado === 'dark' ? 'escuro' : 'claro'}`}
           accessibilityRole="button"
         >
-          <Ionicons name={temaAplicado === 'dark' ? 'moon-outline' : 'sunny-outline'} size={getIconSize('large')} color={cores.icone} />
+          <Ionicons
+            name={temaAplicado === 'dark' ? 'moon-outline' : 'sunny-outline'}
+            size={getIconSize('large')}
+            color={cores.icone}
+          />
         </TouchableOpacity>
       </View>
 
-      <Text 
-        ref={titleRef}
-        style={styles.title} 
+      <Text
+        style={styles.title}
         accessible={true}
         accessibilityRole="header"
         accessibilityLabel={`Página: ${title}`}
@@ -90,15 +93,12 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
         {title}
       </Text>
 
-      <View 
-        style={[styles.sideContainer, { justifyContent: 'flex-end' }]}
-        accessible={false}
-      >
+      <View style={[styles.sideContainer, { justifyContent: 'flex-end' }]} accessible={false}>
         <TouchableOpacity
-          onPress={() => {}}
+          onPress={handleAbrirTutorial}
           style={styles.iconButton}
           accessibilityLabel="Tutorial"
-          accessibilityHint="Abre o tutorial de ajuda"
+          accessibilityHint="Abre o tutorial de ajuda para esta tela"
           accessibilityRole="button"
         >
           <Ionicons name="help-circle-outline" size={getIconSize('large')} color={cores.icone} />
