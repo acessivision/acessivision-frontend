@@ -14,14 +14,17 @@ export function VoicePageAnnouncer() {
       case '/tabs/historico':
         pageName = 'Histórico';
         break;
-      case '/tabs/configuracoes':
-        pageName = 'Configurações';
+      case '/tabs/menu':
+        pageName = 'Mehnu';
         break;
       case '/tabs/editarPerfil':
         pageName = 'Editar perfil';
         break;
       case '/login':
         pageName = 'Login';
+        break;
+      case '/cadastro':
+        pageName = 'Cadastro'
         break;
       default:
         pageName = 'Aplicativo';

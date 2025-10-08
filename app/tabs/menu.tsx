@@ -15,15 +15,6 @@ export default function ConfigScreen() {
   const router = useRouter();
   const { theme, cores, getFontSize, getIconSize } = useTheme();
 
-  const handleGoBack = () => {
-    console.log('Can go back:', router.canGoBack());
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/tabs');
-    }
-  };
-
   const handleFazerLogin = () => {
     router.push('/login');
   };
@@ -145,33 +136,6 @@ export default function ConfigScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={handleGoBack}>
-          <View style={styles.backIcon}>
-            <Ionicons
-              name="arrow-back"
-              size={getIconSize('medium')}
-              color={cores.icone}
-            />
-          </View>
-          <Text style={styles.headerTitle}>Voltar</Text>
-        </TouchableOpacity>
-        
-        {/* NOVO: Ícone de login no header */}
-        <TouchableOpacity 
-          style={styles.loginIconButton} 
-          onPress={handleFazerLogin}
-          accessibilityLabel="Fazer Login"
-          accessibilityRole="button"
-        >
-          <Ionicons
-            name="log-in-outline"
-            size={getIconSize('medium')}
-            color={cores.icone}
-          />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView style={styles.content}>
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Conta</Text>
@@ -242,25 +206,6 @@ export default function ConfigScreen() {
                 />
               </View>
               <Text style={styles.optionText}>Sobre</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Armazenamento</Text>
-          <View style={styles.optionContainer}>
-            <TouchableOpacity
-              style={[styles.option, styles.lastOption]}
-              onPress={handleFreeSpace}
-            >
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="trash-outline"
-                  size={getIconSize('small')}
-                  color={cores.icone}
-                />
-              </View>
-              <Text style={styles.optionText}>Liberar Espaço</Text>
             </TouchableOpacity>
           </View>
         </View>

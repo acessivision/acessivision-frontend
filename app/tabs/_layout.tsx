@@ -1,8 +1,8 @@
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 function LayoutWithVoiceUI() {
   const pathname = usePathname();
@@ -17,17 +17,17 @@ function LayoutWithVoiceUI() {
         return 'Câmera';
       case '/tabs/historico':
         return 'Histórico';
-      case '/tabs/configuracoes':
-        return 'Configurações';
-      case '/tabs/configuracoes/editarPerfil':
+      case '/tabs/menu':
+        return 'Menu';
+      case '/tabs/editarPerfil':
         return 'Editar Perfil';
       default:
         return 'App';
     }
   };
 
-  const handleSettingsPress = () => {
-    router.push('/tabs/configuracoes');
+  const abreLogin = () => {
+    router.push('/login');
   };
 
   return (
@@ -35,7 +35,7 @@ function LayoutWithVoiceUI() {
       <CustomHeader
         title={getTitle()}
         mudaTema={mudaTema}
-        abreConfiguracoes={handleSettingsPress}
+        abreLogin={abreLogin}
       />
       
       <Tabs
@@ -68,7 +68,7 @@ function LayoutWithVoiceUI() {
             title: 'Câmera',
             tabBarAccessibilityLabel: 'Câmera',
             tabBarIcon: ({ color }) => (
-              <Ionicons name="camera" color={color} size={getIconSize('xlarge')} />
+              <MaterialCommunityIcons name="camera" color={color} size={getIconSize('xlarge')} />
             ),
           }}
         />
@@ -78,14 +78,18 @@ function LayoutWithVoiceUI() {
             title: 'Histórico',
             tabBarAccessibilityLabel: 'Histórico',
             tabBarIcon: ({ color }) => (
-              <Ionicons name="list" color={color} size={getIconSize('xlarge')} />
+              <MaterialCommunityIcons name="history" color={color} size={getIconSize('xlarge')} />
             ),
           }}
         />
         <Tabs.Screen
-          name="configuracoes"
+          name="menu"
           options={{
-            href: null,
+            title: 'Menu',
+            tabBarAccessibilityLabel: 'Menu',
+            tabBarIcon: ({ color }) => (
+              <MaterialCommunityIcons name="menu" color={color} size={getIconSize('xlarge')} />
+            ),
           }}
         />
         <Tabs.Screen

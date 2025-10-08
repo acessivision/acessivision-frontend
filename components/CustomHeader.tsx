@@ -1,35 +1,33 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, findNodeHandle, AccessibilityInfo } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../components/ThemeContext';
-import { usePathname, useRouter } from 'expo-router';
+import { usePathname } from 'expo-router';
 
 interface CustomHeaderProps {
   title: string;
   mudaTema?: () => void;
-  abreConfiguracoes?: () => void;
+  abreLogin?: () => void;
 }
 
-export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: CustomHeaderProps) {
+export default function CustomHeader({ title, mudaTema, abreLogin }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
   const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
   const pathname = usePathname();
-  const router = useRouter();
 
   // 🔥 Mapeia tutoriais por rota
   const tutoriais: Record<string, string> = {
     '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
-    '/tabs/configuracoes': 'Aqui você pode ajustar as preferências do aplicativo, como tema e voz.',
+    '/tabs/menu': 'Aqui você pode ajustar as preferências do aplicativo, como tema e voz.',
     '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações pessoais.',
     '/login': 'Diga entrar com google para usar seu gmail salvo no celular ou diga email para preencher o campo de email e depois senha para preencher o campo de senha. Quando estiverem preenchidos diga entrar.',
-    '/tabs': 'Para enviar uma foto, diga "Escute" e faça uma pergunta. Ou clique no botão Tirar Foto e faça uma pergunta',
+    '/tabs': 'Para enviar uma foto, diga "Escuta" e faça uma pergunta. Ou clique no botão Tirar Foto e faça uma pergunta',
   };
 
   const handleAbrirTutorial = () => {
     const texto = tutoriais[pathname] || 'Este é o aplicativo. Use os botões ou comandos de voz para navegar.';
-    // Aqui você pode abrir um modal, ou falar o texto via TTS
-    // Exemplo com expo-speech:
     import('expo-speech').then(Speech => {
       Speech.speak(texto, { language: 'pt-BR' });
     });
@@ -50,6 +48,12 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
     sideContainer: {
       width: 80,
       flexDirection: 'row',
+    },
+    titleContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     title: {
       textAlign: 'center',
@@ -83,35 +87,34 @@ export default function CustomHeader({ title, mudaTema, abreConfiguracoes }: Cus
           />
         </TouchableOpacity>
       </View>
-
-      <Text
-        style={styles.title}
-        accessible={true}
-        accessibilityRole="header"
-        accessibilityLabel={`Página: ${title}`}
-      >
-        {title}
-      </Text>
-
-      <View style={[styles.sideContainer, { justifyContent: 'flex-end' }]} accessible={false}>
-        <TouchableOpacity
+      <View style={styles.titleContainer}><View style={styles.iconButton} /><Text
+          style={styles.title}
+          accessible={true}
+          accessibilityRole="header"
+          accessibilityLabel={`Página: ${title}`}
+        >
+          {title}
+        </Text><TouchableOpacity
           onPress={handleAbrirTutorial}
           style={styles.iconButton}
           accessibilityLabel="Tutorial"
           accessibilityHint="Abre o tutorial de ajuda para esta tela"
           accessibilityRole="button"
         >
-          <Ionicons name="help-circle-outline" size={getIconSize('large')} color={cores.icone} />
-        </TouchableOpacity>
-
+          <MaterialCommunityIcons name="help-circle-outline" color={cores.icone} size={getIconSize('large')} />
+        </TouchableOpacity></View>
+      <View style={[styles.sideContainer, { justifyContent: 'flex-end' }]} accessible={false}>
         <TouchableOpacity
-          onPress={abreConfiguracoes}
+          onPress={abreLogin}
           style={styles.iconButton}
-          accessibilityLabel="Configurações"
-          accessibilityHint="Abre as configurações do aplicativo"
+          accessibilityLabel="Cadastro"
           accessibilityRole="button"
         >
-          <Ionicons name="settings-outline" size={getIconSize('large')} color={cores.icone} />
+          <Ionicons 
+            name="person" 
+            size={getIconSize('large')} 
+            color={cores.icone} 
+          />
         </TouchableOpacity>
       </View>
     </View>

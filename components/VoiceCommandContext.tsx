@@ -75,7 +75,16 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const processTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Tipo para caminhos válidos
-  type AppPath = '/tabs' | '/tabs/historico' | '/tabs/configuracoes' | '/tabs/editarPerfil' | '/login';
+  type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/tabs/editarPerfil' | '/login';
+
+  // 🔥 Mapeia tutoriais por rota
+  const tutoriais: Record<string, string> = {
+    '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
+    '/tabs/menu': 'Aqui você pode ver as páginas do aplicativo e ações',
+    '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações pessoais.',
+    '/login': 'Diga entrar com google para usar seu gmail salvo no celular ou diga email para preencher o campo de email e depois senha para preencher o campo de senha. Quando estiverem preenchidos diga entrar.',
+    '/tabs': 'Para enviar uma foto, diga "Escute" e faça uma pergunta. Ou clique no botão Tirar Foto e faça uma pergunta',
+  };
 
   // Função para falar texto usando TTS
   const speakRef = useRef((text: string) => {
@@ -250,8 +259,8 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const navigatedHistorico = checkAndNavigate('/tabs/historico', "Você já está no histórico.");
         if (!navigatedHistorico) return;
         break;
-      case 'ir_para_configuracoes':
-        const navigatedConfig = checkAndNavigate('/tabs/configuracoes', "Você já está nas configurações.");
+      case 'ir_para_menu':
+        const navigatedConfig = checkAndNavigate('/tabs/menu', "Você já está no menu.");
         if (!navigatedConfig) return;
         break;
       case 'ir_para_editar_perfil':
@@ -269,7 +278,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       case 'mudar_tema_claro':
         if (temaAplicado === 'dark') {
           setTheme('light');
-          speak("Tema alterado para claro!");
+          speak("Tema claro!");
         } else {
           speak("O tema já está claro!");
         }
@@ -278,7 +287,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       case 'mudar_tema_escuro':
         if (temaAplicado === 'light') {
           setTheme('dark');
-          speak("Tema alterado para escuro!");
+          speak("Tema escuro!");
         } else {
           speak("O tema já está escuro!");
         }
@@ -289,13 +298,17 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         setTimeout(() => { isBusyRef.current = false; }, 1000);
         return;
       case 'explicar_tela':
-        speak("Explicando os elementos da tela...");
+        const texto = tutoriais[pathname] || 'Este é o aplicativo. Use os botões ou comandos de voz para navegar.';
+        speak(texto);
         setTimeout(() => { isBusyRef.current = false; }, 1000);
         return;
       case 'excluir_conta':
         speak("Iniciando exclusão de conta...");
         setTimeout(() => { isBusyRef.current = false; }, 1000);
         return;
+      case 'cadastro':
+        router.push('/cadastro');
+        break;
       default:
         speak("Comando não reconhecido.");
         setTimeout(() => { isBusyRef.current = false; }, 1000);
@@ -316,7 +329,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       'tirar_foto': 'tirar uma foto',
       'abrir_camera': 'abrir a câmera',
       'ir_para_historico': 'ir para o histórico',
-      'ir_para_configuracoes': 'ir para as configurações',
+      'ir_para_menu': 'ir para o menu',
       'ir_para_editar_perfil': 'editar seu perfil',
       'ir_para_login': 'ir para a tela de login',
       'fazer_logout': 'sair da sua conta',

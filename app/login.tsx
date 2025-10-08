@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import authService from '../services/authService'
 
 export default function LoginScreen() {
@@ -384,7 +384,7 @@ export default function LoginScreen() {
           <View style={styles.createAccountContainer}>
             <Text style={styles.createAccountText}>Não tem uma conta? </Text>
             <TouchableOpacity onPress={() => router.push('/tabs/cadastro')}>
-              <Text style={styles.createAccountLink}>Criar Conta</Text>
+              <Link href='/cadastro' style={styles.createAccountLink}>Criar Conta</Link>
             </TouchableOpacity>
           </View>
         </ScrollView>

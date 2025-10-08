@@ -11,13 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../../components/ThemeContext';
+import { useTheme } from '../components/ThemeContext';
 import { useRouter } from 'expo-router';
-import authService from '../../services/authService';
+import authService from '../services/authService';
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { temaAplicado, cores, getFontSize } = useTheme();
+  const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -82,6 +82,19 @@ export default function SignUpScreen() {
   };
 
   const styles = StyleSheet.create({
+    backButton: {
+      marginRight: 16,
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    backIcon: {
+      marginRight: 16,
+    },
+    headerTitle: {
+      fontSize: getFontSize('large'),
+      fontWeight: 'bold',
+      color: cores.texto,
+    },
     container: {
       flex: 1,
       backgroundColor: cores.barrasDeNavegacao,
@@ -96,10 +109,6 @@ export default function SignUpScreen() {
       flexDirection: "row",
       alignItems: "center",
       marginBottom: 24,
-    },
-    backButton: {
-      padding: 8,
-      marginLeft: -8,
     },
     title: {
       fontSize: 32,
@@ -192,13 +201,17 @@ export default function SignUpScreen() {
           <TouchableOpacity 
             style={styles.backButton} 
             onPress={handleGoBack}
-            disabled={loading}
+            accessibilityRole='button'
+            accessibilityLabel='Voltar'
           >
-            <Ionicons 
-              name="chevron-back" 
-              size={28} 
-              color={cores.texto} 
-            />
+            <View style={styles.backIcon}>
+              <Ionicons 
+                name="arrow-back" 
+                size={getIconSize('medium')} 
+                color={cores.icone} 
+              />
+            </View>
+            <Text style={styles.headerTitle}>Voltar</Text>
           </TouchableOpacity>
         </View>
 
