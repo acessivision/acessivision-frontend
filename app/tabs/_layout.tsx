@@ -1,3 +1,4 @@
+// app/tabs/_layout
 import { Tabs, usePathname, useRouter } from 'expo-router';
 import { View } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';

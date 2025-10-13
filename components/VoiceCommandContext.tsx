@@ -259,7 +259,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const navigatedHistorico = checkAndNavigate('/tabs/historico', "Você já está no histórico.");
         if (!navigatedHistorico) return;
         break;
-      case 'ir_para_menu':
+      case 'abrir_menu':
         const navigatedConfig = checkAndNavigate('/tabs/menu', "Você já está no menu.");
         if (!navigatedConfig) return;
         break;
@@ -329,7 +329,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       'tirar_foto': 'tirar uma foto',
       'abrir_camera': 'abrir a câmera',
       'ir_para_historico': 'ir para o histórico',
-      'ir_para_menu': 'ir para o menu',
+      'abrir_menu': 'abre o menu',
       'ir_para_editar_perfil': 'editar seu perfil',
       'ir_para_login': 'ir para a tela de login',
       'fazer_logout': 'sair da sua conta',

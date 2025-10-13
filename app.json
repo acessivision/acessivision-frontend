@@ -61,7 +61,7 @@
           ]
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
     ],
     "experiments": {
       "typedRoutes": true
