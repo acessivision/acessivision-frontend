@@ -1,8 +1,12 @@
 // src/services/ml/IntentClassifierService.ts
 
-import modelAlta from './model_alta_acuracia.json';
-import modelSVM from './model_svm.json';
-import modelCustom from './model_custom.json';
+import modelAltaRaw from './model_alta_acuracia.json';
+import modelSVMRaw from './model_svm.json';
+import modelCustomRaw from './model_custom.json';
+
+const modelAlta = modelAltaRaw as ModelData;
+const modelSVM = modelSVMRaw as ModelData;
+const modelCustom = modelCustomRaw as ModelData;
 
 // === Interfaces ===
 interface VectorizerData {
@@ -17,9 +21,9 @@ interface ClassifierData {
   coefficients?: number[][]; // Logistic Regression
   intercept?: number[];
   // SVM
-  support_vectors_?: number[][];
-  dual_coef_?: number[][];
-  n_support_?: number[];
+  support_vectors_?: number[][] | null;
+  dual_coef_?: number[][] | null;
+  n_support_?: number[] | null;
 }
 
 interface ModelData {
