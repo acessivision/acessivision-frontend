@@ -15,9 +15,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
-import * as WebBrowser from 'expo-web-browser';
 import { Link, useRouter } from 'expo-router';
 import authService from '../services/authService'
+import { signInWithGoogle } from '../services/googleAuthService';
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -83,26 +83,34 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
+    setLoading(true);
     try {
-      const googleAuthUrl = 'https://accounts.google.com/oauth/authorize?' +
-        'client_id=SEU_CLIENT_ID_AQUI&' +
-        'redirect_uri=SEU_REDIRECT_URI&' +
-        'response_type=code&' +
-        'scope=openid%20email%20profile&' +
-        'state=random_state_string';
-      
-      const result = await WebBrowser.openAuthSessionAsync(
-        googleAuthUrl,
-        'SEU_REDIRECT_URI'
-      );
+      // Passo A: Tentar obter o idToken do Google
+      const googleResponse = await signInWithGoogle();
 
-      if (result.type === 'success') {
-        console.log('Autenticação bem-sucedida:', result.url);
+      if (!googleResponse.success || !googleResponse.idToken) {
+        // Se não deu certo (ex: usuário cancelou), mostra o erro e para.
+        Alert.alert('Falha no Login', googleResponse.error || 'Não foi possível autenticar com o Google.');
+        setLoading(false);
+        return;
+      }
+
+      // Passo B: Enviar o idToken para o seu backend através do authService
+      const backendResponse = await authService.loginWithGoogle(googleResponse.idToken);
+
+      if (backendResponse.success) {
+        // Passo C: Se o seu backend autenticou com sucesso, navega para a home
+        Alert.alert('Sucesso', 'Login realizado com sucesso!');
+        router.replace('/tabs'); // ou a rota principal do seu app
       } else {
-        console.log('Autenticação cancelada ou falhou');
+        // Se o backend retornou um erro
+        Alert.alert('Erro', backendResponse.message);
       }
     } catch (error) {
-      console.error('Erro na autenticação:', error);
+      console.error(error);
+      Alert.alert('Erro Crítico', 'Ocorreu um erro inesperado. Tente novamente.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -383,7 +391,7 @@ export default function LoginScreen() {
 
           <View style={styles.createAccountContainer}>
             <Text style={styles.createAccountText}>Não tem uma conta? </Text>
-            <TouchableOpacity onPress={() => router.push('/tabs/cadastro')}>
+            <TouchableOpacity onPress={() => router.push('/cadastro')}>
               <Link href='/cadastro' style={styles.createAccountLink}>Criar Conta</Link>
             </TouchableOpacity>
           </View>

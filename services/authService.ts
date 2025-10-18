@@ -72,6 +72,36 @@ class AuthService {
     }
   }
 
+  async loginWithGoogle(idToken: string): Promise<AuthResponse> {
+    try {
+      // Faz a requisição para o endpoint do backend que valida o token do Google
+      const response = await fetch(`${API_URL}/auth/google`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idToken }), // Envia o idToken para o backend
+      });
+
+      const data = await response.json();
+
+      // Se o backend validar e retornar sucesso com um token do NOSSO sistema...
+      if (data.success && data.token) {
+        // ...salvamos o token e os dados do usuário, exatamente como no login normal
+        await this.saveToken(data.token);
+        await this.saveUser(data.usuario);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Erro no login com Google via backend:', error);
+      return {
+        success: false,
+        message: 'Erro de conexão com o servidor ao tentar login com Google',
+      };
+    }
+  }
+
   // Atualizar perfil
   async updateProfile(uid: string, dados: {
     nome?: string;
