@@ -8,12 +8,14 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { useTheme } from '../../components/ThemeContext';
+import { useAuth } from '../../components/AuthContext';
+import { useRouter } from 'expo-router';
 
 export default function ConfigScreen() {
   const router = useRouter();
   const { theme, cores, getFontSize, getIconSize } = useTheme();
+  const { logout } = useAuth();
 
   const handleFazerLogin = () => {
     router.push('/login');
@@ -39,8 +41,18 @@ export default function ConfigScreen() {
       'Sair',
       'Tem certeza que deseja sair da sua conta?',
       [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sair', style: 'destructive' },
+        { 
+          text: 'Cancelar', 
+          style: 'cancel' 
+        },
+        { 
+          text: 'Sair', 
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+            router.replace('/login'); 
+          },
+        },
       ]
     );
   };

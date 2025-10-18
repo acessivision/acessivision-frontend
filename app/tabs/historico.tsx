@@ -1,103 +1,145 @@
-import { useEffect, useState } from 'react';
-import { FlatList, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { useEffect, useState, useCallback } from 'react'; // Adicione useCallback se ainda não tiver
+import { FlatList, StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useTheme } from '../../components/ThemeContext';
+import { useAuth } from '../../components/AuthContext';
 
 interface Conversation {
   id: string;
   name: string;
-  imageUri: string;
-  audioUri: string;
+  // ... outras propriedades
   createdAt: string;
 }
 
 const HistoryScreen: React.FC = () => {
+  // ===================================================================
+  // PASSO 1: Todas as chamadas de Hooks devem estar aqui, no topo.
+  // ===================================================================
   const [isScreenAccessible, setIsScreenAccessible] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const { cores, getFontSize } = useTheme();
+  const { user, isLoading: isAuthLoading } = useAuth();
+
+  // O useEffect foi movido para cima, antes dos retornos condicionais.
+  useEffect(() => {
+    const fetchConversations = () => {
+      // Lógica para buscar o histórico do usuário logado
+      console.log("Buscando conversas para o usuário:", user?.uid);
+    };
+
+    // Só busca as conversas se o usuário estiver logado e o carregamento inicial tiver terminado
+    if (user && !isAuthLoading) {
+      fetchConversations();
+    }
+  }, [user, isAuthLoading]); // Adiciona dependências para re-buscar se necessário
+
+  // ===================================================================
+  // PASSO 2: As funções e lógicas podem vir depois dos hooks.
+  // ===================================================================
+  const styles = StyleSheet.create({
+    // ...seus estilos continuam aqui, sem alterações
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    loginMessage: {
+        fontSize: 18,
+        textAlign: 'center',
+        color: '#666',
+    },
+    content: {
+        flex: 1,
+    },
+    container: {
+        flex: 1,
+        padding: 16,
+        backgroundColor: cores.fundo,
+    },
+    title: {
+        fontSize: getFontSize('xlarge'),
+        fontWeight: 'bold',
+        marginBottom: 16,
+        color: cores.texto,
+    },
+    item: {
+        padding: 16,
+        marginBottom: 8,
+        borderRadius: 8,
+        backgroundColor: cores.fundo,
+    },
+    itemText: {
+        fontSize: getFontSize('medium'),
+        color: cores.texto,
+    },
+    empty: {
+        fontSize: getFontSize('medium'),
+        textAlign: 'center',
+        marginTop: 20,
+        color: cores.texto,
+    },
+  });
 
   const handleFirstTouch = () => {
-    // Só ativa na primeira vez.
     if (!isScreenAccessible) {
-      console.log('Ativando acessibilidade da tela...');
       setIsScreenAccessible(true);
     }
   };
 
-  useEffect(() => {
-    const fetchConversations = () => {};
-    fetchConversations();
-  }, []);
+  // ===================================================================
+  // PASSO 3: Os retornos condicionais (early returns) vêm por último.
+  // ===================================================================
+  if (isAuthLoading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
 
-  const styles = StyleSheet.create({
-    content: {
-      flex: 1,
-    },
-    container: {
-      flex: 1,
-      padding: 16,
-      backgroundColor: cores.fundo,
-    },
-    title: {
-      fontSize: getFontSize('xlarge'),
-      fontWeight: 'bold',
-      marginBottom: 16,
-      color: cores.texto,
-    },
-    item: {
-      padding: 16,
-      marginBottom: 8,
-      borderRadius: 8,
-      backgroundColor: cores.fundo,
-    },
-    itemText: {
-      fontSize: getFontSize('medium'),
-      color: cores.texto,
-    },
-    empty: {
-      fontSize: getFontSize('medium'),
-      textAlign: 'center',
-      marginTop: 20,
-      color: cores.texto,
-    },
-  });
+  if (!user) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.loginMessage}>
+          Faça login para acessar o histórico
+        </Text>
+      </View>
+    );
+  }
 
+  // Se chegou aqui, o usuário está logado. Renderiza a tela principal.
   return (
     <TouchableOpacity
-          activeOpacity={1} // Para não parecer um botão
-          onPress={handleFirstTouch}
-          style={{ flex: 1 }}
-        >
-          {/* 3. Use as propriedades de acessibilidade no container do seu conteúdo. */}
-          <View
-            style={styles.content}
-            // `accessible` esconde os filhos do leitor no iOS
-            accessible={isScreenAccessible}
-            // `importantForAccessibility` esconde os filhos no Android
-            importantForAccessibility={isScreenAccessible ? 'auto' : 'no-hide-descendants'}
-          >
-            <View style={styles.container}>
-              <FlatList
-                data={conversations}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <View style={styles.item}>
-                    <Text style={styles.itemText}>
-                      Nome: {item.name}
-                    </Text>
-                    <Text style={styles.itemText}>
-                      Criado em: {new Date(item.createdAt).toLocaleString()}
-                    </Text>
-                  </View>
-                )}
-                ListEmptyComponent={
-                  <Text style={styles.empty}>
-                    Nenhuma conversa encontrada.
-                  </Text>
-                }
-              />
-            </View>
-          </View>
-        </TouchableOpacity>
+      activeOpacity={1}
+      onPress={handleFirstTouch}
+      style={{ flex: 1 }}
+    >
+      <View
+        style={styles.content}
+        accessible={isScreenAccessible}
+        importantForAccessibility={isScreenAccessible ? 'auto' : 'no-hide-descendants'}
+      >
+        <View style={styles.container}>
+          <FlatList
+            data={conversations}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.item}>
+                <Text style={styles.itemText}>Nome: {item.name}</Text>
+                <Text style={styles.itemText}>
+                  Criado em: {new Date(item.createdAt).toLocaleString()}
+                </Text>
+              </View>
+            )}
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                Nenhuma conversa encontrada.
+              </Text>
+            }
+          />
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 };
 

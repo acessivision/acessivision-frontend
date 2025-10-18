@@ -17,7 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import { Link, useRouter } from 'expo-router';
 import authService from '../services/authService'
-import { signInWithGoogle } from '../services/googleAuthService';
+import { GOOGLE_CONFIG } from '../config/googleConfig';
+import * as WebBrowser from 'expo-web-browser';
+import { useAuthRequest } from 'expo-auth-session/providers/google';
+import { AuthSessionResult } from 'expo-auth-session';
+import { useAuth } from '../components/AuthContext';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -27,6 +33,54 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { login, loginWithGoogle } = useAuth();
+  
+  const [request, response, promptAsync] = useAuthRequest({
+    webClientId: GOOGLE_CONFIG.webClientId,
+    androidClientId: GOOGLE_CONFIG.androidClientId,
+    iosClientId: GOOGLE_CONFIG.iosClientId,
+  });
+
+  // 2. Este useEffect reage à resposta do login do Google
+  useEffect(() => {
+    // Função interna para lidar com a resposta
+    const handleGoogleResponse = async (authResponse: AuthSessionResult) => {
+      if (authResponse.type === 'success') {
+        setLoading(true);
+        try {
+          const { id_token } = authResponse.params;
+          if (id_token) {
+            // Envia o id_token para o seu backend
+            const backendResponse = await authService.loginWithGoogle(id_token);
+
+            if (backendResponse.success) {
+              Alert.alert('Sucesso', 'Login realizado com sucesso!');
+              router.replace('/tabs');
+            } else {
+              Alert.alert('Erro', backendResponse.message || 'Falha ao autenticar com o servidor.');
+            }
+          } else {
+             Alert.alert('Falha no Login', 'Não foi possível obter o token do Google.');
+          }
+        } catch (error) {
+          console.error("Erro após login com Google:", error);
+          Alert.alert('Erro Crítico', 'Ocorreu um erro inesperado.');
+        } finally {
+          setLoading(false);
+        }
+      } else if (authResponse.type === 'cancel') {
+        console.log("Login cancelado pelo usuário.");
+        setLoading(false); // Garante que o loading pare se o usuário cancelar
+      } else if (authResponse.type !== 'dismiss') {
+        Alert.alert('Falha no Login', 'Não foi possível autenticar com o Google.');
+        setLoading(false);
+      }
+    };
+    
+    if (response) {
+      handleGoogleResponse(response);
+    }
+  }, [response, router]);
 
   useEffect(() => {
     const setInitialFocus = async () => {
@@ -45,34 +99,29 @@ export default function LoginScreen() {
     setInitialFocus();
   }, []);
 
-  const handleLogin = async () => { // MODIFICAR
-  if (!email.trim()) {
-    Alert.alert('Erro', 'Por favor, informe seu email');
-    return;
-  }
-
-  if (!password) {
-    Alert.alert('Erro', 'Por favor, informe sua senha');
-    return;
-  }
-
-  setLoading(true);
-
-  try {
-    const result = await authService.login(email, password);
-
-    if (result.success) {
-      router.replace('/tabs');
-    } else {
-      Alert.alert('Erro', result.message);
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert('Erro', 'Por favor, preencha email e senha.');
+      return;
     }
-  } catch (error) {
-    Alert.alert('Erro', 'Ocorreu um erro ao fazer login');
-    console.error('Erro no login:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+    
+    setLoading(true);
+    
+    try {
+      // 4. Use a função login do contexto
+      const result = await login(email, password);
+
+      if (result.success) {
+        router.replace('/tabs');
+      } else {
+        Alert.alert('Erro', result.message);
+      }
+    } catch (error) {
+      Alert.alert('Erro', 'Ocorreu um erro ao fazer login');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -82,35 +131,10 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    try {
-      // Passo A: Tentar obter o idToken do Google
-      const googleResponse = await signInWithGoogle();
-
-      if (!googleResponse.success || !googleResponse.idToken) {
-        // Se não deu certo (ex: usuário cancelou), mostra o erro e para.
-        Alert.alert('Falha no Login', googleResponse.error || 'Não foi possível autenticar com o Google.');
-        setLoading(false);
-        return;
-      }
-
-      // Passo B: Enviar o idToken para o seu backend através do authService
-      const backendResponse = await authService.loginWithGoogle(googleResponse.idToken);
-
-      if (backendResponse.success) {
-        // Passo C: Se o seu backend autenticou com sucesso, navega para a home
-        Alert.alert('Sucesso', 'Login realizado com sucesso!');
-        router.replace('/tabs'); // ou a rota principal do seu app
-      } else {
-        // Se o backend retornou um erro
-        Alert.alert('Erro', backendResponse.message);
-      }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Erro Crítico', 'Ocorreu um erro inesperado. Tente novamente.');
-    } finally {
-      setLoading(false);
+  const handleGoogleLogin = () => {
+    // Desabilita o botão se o request não estiver pronto
+    if (request) {
+      promptAsync();
     }
   };
 

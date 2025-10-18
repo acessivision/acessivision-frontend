@@ -5,6 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "scheme": "acessivision",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -61,13 +66,7 @@
           ]
         }
       ],
-      "expo-web-browser",
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.SEU_IOS_CLIENT_ID_INVERTIDO"
-        }
-      ]
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
@@ -75,9 +74,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "7c3a906e-318a-42aa-8deb-ce58323c76c8"
+        "projectId": "acd765d4-8571-4d7b-8c6d-8b3dea2cbe33"
       }
     },
-    "owner": "acessivision"
+    "owner": "acessivision2"
   }
 }
