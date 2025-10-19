@@ -16,14 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import { Link, useRouter } from 'expo-router';
-import authService from '../services/authService'
-import { GOOGLE_CONFIG } from '../config/googleConfig';
-import * as WebBrowser from 'expo-web-browser';
-import { useAuthRequest } from 'expo-auth-session/providers/google';
-import { AuthSessionResult } from 'expo-auth-session';
 import { useAuth } from '../components/AuthContext';
-
-WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -34,53 +27,6 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login, loginWithGoogle } = useAuth();
-  
-  const [request, response, promptAsync] = useAuthRequest({
-    webClientId: GOOGLE_CONFIG.webClientId,
-    androidClientId: GOOGLE_CONFIG.androidClientId,
-    iosClientId: GOOGLE_CONFIG.iosClientId,
-  });
-
-  // 2. Este useEffect reage à resposta do login do Google
-  useEffect(() => {
-    // Função interna para lidar com a resposta
-    const handleGoogleResponse = async (authResponse: AuthSessionResult) => {
-      if (authResponse.type === 'success') {
-        setLoading(true);
-        try {
-          const { id_token } = authResponse.params;
-          if (id_token) {
-            // Envia o id_token para o seu backend
-            const backendResponse = await authService.loginWithGoogle(id_token);
-
-            if (backendResponse.success) {
-              Alert.alert('Sucesso', 'Login realizado com sucesso!');
-              router.replace('/tabs');
-            } else {
-              Alert.alert('Erro', backendResponse.message || 'Falha ao autenticar com o servidor.');
-            }
-          } else {
-             Alert.alert('Falha no Login', 'Não foi possível obter o token do Google.');
-          }
-        } catch (error) {
-          console.error("Erro após login com Google:", error);
-          Alert.alert('Erro Crítico', 'Ocorreu um erro inesperado.');
-        } finally {
-          setLoading(false);
-        }
-      } else if (authResponse.type === 'cancel') {
-        console.log("Login cancelado pelo usuário.");
-        setLoading(false); // Garante que o loading pare se o usuário cancelar
-      } else if (authResponse.type !== 'dismiss') {
-        Alert.alert('Falha no Login', 'Não foi possível autenticar com o Google.');
-        setLoading(false);
-      }
-    };
-    
-    if (response) {
-      handleGoogleResponse(response);
-    }
-  }, [response, router]);
 
   useEffect(() => {
     const setInitialFocus = async () => {
@@ -108,7 +54,6 @@ export default function LoginScreen() {
     setLoading(true);
     
     try {
-      // 4. Use a função login do contexto
       const result = await login(email, password);
 
       if (result.success) {
@@ -131,10 +76,23 @@ export default function LoginScreen() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Desabilita o botão se o request não estiver pronto
-    if (request) {
-      promptAsync();
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    
+    try {
+      const result = await loginWithGoogle();
+
+      if (result.success) {
+        Alert.alert('Sucesso', 'Login realizado com sucesso!');
+        router.replace('/tabs');
+      } else {
+        Alert.alert('Erro', result.message || 'Falha ao autenticar com o Google.');
+      }
+    } catch (error) {
+      console.error("Erro no login com Google:", error);
+      Alert.alert('Erro', 'Ocorreu um erro inesperado.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -362,6 +320,7 @@ export default function LoginScreen() {
               autoCapitalize="none"
               placeholder='Email'
               placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
+              editable={!loading}
             />
           </View>
 
@@ -375,10 +334,12 @@ export default function LoginScreen() {
                 secureTextEntry={!showPassword}
                 placeholder="Senha"
                 placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
+                editable={!loading}
               />
               <TouchableOpacity
                 style={styles.eyeButton}
                 onPress={() => setShowPassword(!showPassword)}
+                disabled={loading}
               >
                 <Ionicons
                   name={showPassword ? 'eye-outline' : 'eye-off-outline'}
@@ -408,14 +369,18 @@ export default function LoginScreen() {
             <View style={styles.dividerLine} />
           </View>
 
-          <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin}>
+          <TouchableOpacity 
+            style={styles.googleButton} 
+            onPress={handleGoogleLogin}
+            disabled={loading}
+          >
             <Image source={require('../assets/images/icone-google.png')} />
             <Text style={styles.googleButtonText}> Entrar com Google</Text>
           </TouchableOpacity>
 
           <View style={styles.createAccountContainer}>
             <Text style={styles.createAccountText}>Não tem uma conta? </Text>
-            <TouchableOpacity onPress={() => router.push('/cadastro')}>
+            <TouchableOpacity onPress={() => router.push('/cadastro')} disabled={loading}>
               <Link href='/cadastro' style={styles.createAccountLink}>Criar Conta</Link>
             </TouchableOpacity>
           </View>

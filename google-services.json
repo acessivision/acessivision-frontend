@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "818889640769",
+    "project_id": "acessivision-dc94b",
+    "storage_bucket": "acessivision-dc94b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:818889640769:android:db787ddf42b2d24c7eafc0",
+        "android_client_info": {
+          "package_name": "tcc.acessivision"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "818889640769-549pge60933tlfqsukilnath0rmhq6fm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "tcc.acessivision",
+            "certificate_hash": "bc3d7f9c0b0d8567eb182726c9cf79127dcbac88"
+          }
+        },
+        {
+          "client_id": "818889640769-d70qafs67r59fc9o0pekmcl2an2o62r6.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCR7JA1JXsJv4Qknkx0CU41M8dckr5jBjY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "818889640769-d70qafs67r59fc9o0pekmcl2an2o62r6.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

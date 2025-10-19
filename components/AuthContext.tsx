@@ -1,23 +1,22 @@
+// components/AuthContext.tsx
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import authService, { Usuario } from '../services/authService';
+import auth from '@react-native-firebase/auth';
 
-// 1. Defina a "forma" (interface) do valor que nosso contexto irá fornecer.
 interface AuthContextType {
   user: Usuario | null;
   isLoading: boolean;
-  // Adicionados os tipos 'string' aqui
   login: (email: string, password: string) => Promise<any>;
   logout: () => Promise<void>;
-  // Adicionado o tipo 'string' aqui
-  loginWithGoogle: (idToken: string) => Promise<any>;
+  loginWithGoogle: () => Promise<any>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: async (email, password) => {},
+  login: async () => {},
   logout: async () => {},
-  loginWithGoogle: async (idToken) => {},
+  loginWithGoogle: async () => {},
 });
 
 interface AuthProviderProps {
@@ -29,21 +28,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        const currentUser = await authService.getCurrentUser();
-        setUser(currentUser);
-      } catch (e) {
-        console.error("Falha ao checar status de login", e);
+    // Listener do Firebase que detecta mudanças no estado de autenticação
+    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
+      if (firebaseUser) {
+        // Usuário está logado - pega os dados do AsyncStorage ou cria novo
+        const userData = await authService.getCurrentUser();
+        if (userData) {
+          setUser(userData);
+        } else {
+          // Se não tiver dados salvos, cria a partir do Firebase
+          const newUser: Usuario = {
+            uid: firebaseUser.uid,
+            nome: firebaseUser.displayName || 'Usuário',
+            email: firebaseUser.email || '',
+            fotoPerfil: firebaseUser.photoURL || undefined,
+          };
+          setUser(newUser);
+        }
+      } else {
+        // Usuário não está logado
         setUser(null);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    checkLoginStatus();
+      setIsLoading(false);
+    });
+
+    // Cleanup: remove o listener quando o componente desmontar
+    return unsubscribe;
   }, []);
   
-  // Adicionados os tipos 'string' aqui
   const login = async (email: string, password: string) => {
     const result = await authService.login(email, password);
     if (result.success && result.usuario) {
@@ -52,18 +64,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return result;
   };
   
-  // Adicionado o tipo 'string' aqui
-  const loginWithGoogle = async (idToken: string) => {
-    const result = await authService.loginWithGoogle(idToken);
-    if (result.success && result.usuario) {
-      setUser(result.usuario);
-    }
+  const loginWithGoogle = async () => {
+    const result = await authService.loginWithGoogle();
+    // Não precisa setar o user aqui, o onAuthStateChanged vai fazer isso
     return result;
   };
 
   const logout = async () => {
     await authService.logout();
-    setUser(null);
+    // Não precisa setar o user para null, o onAuthStateChanged vai fazer isso
   };
 
   return (

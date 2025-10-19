@@ -23,6 +23,7 @@
       "bundleIdentifier": "com.anonymous.acessivision"
     },
     "android": {
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -32,7 +33,7 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
-      "package": "com.anonymous.acessivision"
+      "package": "tcc.acessivision"
     },
     "web": {
       "bundler": "metro",
@@ -66,7 +67,7 @@
           ]
         }
       ],
-      "expo-web-browser"
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true

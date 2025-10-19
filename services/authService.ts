@@ -1,4 +1,7 @@
+// services/authService.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import auth from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 const API_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000`;
 
@@ -6,6 +9,7 @@ export interface Usuario {
   uid: string;
   nome: string;
   email: string;
+  fotoPerfil?: string;
 }
 
 export interface AuthResponse {
@@ -44,7 +48,7 @@ class AuthService {
     }
   }
 
-  // Login
+  // Login tradicional (email e senha)
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
       const response = await fetch(`${API_URL}/auth/login`, {
@@ -72,32 +76,92 @@ class AuthService {
     }
   }
 
-  async loginWithGoogle(idToken: string): Promise<AuthResponse> {
+  // Login com Google usando Firebase
+  async loginWithGoogle(): Promise<AuthResponse> {
     try {
-      // Faz a requisição para o endpoint do backend que valida o token do Google
+      // 1. Verifica se o Google Play Services está disponível
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // 2. Faz o login com Google
+      const userInfo = await GoogleSignin.signIn();
+
+      // 3. Pega o idToken (a estrutura mudou nas versões mais recentes)
+      const idToken = userInfo.data?.idToken;
+
+      if (!idToken) {
+        return {
+          success: false,
+          message: 'Não foi possível obter o token do Google',
+        };
+      }
+
+      // 4. Cria a credencial do Google para o Firebase
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+
+      // 4. Faz o login no Firebase com a credencial do Google
+      const userCredential = await auth().signInWithCredential(googleCredential);
+      
+      const firebaseUser = userCredential.user;
+
+      // 5. Cria o objeto de usuário
+      const usuario: Usuario = {
+        uid: firebaseUser.uid,
+        nome: firebaseUser.displayName || 'Usuário',
+        email: firebaseUser.email || '',
+        fotoPerfil: firebaseUser.photoURL || undefined,
+      };
+
+      // 6. Envia para o backend (se necessário para sincronizar com seu BD)
       const response = await fetch(`${API_URL}/auth/google`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ idToken }), // Envia o idToken para o backend
+        body: JSON.stringify({ 
+          uid: usuario.uid,
+          nome: usuario.nome,
+          email: usuario.email,
+          fotoPerfil: usuario.fotoPerfil,
+        }),
       });
 
       const data = await response.json();
 
-      // Se o backend validar e retornar sucesso com um token do NOSSO sistema...
+      // 7. Salva o token e dados do usuário
       if (data.success && data.token) {
-        // ...salvamos o token e os dados do usuário, exatamente como no login normal
         await this.saveToken(data.token);
-        await this.saveUser(data.usuario);
+        await this.saveUser(usuario);
+        
+        return {
+          success: true,
+          message: 'Login realizado com sucesso!',
+          usuario: usuario,
+          token: data.token,
+        };
       }
 
       return data;
-    } catch (error) {
-      console.error('Erro no login com Google via backend:', error);
+    } catch (error: any) {
+      console.error('Erro no login com Google:', error);
+      
+      // Tratamento de erros específicos
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        return {
+          success: false,
+          message: 'Já existe uma conta com este email usando outro método de login',
+        };
+      }
+      
+      if (error.code === 'auth/invalid-credential') {
+        return {
+          success: false,
+          message: 'Credenciais inválidas',
+        };
+      }
+
       return {
         success: false,
-        message: 'Erro de conexão com o servidor ao tentar login com Google',
+        message: 'Erro ao fazer login com Google',
       };
     }
   }
@@ -161,6 +225,13 @@ class AuthService {
   // Logout
   async logout(): Promise<void> {
     try {
+      // Faz logout do Google
+      await GoogleSignin.signOut();
+      
+      // Faz logout do Firebase
+      await auth().signOut();
+      
+      // Remove dados locais
       await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
     } catch (error) {
       console.error('Erro no logout:', error);
@@ -171,7 +242,8 @@ class AuthService {
   async isLoggedIn(): Promise<boolean> {
     try {
       const token = await this.getToken();
-      return !!token;
+      const firebaseUser = auth().currentUser;
+      return !!(token && firebaseUser);
     } catch {
       return false;
     }

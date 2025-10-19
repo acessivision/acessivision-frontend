@@ -27,7 +27,7 @@ export function VoicePageAnnouncer() {
         pageName = 'Cadastro'
         break;
       default:
-        pageName = 'Aplicativo';
+        pageName = 'AcessiVision';
     }
 
     if (pageName) {
