@@ -19,6 +19,17 @@ const HistoryScreen: React.FC = () => {
   const { cores, getFontSize } = useTheme();
   const { user, isLoading: isAuthLoading } = useAuth();
 
+  useEffect(() => {
+    // Este código será executado sempre que a variável 'user' mudar.
+    if (user) {
+      // Se 'user' não for nulo, significa que o usuário está logado.
+      console.log("✅ Usuário autenticado:", user.email);
+    } else {
+      // Se 'user' for nulo, o usuário não está logado.
+      console.log("❌ Nenhum usuário logado.");
+    }
+  }, [user]); // O array [user] diz ao useEffect para observar a variável 'user'.
+
   // O useEffect foi movido para cima, antes dos retornos condicionais.
   useEffect(() => {
     const fetchConversations = () => {

@@ -3,6 +3,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
+GoogleSignin.configure({
+  webClientId: "818889640769-d70qafs67r59fc9o0pekmcl2an2o62r6.apps.googleusercontent.com",
+  offlineAccess: true,
+});
+
 const API_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000`;
 
 export interface Usuario {
@@ -79,14 +84,12 @@ class AuthService {
   // Login com Google usando Firebase
   async loginWithGoogle(): Promise<AuthResponse> {
     try {
-      // 1. Verifica se o Google Play Services está disponível
+      // 1️⃣ Garante que o Google Play Services está disponível
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-      // 2. Faz o login com Google
+      // 2️⃣ Faz login com a conta Google
       const userInfo = await GoogleSignin.signIn();
-
-      // 3. Pega o idToken (a estrutura mudou nas versões mais recentes)
-      const idToken = userInfo.data?.idToken;
+      const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
 
       if (!idToken) {
         return {
@@ -95,15 +98,13 @@ class AuthService {
         };
       }
 
-      // 4. Cria a credencial do Google para o Firebase
+      // 3️⃣ Cria a credencial do Google e autentica com Firebase
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-
-      // 4. Faz o login no Firebase com a credencial do Google
       const userCredential = await auth().signInWithCredential(googleCredential);
-      
+
       const firebaseUser = userCredential.user;
 
-      // 5. Cria o objeto de usuário
+      // 4️⃣ Monta o objeto do usuário autenticado
       const usuario: Usuario = {
         uid: firebaseUser.uid,
         nome: firebaseUser.displayName || 'Usuário',
@@ -111,60 +112,43 @@ class AuthService {
         fotoPerfil: firebaseUser.photoURL || undefined,
       };
 
-      // 6. Envia para o backend (se necessário para sincronizar com seu BD)
-      const response = await fetch(`${API_URL}/auth/google`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          uid: usuario.uid,
-          nome: usuario.nome,
-          email: usuario.email,
-          fotoPerfil: usuario.fotoPerfil,
-        }),
-      });
+      // 5️⃣ Pega o ID Token do Firebase (usado nas requisições para o backend)
+      const firebaseToken = await firebaseUser.getIdToken();
 
-      const data = await response.json();
+      // 6️⃣ Salva localmente o token e os dados do usuário
+      await this.saveToken(firebaseToken);
+      await this.saveUser(usuario);
 
-      // 7. Salva o token e dados do usuário
-      if (data.success && data.token) {
-        await this.saveToken(data.token);
-        await this.saveUser(usuario);
-        
-        return {
-          success: true,
-          message: 'Login realizado com sucesso!',
-          usuario: usuario,
-          token: data.token,
-        };
-      }
-
-      return data;
+      return {
+        success: true,
+        message: 'Login realizado com sucesso!',
+        usuario,
+        token: firebaseToken,
+      };
     } catch (error: any) {
       console.error('Erro no login com Google:', error);
-      
-      // Tratamento de erros específicos
+
       if (error.code === 'auth/account-exists-with-different-credential') {
         return {
           success: false,
-          message: 'Já existe uma conta com este email usando outro método de login',
+          message: 'Já existe uma conta com este email usando outro método de login.',
         };
       }
-      
+
       if (error.code === 'auth/invalid-credential') {
         return {
           success: false,
-          message: 'Credenciais inválidas',
+          message: 'Credenciais inválidas.',
         };
       }
 
       return {
         success: false,
-        message: 'Erro ao fazer login com Google',
+        message: 'Erro ao fazer login com Google.',
       };
     }
   }
+
 
   // Atualizar perfil
   async updateProfile(uid: string, dados: {
