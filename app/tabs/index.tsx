@@ -87,44 +87,52 @@ const CameraScreen: React.FC = () => {
   });
 
   const takePictureAndUpload = async (spokenText: string): Promise<void> => {
-    if (!cameraRef.current) {
-      Alert.alert("Erro", "Câmera não está pronta.");
+  if (!cameraRef.current) {
+    Alert.alert("Erro", "Câmera não está pronta.");
+    return;
+  }
+
+  try {
+    console.log("[Camera] Taking picture...");
+    const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+
+    if (!photo) {
+      Alert.alert("Erro", "Não foi possível capturar a foto.");
       return;
     }
 
-    try {
-      console.log("[Camera] Taking picture...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+    console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
+    const formData = createFormData(photo, spokenText);
 
-      if (!photo) {
-        Alert.alert("Erro", "Não foi possível capturar a foto.");
-        return;
-      }
+    const response = await fetch(SERVER_URL, {
+      method: "POST",
+      body: formData,
+    });
 
-      console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
-
-      // Passe o texto para a função que cria o FormData
-      const formData = createFormData(photo, spokenText);
-
-      const response = await fetch(SERVER_URL, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      await processAudioResponse(arrayBuffer);
-
-      console.log("[Upload] Upload completed successfully");
-    } catch (error) {
-      console.error("[Upload] Error:", error);
-      Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
     }
-  };
+
+    const result = await response.json();
+
+    const description = result.description;
+
+    if (!description) {
+        throw new Error("A resposta do servidor não continha uma descrição.");
+    }
+
+    console.log(`[Speech] A falar a descrição: "${description}"`);
+    Speech.speak(description, {
+        language: 'pt-BR'
+    });
+
+    console.log("[Upload] Processo concluído com sucesso");
+  } catch (error) {
+    console.error("[Upload] Error:", error);
+    Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+  }
+};
 
   // Nova função para tirar foto e perguntar via voz
   const takePictureForButton = async (): Promise<void> => {
