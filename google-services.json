@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "818889640769-549pge60933tlfqsukilnath0rmhq6fm.apps.googleusercontent.com",
+          "client_id": "818889640769-bfoqlii699tl9g68pos4b9p15e2f25an.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "tcc.acessivision",
-            "certificate_hash": "bc3d7f9c0b0d8567eb182726c9cf79127dcbac88"
+            "certificate_hash": "0a295f6708c00bd26469bff6aa7c3d663125a93e"
           }
         },
         {
