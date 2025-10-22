@@ -39,7 +39,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           // Se não tiver dados salvos, cria a partir do Firebase
           const newUser: Usuario = {
             uid: firebaseUser.uid,
-            nome: firebaseUser.displayName || 'Usuário',
             email: firebaseUser.email || '',
             fotoPerfil: firebaseUser.photoURL || undefined,
           };
@@ -66,13 +65,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   
   const loginWithGoogle = async () => {
     const result = await authService.loginWithGoogle();
-    // Não precisa setar o user aqui, o onAuthStateChanged vai fazer isso
     return result;
   };
 
   const logout = async () => {
     await authService.logout();
-    // Não precisa setar o user para null, o onAuthStateChanged vai fazer isso
   };
 
   return (

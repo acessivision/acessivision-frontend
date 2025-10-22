@@ -1,7 +1,9 @@
 // services/authService.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import auth from '@react-native-firebase/auth';
+import auth from "@react-native-firebase/auth";
+import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as Speech from 'expo-speech';
 
 GoogleSignin.configure({
   webClientId: "818889640769-d70qafs67r59fc9o0pekmcl2an2o62r6.apps.googleusercontent.com",
@@ -12,7 +14,6 @@ const API_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000`;
 
 export interface Usuario {
   uid: string;
-  nome: string;
   email: string;
   fotoPerfil?: string;
 }
@@ -26,29 +27,79 @@ export interface AuthResponse {
 
 class AuthService {
   // Registrar novo usuário
-  async register(nome: string, email: string, password: string): Promise<AuthResponse> {
+  async register(email: string, password: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ nome, email, password }),
+      // 1. Cria o usuário no Firebase Authentication
+      const userCredential = await auth().createUserWithEmailAndPassword(email, password);
+      const user = userCredential.user;
+
+      // Feedback de sucesso com voz
+      Speech.speak('Registro realizado com sucesso! Bem-vindo!', {
+        language: 'pt-BR',
+        pitch: 1.0,
+        rate: 0.9
       });
+      
+      return { 
+        success: true, 
+        message: 'Registrado com sucesso!', 
+        usuario: { 
+          uid: user.uid,
+          email: user.email || '' 
+        } 
+      };
 
-      const data = await response.json();
-
-      if (data.success && data.token) {
-        await this.saveToken(data.token);
-        await this.saveUser(data.usuario);
+    } catch (error: any) {
+      // Extrair código de erro da mensagem se necessário
+      let errorCode = error?.code;
+      
+      // Se não tem code, tentar extrair da mensagem
+      if (!errorCode && error?.message) {
+        if (error.message.includes('email-already-in-use')) {
+          errorCode = 'auth/email-already-in-use';
+        } else if (error.message.includes('invalid-email')) {
+          errorCode = 'auth/invalid-email';
+        } else if (error.message.includes('weak-password')) {
+          errorCode = 'auth/weak-password';
+        }
+      }
+      
+      console.log('Error code detectado:', errorCode);
+      
+      if (errorCode === 'auth/email-already-in-use') {
+        const mensagem = 'Este e-mail já está sendo usado por outro usuário. Por favor, tente fazer login ou use outro e-mail.';
+        
+        Speech.speak(mensagem, {
+          language: 'pt-BR',
+          pitch: 1.0,
+          rate: 1.0,
+        });
+        
+        return { 
+          success: false, 
+          message: ''
+        };
       }
 
-      return data;
-    } catch (error) {
-      console.error('Erro no registro:', error);
-      return {
-        success: false,
-        message: 'Erro de conexão com o servidor',
+      if (errorCode === 'auth/invalid-email') {
+        const mensagem = 'O e-mail informado é inválido. Por favor, verifique e tente novamente.';
+        Speech.speak(mensagem, { language: 'pt-BR', rate: 0.85 });
+        return { success: false, message: '' };
+      }
+
+      if (errorCode === 'auth/weak-password') {
+        const mensagem = 'A senha é muito fraca. Por favor, use uma senha mais forte.';
+        Speech.speak(mensagem, { language: 'pt-BR', rate: 0.85 });
+        return { success: false, message: '' };
+      }
+      
+      // Outros erros do Firebase
+      const mensagemGenerica = 'Ocorreu um erro ao registrar. Por favor, tente novamente.';
+      Speech.speak(mensagemGenerica, { language: 'pt-BR', rate: 0.85 });
+      
+      return { 
+        success: false, 
+        message: ''
       };
     }
   }
@@ -56,27 +107,43 @@ class AuthService {
   // Login tradicional (email e senha)
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      // 1. Faz login com o Firebase Authentication
+      // Corrigi: use auth() para invocar a instância do módulo
+      const userCredential = await auth().signInWithEmailAndPassword(email, password);
+      const user = userCredential.user;
 
-      const data = await response.json();
+      return { 
+        success: true, 
+        message: 'Login bem-sucedido!', 
+        usuario: { 
+          uid: user.uid, 
+          email: user.email || ''
+        } 
+      };
 
-      if (data.success && data.token) {
-        await this.saveToken(data.token);
-        await this.saveUser(data.usuario);
-      }
-
-      return data;
     } catch (error) {
-      console.error('Erro no login:', error);
-      return {
-        success: false,
-        message: 'Erro de conexão com o servidor',
+      console.error('Erro no login do Firebase:', error);
+      
+      // Corrigi: faz type narrowing do erro
+      if (error && typeof error === 'object' && 'code' in error) {
+        const firebaseError = error as FirebaseAuthTypes.NativeFirebaseAuthError;
+        
+        if (firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/wrong-password') {
+          return { 
+            success: false, 
+            message: 'Email ou senha inválidos.' 
+          };
+        }
+        
+        return { 
+          success: false, 
+          message: firebaseError.message || 'Erro ao fazer login.' 
+        };
+      }
+      
+      return { 
+        success: false, 
+        message: 'Erro desconhecido ao fazer login.' 
       };
     }
   }
@@ -107,7 +174,6 @@ class AuthService {
       // 4️⃣ Monta o objeto do usuário autenticado
       const usuario: Usuario = {
         uid: firebaseUser.uid,
-        nome: firebaseUser.displayName || 'Usuário',
         email: firebaseUser.email || '',
         fotoPerfil: firebaseUser.photoURL || undefined,
       };

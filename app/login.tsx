@@ -27,6 +27,9 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login, loginWithGoogle } = useAuth();
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkEmail, setLinkEmail] = useState('');
+  const [pendingCredential, setPendingCredential] = useState<any>(null);
 
   useEffect(() => {
     const setInitialFocus = async () => {

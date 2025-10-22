@@ -18,7 +18,6 @@ import authService from '../services/authService';
 export default function SignUpScreen() {
   const router = useRouter();
   const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
-  const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,12 +28,6 @@ export default function SignUpScreen() {
   };
 
   const handleCreateAccount = async () => {
-    // Validações
-    if (!nome.trim()) {
-      Alert.alert('Erro', 'Por favor, informe seu nome');
-      return;
-    }
-
     if (!email.trim()) {
       Alert.alert('Erro', 'Por favor, informe seu email');
       return;
@@ -53,22 +46,7 @@ export default function SignUpScreen() {
     setLoading(true);
 
     try {
-      const result = await authService.register(nome, email, password);
-
-      if (result.success) {
-        Alert.alert(
-          'Sucesso!',
-          'Conta criada com sucesso!',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.replace('/tabs'),
-            },
-          ]
-        );
-      } else {
-        Alert.alert('Erro', result.message);
-      }
+      await authService.register(email, password);
     } catch (error) {
       Alert.alert('Erro', 'Ocorreu um erro ao criar a conta');
       console.error('Erro ao criar conta:', error);
@@ -216,19 +194,6 @@ export default function SignUpScreen() {
         </View>
 
         <Text style={styles.title}>Criar Conta</Text>
-
-        {/* Nome Field */}
-        <View style={styles.inputContainer}>
-          <Text style={styles.label}>Nome</Text>
-          <TextInput
-            style={styles.input}
-            value={nome}
-            onChangeText={setNome}
-            placeholder="João Silva"
-            placeholderTextColor="#999"
-            editable={!loading}
-          />
-        </View>
 
         {/* Email Field */}
         <View style={styles.inputContainer}>
