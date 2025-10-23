@@ -37,4 +37,4 @@ yarn-error.*
 *.tsbuildinfo
 
 acessivision-firebase-adminsdk.json
-# google-services.json
+google-services.json

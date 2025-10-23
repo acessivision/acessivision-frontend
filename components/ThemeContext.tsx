@@ -11,6 +11,7 @@ export const Cores = {
     tabIconDefault: '#000',
     tabIconSelected: '#0a7ea4',
     fundo: '#f4f4f4',
+    perigo: '#d32f2f',
   },
   dark: {
     texto: '#ECEDEE',
@@ -20,6 +21,7 @@ export const Cores = {
     tabIconDefault: '#fff',
     tabIconSelected: '#fff',
     fundo: '#636363',
+    perigo: '#ffeb3b',
   },
 };
 

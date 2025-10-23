@@ -12,7 +12,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-const db = admin.firestore();
+export const db = admin.firestore();
 
 console.log('🔥 CRIANDO ESTRUTURA COMPLETA DO ACESSIVISION');
 console.log('=============================================\n');
