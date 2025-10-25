@@ -3,7 +3,7 @@ import { useRouter, usePathname } from 'expo-router';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
 
 type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/tabs/editarPerfil' | '/login' | '/cadastro';
-type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
+export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
 
 interface UseIntentHandlerProps {
   speak: (text: string) => void;

@@ -5,7 +5,7 @@ import * as Speech from 'expo-speech';
 export function useAudioSetup() {
   const currentAudioPlayerRef = useRef<any>(null);
   const isSpeakingRef = useRef(false);
-  const lastSpokenTextRef = useRef<string>('');
+  const lastSpokenTextRef = useRef<string | null>(null);
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Configurar áudio no mount
@@ -26,49 +26,59 @@ export function useAudioSetup() {
     configureAudio();
   }, []);
 
-  const speak = useCallback((text: string) => {
-    if (speakTimeoutRef.current) {
-      clearTimeout(speakTimeoutRef.current);
-      speakTimeoutRef.current = null;
-    }
-
-    if (text === lastSpokenTextRef.current && isSpeakingRef.current) {
-      console.log('[Voice] Skipping duplicate TTS:', text);
-      return;
-    }
-    
-    lastSpokenTextRef.current = text;
-    
-    speakTimeoutRef.current = setTimeout(() => {
-      Speech.stop();
-      isSpeakingRef.current = true;
-
-      Speech.speak(text, {
-        language: 'pt-BR',
-        pitch: 1.0,
-        rate: 1.0,
-        onDone: () => {
-          isSpeakingRef.current = false;
-          console.log('[Voice] TTS finished');
-        },
-        onError: (error) => {
-          isSpeakingRef.current = false;
-          console.error('[Voice] TTS error:', error);
-        },
-      });
-    }, 100);
-  }, []);
-
   const stopCurrentAudio = useCallback(() => {
-    if (currentAudioPlayerRef.current) {
-      try {
-        currentAudioPlayerRef.current.pause();
-        console.log('[Voice] Audio interrupted');
-      } catch (error) {
-        console.error('[Voice] Error stopping audio:', error);
-      }
-    }
+    Speech.stop();
+    isSpeakingRef.current = false; // Reset flag when stopping
+    lastSpokenTextRef.current = null; // Reset last spoken text
+    console.log('[TTS] Stop requested.');
   }, []);
+
+  const speak = useCallback((text: string, onDone?: () => void) => { // Accept optional onDone callback
+    // 1. Stop any previous speech immediately
+    stopCurrentAudio();
+
+    // (Optional) Check for immediate duplicates - though less critical now
+    if (text === lastSpokenTextRef.current) {
+       console.log('[Voice] Skipping immediate duplicate TTS:', text);
+       onDone?.(); // Call callback even if skipped, to unblock
+       return;
+    }
+    lastSpokenTextRef.current = text; // Set last spoken text *before* speaking
+
+    console.log('[TTS] Speaking:', text);
+    isSpeakingRef.current = true; // Set flag *before* calling speak
+
+    // 2. Call Speech.speak directly (removed setTimeout)
+    Speech.speak(text, {
+      language: 'pt-BR',
+      pitch: 1.0,
+      rate: 1.0,
+      onDone: () => {
+        if (isSpeakingRef.current) { // Check if still supposed to be speaking
+            isSpeakingRef.current = false;
+            lastSpokenTextRef.current = null; // Clear last text on completion
+            console.log('[Voice] TTS finished');
+            onDone?.(); // 3. Call the provided callback on success
+        }
+      },
+      onError: (error) => {
+        if (isSpeakingRef.current) { // Check flag
+            isSpeakingRef.current = false;
+            lastSpokenTextRef.current = null; // Clear last text on error
+            console.error('[Voice] TTS error:', error);
+            onDone?.(); // 4. Call the provided callback on error to unblock
+        }
+      },
+      onStopped: () => { // Handle interruption
+        if (isSpeakingRef.current) {
+            isSpeakingRef.current = false;
+            lastSpokenTextRef.current = null; // Clear last text if stopped early
+            console.log('[Voice] TTS stopped (interrupted?)');
+            onDone?.(); // 5. Call the provided callback if stopped to unblock
+        }
+      }
+    });
+  }, [stopCurrentAudio]);
 
   const registerAudioPlayer = useCallback((player: any) => {
     currentAudioPlayerRef.current = player;

@@ -12,6 +12,7 @@ export const Cores = {
     tabIconSelected: '#0a7ea4',
     fundo: '#f4f4f4',
     perigo: '#d32f2f',
+    mensagemUsuario: '#fff',
   },
   dark: {
     texto: '#ECEDEE',
@@ -22,6 +23,7 @@ export const Cores = {
     tabIconSelected: '#fff',
     fundo: '#636363',
     perigo: '#ffeb3b',
+    mensagemUsuario: '#151718',
   },
 };
 

@@ -1,16 +1,18 @@
-import React, { createContext, useState, useContext, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useState, useContext, useRef, useCallback, useEffect, useMemo, Dispatch, SetStateAction} from 'react';
 import { useTheme } from './ThemeContext';
 import { useAudioSetup } from '../hooks/useAudioSetup';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { useIntentHandler } from '../hooks/useIntentHandler';
+import { useIntentHandler, VoiceState as IntentHandlerVoiceState } from '../hooks/useIntentHandler';
 
 type ActionCallback = (spokenText: string) => void;
 const registeredActions = new Map<string, ActionCallback>();
 
+type VoiceState = IntentHandlerVoiceState;
+
 interface VoiceContextProps {
   isListening: boolean;
   recognizedText: string;
-  voiceState: 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
+  voiceState: VoiceState;
   registerAction: (name: string, callback: ActionCallback) => void;
   unregisterAction: (name: string) => void;
   pendingSpokenText: string | null;
@@ -25,16 +27,16 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { temaAplicado, setTheme } = useTheme();
   const [isFocused, setIsFocused] = useState(true); // ✅ Sempre focado por padrão
 
-  const [voiceState, setVoiceState] = useState<'waiting_wake' | 'listening_command' | 'waiting_confirmation'>('waiting_wake');
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
   const [pendingIntent, setPendingIntent] = useState<string>('');
   const [pendingOriginalText, setPendingOriginalText] = useState<string>('');
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false); // ✅ NOVO
   
   const processTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Setup de áudio e TTS
   const { speak, stopCurrentAudio, registerAudioPlayer, unregisterAudioPlayer } = useAudioSetup();
+  
+  const [voiceState, setVoiceState] = useState<'waiting_wake' | 'listening_command' | 'waiting_confirmation'>('waiting_wake');
 
   // Reconhecimento de fala
   const {
@@ -47,10 +49,11 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     isFocused,
     onFinalResult: (text: string) => {
       if (processTimeoutRef.current) clearTimeout(processTimeoutRef.current);
-      
-      // ✅ CRÍTICO: Só processa se estiver no estado correto
+
+      // Lógica original: Apenas processa comandos gerais
       if (voiceState === 'waiting_wake' || voiceState === 'listening_command') {
         processTimeoutRef.current = setTimeout(() => {
+          // Pass the necessary functions to processCommand
           processCommand(text, voiceState, stopCurrentAudio, setPendingIntent, setPendingOriginalText, setPendingSpokenText, clearPending);
         }, 300);
       } else {
@@ -144,6 +147,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     registerAudioPlayer,
     unregisterAudioPlayer,
   }), [
+    // ADICIONE ÀS DEPENDÊNCIAS TAMBÉM:
     isListening,
     recognizedText,
     voiceState,

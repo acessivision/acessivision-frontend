@@ -17,7 +17,11 @@ import {
   useSpeechRecognitionEvent,
   ExpoSpeechRecognitionResultEvent,
 } from "expo-speech-recognition";
-import firestore from '@react-native-firebase/firestore';
+import firestore, { Timestamp } from '@react-native-firebase/firestore';
+import { useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+
+import { toTitleCase } from 'utils/toTitleCase';
 
 // Importa as funções auxiliares de voz
 import { 
@@ -33,17 +37,20 @@ import {
 interface Conversation {
   id: string;
   titulo: string;
-  data: any;
+  dataCriacao: Timestamp;
+  dataAlteracao: Timestamp;
 }
 
 type StepType = 'aguardandoPalavraTitulo' | 'aguardandoTitulo' | 'idle';
 
 const HistoryScreen: React.FC = () => {
+  const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
   const { user, isLoading: isAuthLoading } = useAuth();
+  
+  const isScreenFocused = useIsFocused();
 
-  // Estados do Modal
   const [modalVisible, setModalVisible] = useState(false);
   const [tituloInput, setTituloInput] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -58,7 +65,7 @@ const HistoryScreen: React.FC = () => {
     const unsubscribe = firestore()
       .collection('conversas')
       .where('ownerUid', '==', user.uid)
-      .orderBy('data', 'desc')
+      .orderBy('dataAlteracao', 'desc')
       .onSnapshot(
         (querySnapshot) => {
           const conversasArray: Conversation[] = [];
@@ -67,7 +74,8 @@ const HistoryScreen: React.FC = () => {
             conversasArray.push({
               id: documentSnapshot.id,
               titulo: documentSnapshot.data().titulo,
-              data: documentSnapshot.data().data,
+              dataCriacao: documentSnapshot.data().dataCriacao,
+              dataAlteracao: documentSnapshot.data().dataAlteracao,
             });
           });
 
@@ -139,34 +147,68 @@ const HistoryScreen: React.FC = () => {
     );
   };
 
-const deletarDocumentosDaConversa = async (conversationId: string) => {
-    if (!user) return;
+  const deletarDocumentosDaConversa = async (conversationId: string) => {
+    if (!user) return;
 
-    console.log(`🗑️ Excluindo conversa ${conversationId}`);
-    try {
-      // 1. Deletar o documento principal da conversa
-      await firestore()
-        .collection('conversas')
-        .doc(conversationId)
-        .delete();
+    console.log(`🗑️ Excluindo conversa ${conversationId} e suas sub-coleções...`);
+    
+    try {
+      // 1. Obter a referência da sub-coleção 'mensagens'
+      const mensagensRef = firestore()
+        .collection('conversas')
+        .doc(conversationId)
+        .collection('mensagens');
 
-      // 2. Remover a referência do histórico do usuário
-      await firestore()
-        .collection('usuarios')
-        .doc(user.uid)
-        .update({
-          historico: firestore.FieldValue.arrayRemove(conversationId)
-        });
-      
-      console.log('✅ Conversa excluída e removida do histórico.');
-      // O onSnapshot cuidará de atualizar a UI automaticamente.
-      // Opcional: falar("Conversa excluída.");
+      // 2. Buscar todos os documentos dessa sub-coleção
+      const mensagensSnapshot = await mensagensRef.get();
 
-    } catch (error) {
-      console.error("❌ Erro ao excluir conversa:", error);
-      Alert.alert('Erro', 'Não foi possível excluir a conversa. Tente novamente.');
-    }
-  };
+      // 3. Deletar todos os documentos da sub-coleção em um "batch" (lote)
+      if (!mensagensSnapshot.empty) {
+        console.log(`   ...excluindo ${mensagensSnapshot.size} mensagens.`);
+        const batch = firestore().batch();
+        mensagensSnapshot.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+      }
+
+      // [OPCIONAL, MAS RECOMENDADO]
+      // 4. Deletar todos os arquivos no Storage
+      //    (Isso é mais complexo, pois o SDK do cliente não "lista" arquivos facilmente)
+      //    (Podemos pular isso por agora, os arquivos órfãos não quebram o app, só geram custo)
+      /*
+      const storageRef = storage().ref(`conversas/${conversationId}`);
+      // Você precisaria de uma Cloud Function para listar e deletar,
+      // ou deletar cada foto manualmente quando a mensagem é deletada.
+      // Vamos pular isso por enquanto para focar no bug principal.
+      */
+
+      // 5. Deletar o documento principal da conversa (AGORA que ele está vazio)
+      console.log('   ...excluindo documento principal da conversa.');
+      await firestore()
+        .collection('conversas')
+        .doc(conversationId)
+        .delete();
+
+      // 6. Remover a referência do histórico do usuário
+      console.log('   ...removendo do histórico do usuário.');
+      await firestore()
+        .collection('usuarios')
+        .doc(user.uid)
+        .update({
+          historico: firestore.FieldValue.arrayRemove(conversationId)
+        });
+      
+      console.log('✅ Conversa excluída e removida do histórico.');
+      // O onSnapshot da HistoryScreen cuidará de atualizar a UI.
+
+    } catch (error) {
+      console.error("❌ Erro ao excluir conversa:", error);
+      let errorMessage = "Erro desconhecido";
+      if (error instanceof Error) errorMessage = error.message;
+      Alert.alert('Erro', 'Não foi possível excluir a conversa: ' + errorMessage);
+    }
+  };
 
   // ===================================================================
   // CAPTURA DA FALA
@@ -174,7 +216,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
   useSpeechRecognitionEvent(
     "result",
     (event: ExpoSpeechRecognitionResultEvent) => {
-      if (!modalVisible) return; // não processa se modal não está aberto
+      if (!modalVisible || !isScreenFocused) return; // não processa se modal não está aberto
       const fala = event.results?.[0]?.transcript?.toLowerCase() || "";
       if (fala.trim()) {
         console.log("[História] Usuário disse:", fala);
@@ -184,7 +226,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
   );
 
   useSpeechRecognitionEvent("error", (event) => {
-    if (modalVisible) {
+    if (modalVisible&& !isScreenFocused) {
       const errorCode = event.error;
       console.error("[Speech] Erro:", errorCode);
 
@@ -200,7 +242,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
   });
 
   useSpeechRecognitionEvent("end", () => {
-    if (modalVisible && step === 'aguardandoPalavraTitulo') {
+    if (modalVisible && step === 'aguardandoPalavraTitulo' && !isScreenFocused) {
       console.log("⏰ Reconhecimento terminou, reiniciando...");
       setTimeout(() => ouvir(modalVisible, RECONHECIMENTO_CONTINUO), 500);
     }
@@ -233,9 +275,9 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
         .collection('conversas')
         .add({
           titulo: tituloFinal,
-          data: firestore.FieldValue.serverTimestamp(),
+          dataCriacao: firestore.FieldValue.serverTimestamp(),
+          dataAlteracao: firestore.FieldValue.serverTimestamp(),
           ownerUid: user.uid,
-          status: 'ativa'
         });
 
       console.log('✅ Conversa criada com ID:', newConversationRef.id);
@@ -304,7 +346,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
     loginMessage: {
       fontSize: 18,
       textAlign: 'center',
-      color: '#666',
+      color: cores.texto,
     },
     container: {
       flex: 1,
@@ -409,17 +451,17 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
     inputWrapper: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: temaAplicado === 'dark' ? '#2C2C2C' : '#F5F5F5',
+      backgroundColor: '#fff',
       borderRadius: 8,
       borderWidth: 1,
-      borderColor: temaAplicado === 'dark' ? '#444' : '#DDD',
+      borderColor: cores.texto,
     },
     input: {
       flex: 1,
       paddingHorizontal: 16,
       paddingVertical: 12,
       fontSize: getFontSize('medium'),
-      color: cores.texto,
+      color: cores.fundo,
     },
     micButton: {
       padding: 12,
@@ -430,13 +472,13 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 12,
-      backgroundColor: temaAplicado === 'dark' ? '#1E4D2B' : '#E8F5E9',
+      backgroundColor: cores.fundo,
       borderRadius: 8,
       marginBottom: 16,
     },
     listeningText: {
       marginLeft: 8,
-      color: temaAplicado === 'dark' ? '#4CAF50' : '#2E7D32',
+      color: cores.texto,
       fontSize: getFontSize('medium'),
       fontWeight: '500',
     },
@@ -461,7 +503,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
       flex: 1,
       paddingVertical: 12,
       borderRadius: 8,
-      backgroundColor: temaAplicado === 'dark' ? '#ffffff' : '#000000',
+      backgroundColor: cores.texto,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -469,7 +511,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
       opacity: 0.5,
     },
     saveButtonText: {
-      color: temaAplicado === 'dark' ? '#000000' : '#ffffff',
+      color: cores.fundo,
       fontSize: getFontSize('medium'),
       fontWeight: '600',
     },
@@ -478,13 +520,13 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 16,
-      backgroundColor: temaAplicado === 'dark' ? '#2C2C2C' : '#F5F5F5',
+      backgroundColor: cores.texto,
       borderRadius: 8,
       marginTop: 12,
     },
     savingText: {
       marginLeft: 8,
-      color: cores.texto,
+      color: cores.fundo,
       fontSize: getFontSize('medium'),
       fontWeight: '500',
     },
@@ -511,58 +553,43 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
     );
   }
 
-  function toTitleCase(str: string) {
-    return str.replace(
-      /\w\S*/g,
-      text => text.charAt(0).toUpperCase() + text.substring(1).toLowerCase()
-    );
-  }
-
   const isListening = step !== 'idle';
   const aguardandoPalavraTitulo = step === 'aguardandoPalavraTitulo';
-  const tituloCapturadoPorVoz = step === 'aguardandoTitulo' || (step === 'idle' && tituloInput && !isSaving);
 
   return (
     <View style={[styles.container, { flex: 1 }]}>
       {/* Lista de Conversas */}
       <FlatList
-        style={{ flex: 1 }}
         data={conversations}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <View style={styles.item}>
-            {/* NOVO: Wrapper para o conteúdo de texto */}
-            <View style={styles.itemContent}>
-              <Text style={styles.itemText}>
-              {String(toTitleCase(item.titulo || 'Sem título'))}
-            </Text>
-
-            <Text style={styles.itemDateText}>
-              Criado em: {String(item.data?.toDate?.()?.toLocaleString?.() || 'Carregando...')}
-            </Text>
-            </View>
-            
-            {/* NOVO: Botão de excluir */}
-            <TouchableOpacity 
-              style={styles.deleteButton} 
-              onPress={() => excluirConversa(item.id, item.titulo)}
-              accessibilityLabel="Excluir conversa"
-              accessibilityHint={`Excluir a conversa ${item.titulo}`}
-            >
-              <Ionicons 
-                name="trash-outline" 
-                size={getIconSize('medium')} 
-                // Usa uma cor de perigo do seu tema, ou um vermelho padrão
-                color={cores.perigo || '#FF453A'} 
-              />
-            </TouchableOpacity>
-          </View>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            Nenhuma conversa encontrada. Crie uma nova!
-          </Text>
-        }
+          <TouchableOpacity 
+            onPress={() => router.push({
+              pathname: '/tabs/conversa',
+              params: { conversaId: item.id, titulo: item.titulo }
+            })}
+            style={styles.item}
+          >
+            <View style={styles.itemContent}>
+              <Text style={styles.itemText}>
+                {String(toTitleCase(item.titulo || 'Sem título'))}
+              </Text>
+              <Text style={styles.itemDateText}>
+                Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.deleteButton} 
+              onPress={(e) => {e.stopPropagation(); excluirConversa(item.id, item.titulo)}}
+            >
+              <Ionicons 
+                name="trash-outline" 
+                size={getIconSize('medium')} 
+                color={cores.perigo || '#FF453A'} 
+              />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
       />
 
       {/* Botão de Criação */}
@@ -612,7 +639,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
             {/* Indicador de escuta */}
             {isListening && (
               <View style={styles.listeningIndicator}>
-                <ActivityIndicator size="small" color={temaAplicado === 'dark' ? '#4CAF50' : '#2E7D32'} />
+                <ActivityIndicator size="small" color={cores.texto} />
                 <Text style={styles.listeningText}>
                   {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo...'}
                 </Text>
@@ -637,7 +664,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
                     }
                   }}
                   placeholder="Digite ou fale o título"
-                  placeholderTextColor={temaAplicado === 'dark' ? '#888' : '#999'}
+                  placeholderTextColor='#000'
                   editable={!isSaving}
                   autoFocus={false}
                 />
@@ -652,7 +679,7 @@ const deletarDocumentosDaConversa = async (conversationId: string) => {
                   <Ionicons 
                     name={isListening ? "mic" : "mic-outline"} 
                     size={getIconSize('medium')} 
-                    color={isListening ? '#4CAF50' : cores.icone} 
+                    color={cores.fundo} 
                   />
                 </TouchableOpacity>
               </View>

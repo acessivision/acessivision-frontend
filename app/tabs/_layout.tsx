@@ -1,16 +1,22 @@
 // app/tabs/_layout
-import { Tabs, usePathname, useRouter } from 'expo-router';
+import { Tabs, usePathname, useRouter, useGlobalSearchParams } from 'expo-router';
 import { View } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+import { toTitleCase } from 'utils/toTitleCase';
+
 function LayoutWithVoiceUI() {
   const pathname = usePathname();
   const router = useRouter();
+  const params = useGlobalSearchParams<{ titulo?: string }>();
   const { mudaTema, cores, getIconSize } = useTheme();
 
   const getTitle = () => {
+    if (pathname === '/tabs/conversa' && params.titulo) {
+      return String(toTitleCase(params.titulo)); 
+    }
     switch (pathname) {
       case '/tabs':
       case '/tabs/':
@@ -22,6 +28,8 @@ function LayoutWithVoiceUI() {
         return 'Menu';
       case '/tabs/editarPerfil':
         return 'Editar Perfil';
+      case '/tabs/conversa':
+        return 'Conversa';
       default:
         return 'App';
     }
@@ -95,6 +103,12 @@ function LayoutWithVoiceUI() {
         />
         <Tabs.Screen
           name="editarPerfil"
+          options={{
+            href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="conversa"
           options={{
             href: null,
           }}

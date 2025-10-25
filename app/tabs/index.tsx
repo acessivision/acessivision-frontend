@@ -1,5 +1,4 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { File, Paths } from "expo-file-system/next";
 import { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -10,18 +9,20 @@ import {
   TouchableOpacity,
   View,
   Image,
-  Platform
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
-import { AudioModule, type AudioSource, createAudioPlayer } from "expo-audio";
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import * as Speech from 'expo-speech';
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
+  ExpoSpeechRecognitionResultEvent,
 } from "expo-speech-recognition";
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
+
 
 interface Photo {
   uri: string;
@@ -34,25 +35,21 @@ console.log('URL final:', SERVER_URL);
 
 const CameraScreen: React.FC = () => {
   const router = useRouter();
-  const { cores, temaAplicado, setTheme } = useTheme();
-  const [audioSource, setAudioSource] = useState<AudioSource | null>(null);
+  const { cores, temaAplicado } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isFocused = useIsFocused();
-  const [player, setPlayer] = useState<ReturnType<typeof createAudioPlayer> | null>(null);
-
-  // Estados para captura de voz após tirar foto
+  const { conversaId, mode } = useLocalSearchParams<{ conversaId?: string, mode?: string }>();
   const [capturedPhoto, setCapturedPhoto] = useState<Photo | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const [isListeningForQuestion, setIsListeningForQuestion] = useState(false);
-  const [recognizedQuestion, setRecognizedQuestion] = useState("");
+  const [recognizedQuestion, setRecognizedQuestion] = useState("");
 
   const {
     registerAction,
     unregisterAction,
     pendingSpokenText,
     clearPending,
-    registerAudioPlayer,
-    unregisterAudioPlayer,
   } = useVoiceCommands();
 
   // Função para falar
@@ -69,141 +66,19 @@ const CameraScreen: React.FC = () => {
     });
   };
 
-  // Listener para reconhecimento de voz da pergunta
-  useSpeechRecognitionEvent("result", (event) => {
-    if (isListeningForQuestion && capturedPhoto) {
-      const transcription = event.results[0]?.transcript || "";
-      console.log("[Speech] Recognized question:", transcription);
-      setRecognizedQuestion(transcription);
-    }
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    if (isListeningForQuestion && capturedPhoto && recognizedQuestion) {
-      console.log("[Speech] Recognition ended, sending photo with question");
-      setIsListeningForQuestion(false);
-      uploadPhotoWithQuestion(capturedPhoto, recognizedQuestion);
-    }
-  });
-
-  const takePictureAndUpload = async (spokenText: string): Promise<void> => {
-  if (!cameraRef.current) {
-    Alert.alert("Erro", "Câmera não está pronta.");
-    return;
-  }
-
-  try {
-    console.log("[Camera] Taking picture...");
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
-
-    if (!photo) {
-      Alert.alert("Erro", "Não foi possível capturar a foto.");
+  const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
+    if (isSending) {
+      console.log("[Upload] Ignorado, upload já em progresso.");
       return;
     }
 
-    console.log(`[Upload] Uploading photo with prompt: "${spokenText}"`);
-    const formData = createFormData(photo, spokenText);
+    console.log(`[Upload] Iniciando. Modo: ${mode}, ID Conversa: ${conversaId}`);
 
-    const response = await fetch(SERVER_URL, {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json();
-
-    const description = result.description;
-
-    if (!description) {
-        throw new Error("A resposta do servidor não continha uma descrição.");
-    }
-
-    console.log(`[Speech] A falar a descrição: "${description}"`);
-    Speech.speak(description, {
-        language: 'pt-BR'
-    });
-
-    console.log("[Upload] Processo concluído com sucesso");
-  } catch (error) {
-    console.error("[Upload] Error:", error);
-    Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
-  }
-};
-
-  // Nova função para tirar foto e perguntar via voz
-  const takePictureForButton = async (): Promise<void> => {
-    if (!cameraRef.current) {
-      Alert.alert("Erro", "Câmera não está pronta.");
-      return;
-    }
+    setIsSending(true);
 
     try {
-      console.log("[Camera] Taking picture for button...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
-
-      if (!photo) {
-        Alert.alert("Erro", "Não foi possível capturar a foto.");
-        return;
-      }
-
-      // Armazena a foto
-      setCapturedPhoto(photo);
-
-      // Pergunta ao usuário via voz
-      falar("O que você deseja saber sobre a foto?", () => {
-        // Após terminar de falar, inicia o reconhecimento
-        startListeningForQuestion();
-      });
-    } catch (error) {
-      console.error("[Camera] Error taking picture:", error);
-      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
-    }
-  };
-
-  // Inicia reconhecimento de voz para a pergunta
-  const startListeningForQuestion = async () => {
-    try {
-      setIsListeningForQuestion(true);
-      setRecognizedQuestion("");
-
-      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!result.granted) {
-        Alert.alert("Permissão negada", "Precisamos de permissão para usar o microfone.");
-        setIsListeningForQuestion(false);
-        setCapturedPhoto(null);
-        return;
-      }
-
-      await ExpoSpeechRecognitionModule.start({
-        lang: "pt-BR",
-        interimResults: true,
-        maxAlternatives: 1,
-        continuous: false,
-        requiresOnDeviceRecognition: false,
-        addsPunctuation: false,
-        contextualStrings: [],
-      });
-
-      console.log("[Speech] Started listening for question");
-    } catch (error) {
-      console.error("[Speech] Error starting recognition:", error);
-      Alert.alert("Erro", "Não foi possível iniciar o reconhecimento de voz");
-      setIsListeningForQuestion(false);
-      setCapturedPhoto(null);
-    }
-  };
-
-  // Função para enviar a foto com a pergunta
-  const uploadPhotoWithQuestion = async (photo: Photo, question: string): Promise<void> => {
-    try {
-      console.log(`[Upload] Uploading photo with question: "${question}"`);
-
-      const formData = createFormData(photo, question);
-
+      // 1. CHAMA O BACKEND (Moondream)
+      const formData = createFormData(photo, prompt);
       const response = await fetch(SERVER_URL, {
         method: "POST",
         body: formData,
@@ -214,19 +89,180 @@ const CameraScreen: React.FC = () => {
         throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      await processAudioResponse(arrayBuffer);
+      const result = await response.json();
+      const description = result.description; // A resposta do Bot
 
-      console.log("[Upload] Upload completed successfully");
+      if (!description) {
+        throw new Error("A resposta do servidor não continha uma descrição.");
+      }
 
-      // Limpa os estados
-      setCapturedPhoto(null);
-      setRecognizedQuestion("");
+      // =======================================================
+      // LÓGICA CONDICIONAL (MODO CHAT)
+      // =======================================================
+      if (mode === 'chat' && conversaId) {
+        console.log(`[Firestore] Salvando na conversa ${conversaId}`);
+
+        // 2. FAZ UPLOAD DA FOTO PARA O FIREBASE STORAGE
+        const filename = photo.uri.split('/').pop() || `photo-${Date.now()}.jpg`;
+        const storagePath = `conversas/${conversaId}/${filename}`;
+        
+        console.log(`[Storage] Fazendo upload para: ${storagePath}`);
+        const storageRef = storage().ref(storagePath);
+        await storageRef.putFile(photo.uri);
+        const downloadURL = await storageRef.getDownloadURL();
+        console.log(`[Storage] Foto salva em: ${downloadURL}`);
+
+        // 3. SALVA A MENSAGEM DO USUÁRIO (MENSAGEM 1)
+        await firestore()
+          .collection('conversas')
+          .doc(conversaId)
+          .collection('mensagens')
+          .add({
+            sender: 'user',
+            text: prompt,
+            imageUri: downloadURL, // Salva a URL da foto
+            timestamp: firestore.FieldValue.serverTimestamp(),
+          });
+
+        // 4. SALVA A RESPOSTA DO BOT (MENSAGEM 2)
+        await firestore()
+          .collection('conversas')
+          .doc(conversaId)
+          .collection('mensagens')
+          .add({
+            sender: 'bot',
+            text: description,
+            imageUri: null, // O bot não envia imagem
+            timestamp: firestore.FieldValue.serverTimestamp(),
+          });
+    
+        // 5. VOLTA PARA A TELA DE CHAT
+        console.log("Salvamento concluído. Voltando para o chat...");
+        router.back();
+
+      } else {
+        // Comportamento original: Apenas fala a resposta
+        console.log(`[Speech] A falar a descrição: "${description}"`);
+        Speech.speak(description, { language: 'pt-BR' });
+      }
+
     } catch (error) {
       console.error("[Upload] Error:", error);
-      Alert.alert("Erro", error instanceof Error ? error.message : "Erro desconhecido");
+      let errorMessage = 'Ocorreu um erro desconhecido.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      Alert.alert("Erro no Upload", errorMessage);
+    } finally {
       setCapturedPhoto(null);
       setRecognizedQuestion("");
+      setIsListeningForQuestion(false);
+      setIsSending(false);
+    }
+  };
+
+  useSpeechRecognitionEvent("result", (event: ExpoSpeechRecognitionResultEvent) => { // Use o tipo importado
+    // SÓ processa se estiver no estado de ouvir a pergunta DA FOTO
+    if (isListeningForQuestion && capturedPhoto) {
+      const transcription = event.results?.[0]?.transcript || "";
+      if (transcription) { // Evita processar resultados vazios
+          console.log("[Speech - Local] Recognized question:", transcription);
+          setRecognizedQuestion(transcription); // Atualiza o estado local
+      }
+    } else {
+      // Ignora resultados se não estiver esperando a pergunta da foto
+      // (o listener global do contexto vai pegar)
+    }
+  });
+
+  useSpeechRecognitionEvent("end", () => {
+    // ADICIONE ESTA VERIFICAÇÃO
+    if (isSending) {
+      console.log("[Speech] 'end' event ignorado, upload em progresso.");
+      return; 
+    }
+
+    if (isListeningForQuestion && capturedPhoto && recognizedQuestion) {
+      console.log("[Speech] Recognition ended, chamando handler");
+      handleUploadAndProcess(capturedPhoto, recognizedQuestion); 
+    }
+  });
+
+  const takePictureAndUpload = async (spokenText: string): Promise<void> => {
+    if (!cameraRef.current) {
+      Alert.alert("Erro", "Câmera não está pronta.");
+      return;
+    }
+
+    try {
+      console.log("[Camera] Taking picture for voice command...");
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+
+      if (!photo) {
+        Alert.alert("Erro", "Não foi possível capturar a foto.");
+        return;
+      }
+
+      // Chama a nova função unificada
+      await handleUploadAndProcess(photo, spokenText);
+
+    } catch (error) {
+      console.error("[Camera] Error in takePictureAndUpload:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
+    }
+  };
+
+const startListeningForQuestion = async () => {
+    try {
+      setIsListeningForQuestion(true);
+      setRecognizedQuestion("");
+      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!result.granted) {
+        Alert.alert("Permissão negada", "Precisamos de permissão para usar o microfone.");
+        setIsListeningForQuestion(false);
+        setCapturedPhoto(null);
+        return;
+      }
+      await ExpoSpeechRecognitionModule.start({ lang: "pt-BR", /* ...outras opções */ });
+      console.log("[Speech] Started listening for question");
+    } catch (error) {
+      console.error("[Speech] Error starting recognition:", error);
+      Alert.alert("Erro", "Não foi possível iniciar o reconhecimento de voz");
+      setIsListeningForQuestion(false);
+      setCapturedPhoto(null);
+    }
+  };
+
+  // Função do botão MODIFICADA (não precisa mais do upload)
+  const takePictureForButton = async (): Promise<void> => {
+    if (!cameraRef.current) {
+      Alert.alert("Erro", "Câmera não está pronta.");
+      return;
+    }
+
+    try {
+      console.log("[Camera] Taking picture for button...");
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      if (!photo) {
+        Alert.alert("Erro", "Não foi possível capturar a foto.");
+        return;
+      }
+
+      // 2. Guarda a foto (o estado local 'capturedPhoto' ainda é útil aqui)
+      setCapturedPhoto(photo); 
+
+      // 3. Fala a pergunta
+      falar("O que você deseja saber sobre a foto?", () => {
+        startListeningForQuestion();
+        // 4. NO CALLBACK do 'falar':
+        console.log("[Camera Button] Fala concluída. Mudando estado e reiniciando listener global...");
+      });
+
+    } catch (error) {
+      console.error("[Camera] Error taking picture:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
+      // Limpa a foto capturada em caso de erro e reinicia o listener
+      setCapturedPhoto(null); 
     }
   };
 
@@ -236,7 +272,7 @@ const CameraScreen: React.FC = () => {
       registerAction('takePictureAndUpload', takePictureAndUpload);
       return () => unregisterAction('takePictureAndUpload');
     }
-  }, [isFocused]);
+  }, [isFocused, handleUploadAndProcess]);
 
   // Hook para executar a ação de voz pendente
   useEffect(() => {
@@ -248,53 +284,7 @@ const CameraScreen: React.FC = () => {
       // Limpa o comando pendente para garantir que não seja executado novamente
       clearPending();
     }
-  }, [isFocused, pendingSpokenText]);
-
-  // ---------------- Audio setup ----------------
-  useEffect(() => {
-    const configureAudioMode = async () => {
-      try {
-        await AudioModule.setAudioModeAsync({
-          playsInSilentMode: true,
-          allowsRecording: true,
-          interruptionMode: "doNotMix",
-          shouldPlayInBackground: false,
-        });
-        console.log("[Audio] Audio mode configured");
-      } catch (error) {
-        console.error("Erro ao configurar o modo de áudio: ", error);
-      }
-    };
-
-    configureAudioMode();
-  }, []);
-
-  useEffect(() => {
-    if (audioSource) {
-      const newPlayer = createAudioPlayer(audioSource);
-
-      if (Platform.OS === "android") {
-        newPlayer.shouldCorrectPitch = true;
-        newPlayer.setPlaybackRate(1.3);
-      } else {
-        newPlayer.setPlaybackRate(1.3, "high");
-      }
-
-      setPlayer(newPlayer);
-
-      // Registra o player no contexto de voz para permitir interrupção
-      registerAudioPlayer(newPlayer);
-      newPlayer.play();
-
-      console.log("[Audio] Playing audio response");
-
-      return () => {
-        // Remove o registro do player e libera recursos
-        unregisterAudioPlayer();
-        newPlayer.release();
-      };
-    }
-  }, [audioSource, registerAudioPlayer, unregisterAudioPlayer]);
+  }, [isFocused, pendingSpokenText, handleUploadAndProcess]);
 
   // ---------------- Camera & upload ----------------
   const createFormData = (photo: Photo, prompt: string): FormData => {
@@ -311,24 +301,6 @@ const CameraScreen: React.FC = () => {
     formData.append("prompt", prompt);
 
     return formData;
-  };
-
-  const processAudioResponse = async (arrayBuffer: ArrayBuffer) => {
-    try {
-      const tempFile = new File(
-        Paths.cache,
-        `temp-audio-${Date.now()}.mp3`
-      );
-      tempFile.create();
-
-      const uint8Array = new Uint8Array(arrayBuffer);
-      await tempFile.write(uint8Array);
-
-      setAudioSource({ uri: tempFile.uri });
-      console.log("[Audio] Processed audio response");
-    } catch (error) {
-      console.error("Erro ao processar áudio:", error);
-    }
   };
 
   // ---------------- UI ----------------
