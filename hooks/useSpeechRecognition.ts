@@ -9,9 +9,10 @@ import {
 interface UseSpeechRecognitionProps {
   isFocused: boolean;
   onFinalResult: (text: string) => void;
+  autoStart?: boolean;
 }
 
-export function useSpeechRecognition({ isFocused, onFinalResult }: UseSpeechRecognitionProps) {
+export function useSpeechRecognition({ isFocused, onFinalResult, autoStart = true }: UseSpeechRecognitionProps) {
   const [isListening, setIsListening] = useState(false);
   const [recognizedText, setRecognizedText] = useState("");
   const [permissionGranted, setPermissionGranted] = useState(false);
@@ -72,7 +73,7 @@ export function useSpeechRecognition({ isFocused, onFinalResult }: UseSpeechReco
       ExpoSpeechRecognitionModule.start({
         lang: 'pt-BR',
         interimResults: true,
-        continuous: false,
+        continuous: true,
         requiresOnDeviceRecognition: true,
         addsPunctuation: false,
         maxAlternatives: 1,
@@ -130,10 +131,11 @@ export function useSpeechRecognition({ isFocused, onFinalResult }: UseSpeechReco
         startListening();
       }, 1000);
       return () => clearTimeout(timer);
-    } else if (!isFocused) {
+    } else if (!isFocused && (isListeningRef.current || isStartingRef.current) ) {
+      console.log('[Voice Hook] Tela perdeu foco, chamando stopListening...');
       stopListening();
     }
-  }, [isFocused, permissionGranted]);
+  }, [autoStart, isFocused, permissionGranted, startListening, stopListening]);
 
   // Event: start
   useSpeechRecognitionEvent("start", () => {
@@ -150,7 +152,7 @@ export function useSpeechRecognition({ isFocused, onFinalResult }: UseSpeechReco
     isListeningRef.current = false;
     isStartingRef.current = false;
 
-    if (isFocused && permissionGranted && !isStoppingRef.current) {
+    if (autoStart && isFocused && permissionGranted && !isStoppingRef.current) {
       const delay = errorCountRef.current > 0 ? Math.min(errorCountRef.current * 300, 2000) : 250;
       restartTimeoutRef.current = setTimeout(() => startListening(), delay);
     }
@@ -219,7 +221,7 @@ export function useSpeechRecognition({ isFocused, onFinalResult }: UseSpeechReco
       default: restartDelay = Math.min(errorCountRef.current * 300, 1500);
     }
 
-    if (isFocused && permissionGranted) {
+    if (autoStart && isFocused && permissionGranted) {
       if (errorCountRef.current < 8) {
         restartTimeoutRef.current = setTimeout(() => startListening(), restartDelay);
       } else {

@@ -192,13 +192,6 @@ export const ehEco = (texto: string, palavrasDoApp: string[]): boolean => {
   return contemPalavra(texto, palavrasDoApp);
 };
 
-// ===================================================================
-// HOOK HELPER (Para usar em componentes)
-// ===================================================================
-
-/**
- * Configuração padrão para reconhecimento contínuo
- */
 export const RECONHECIMENTO_CONTINUO: RecognitionConfig = {
   lang: 'pt-BR',
   interimResults: false,
@@ -206,19 +199,14 @@ export const RECONHECIMENTO_CONTINUO: RecognitionConfig = {
   maxAlternatives: 1,
 };
 
-/**
- * Configuração padrão para reconhecimento único
- */
+
 export const RECONHECIMENTO_UNICO: RecognitionConfig = {
   lang: 'pt-BR',
   interimResults: false,
-  continuous: false,
+  continuous: true,
   maxAlternatives: 1,
 };
 
-/**
- * Configuração padrão de voz
- */
 export const VOZ_PADRAO: VoiceConfig = {
   language: 'pt-BR',
   rate: 0.85,
