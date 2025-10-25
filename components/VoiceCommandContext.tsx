@@ -19,6 +19,7 @@ interface VoiceContextProps {
   clearPending: () => void;
   registerAudioPlayer: (player: any) => void;
   unregisterAudioPlayer: () => void;
+  stopListening: () => void;
 }
 
 const VoiceCommandContext = createContext<VoiceContextProps | undefined>(undefined);
@@ -146,6 +147,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearPending,
     registerAudioPlayer,
     unregisterAudioPlayer,
+    stopListening,
   }), [
     // ADICIONE ÀS DEPENDÊNCIAS TAMBÉM:
     isListening,
@@ -155,6 +157,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     registerAudioPlayer,
     unregisterAudioPlayer,
     clearPending,
+    stopListening,
   ]);
 
   return (

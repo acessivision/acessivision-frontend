@@ -50,6 +50,7 @@ const CameraScreen: React.FC = () => {
     unregisterAction,
     pendingSpokenText,
     clearPending,
+    stopListening,
   } = useVoiceCommands();
 
   // Função para falar
@@ -239,6 +240,8 @@ const startListeningForQuestion = async () => {
       Alert.alert("Erro", "Câmera não está pronta.");
       return;
     }
+
+    stopListening();
 
     try {
       console.log("[Camera] Taking picture for button...");
