@@ -29,9 +29,7 @@ interface Photo {
   base64?: string;
 }
 
-console.log('IP do .env:', process.env.EXPO_PUBLIC_IP);
-const SERVER_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000/upload`;
-console.log('URL final:', SERVER_URL);
+const SERVER_URL = 'https://acessivision.com.br/upload';
 
 const CameraScreen: React.FC = () => {
   const router = useRouter();
