@@ -1,17 +1,21 @@
 // app/tabs/_layout
 import { Tabs, usePathname, useRouter, useGlobalSearchParams } from 'expo-router';
-import { View } from 'react-native';
+import { LayoutChangeEvent, View } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { toTitleCase } from 'utils/toTitleCase';
 
+import React from 'react';
+import { LayoutProvider, useLayout } from '../../components/LayoutContext';
+
 function LayoutWithVoiceUI() {
   const pathname = usePathname();
   const router = useRouter();
   const params = useGlobalSearchParams<{ titulo?: string }>();
   const { mudaTema, cores, getIconSize } = useTheme();
+  const { setHeaderHeight } = useLayout();
 
   const getTitle = () => {
     if (pathname === '/tabs/conversa' && params.titulo) {
@@ -45,6 +49,9 @@ function LayoutWithVoiceUI() {
         title={getTitle()}
         mudaTema={mudaTema}
         abreLogin={abreLogin}
+        onLayout={(event: LayoutChangeEvent) => {
+          setHeaderHeight(event.nativeEvent.layout.height);
+        }}
       />
       
       <Tabs
@@ -120,6 +127,8 @@ function LayoutWithVoiceUI() {
 
 export default function TabsLayout() {
   return (
+    <LayoutProvider>
       <LayoutWithVoiceUI />
+    </LayoutProvider>
   );
 }

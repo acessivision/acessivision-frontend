@@ -1,11 +1,23 @@
 import * as Speech from 'expo-speech';
 import { usePathname, useGlobalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
+import { useSpeech } from '../hooks/useSpeech';
 
 export function VoicePageAnnouncer() {
   const pathname = usePathname();
 
   const params = useGlobalSearchParams<{ titulo?: string }>();
+
+  const { 
+      speak, 
+      startListening, 
+      stopListening, 
+      isListening,
+      recognizedText,
+      setRecognizedText 
+    } = useSpeech({
+      mode: 'local',
+    });
 
   useEffect(() => {
     let pageName = '';
@@ -23,7 +35,7 @@ export function VoicePageAnnouncer() {
           pageName = 'Histórico';
           break;
         case '/tabs/menu':
-          pageName = 'Mehnu'; // Você tem um "h" a mais aqui
+          pageName = 'Mehnu'; // Devido pronúncia
           break;
         case '/tabs/editarPerfil':
           pageName = 'Editar perfil';

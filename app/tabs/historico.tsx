@@ -13,26 +13,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
 import { useAuth } from '../../components/AuthContext';
-import {
-  useSpeechRecognitionEvent,
-  ExpoSpeechRecognitionResultEvent,
-} from "expo-speech-recognition";
-import firestore, { Timestamp } from '@react-native-firebase/firestore';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-
 import { toTitleCase } from 'utils/toTitleCase';
-
-// Importa as funções auxiliares de voz
-import { 
-  falar, 
-  ouvir, 
-  pararTudo, 
-  contemPalavra,
-  ehEco,
-  pararReconhecimento,
-  RECONHECIMENTO_CONTINUO 
-} from '../../utils/voiceHelpers';
+import { useSpeech } from '../../hooks/useSpeech';
+import firestore, { Timestamp, collection, query, where, orderBy, onSnapshot, doc, getDocs, writeBatch, deleteDoc, updateDoc, FieldValue, addDoc, serverTimestamp, setDoc, arrayUnion } from '@react-native-firebase/firestore';
 
 interface Conversation {
   id: string;
@@ -46,7 +31,7 @@ type StepType = 'aguardandoPalavraTitulo' | 'aguardandoTitulo' | 'idle';
 const HistoryScreen: React.FC = () => {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
+  const { cores, getFontSize, getIconSize } = useTheme();
   const { user, isLoading: isAuthLoading } = useAuth();
   
   const isScreenFocused = useIsFocused();
@@ -56,113 +41,133 @@ const HistoryScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState<StepType>('idle');
 
+  // ✅ Usa o novo hook de voz
+  const { 
+    speak, 
+    startListening, 
+    stopListening, 
+    isListening,
+    recognizedText,
+    setRecognizedText 
+  } = useSpeech({
+    enabled: isScreenFocused && modalVisible, // Só ativa quando modal está aberto
+    mode: 'local',
+  });
+
   // ===================================================================
   // BUSCAR CONVERSAS DO FIRESTORE
   // ===================================================================
   useEffect(() => {
     if (!user || isAuthLoading) return;
 
-    const unsubscribe = firestore()
-      .collection('conversas')
-      .where('ownerUid', '==', user.uid)
-      .orderBy('dataAlteracao', 'desc')
-      .onSnapshot(
-        (querySnapshot) => {
-          const conversasArray: Conversation[] = [];
-          
-          querySnapshot.forEach((documentSnapshot) => {
-            conversasArray.push({
-              id: documentSnapshot.id,
-              titulo: documentSnapshot.data().titulo,
-              dataCriacao: documentSnapshot.data().dataCriacao,
-              dataAlteracao: documentSnapshot.data().dataAlteracao,
-            });
-          });
+    // 1. Get collection reference
+    const conversasCollectionRef = collection(firestore(), 'conversas');
 
-          console.log(`✅ ${conversasArray.length} conversas encontradas`);
-          setConversations(conversasArray);
-        },
-        (error) => {
-          console.error('❌ Erro ao buscar conversas:', error);
-          Alert.alert('Erro', 'Não foi possível carregar as conversas.');
-        }
-      );
+    // 2. Create the query using modular functions
+    const q = query(
+      conversasCollectionRef,
+      where('ownerUid', '==', user.uid),
+      orderBy('dataAlteracao', 'desc')
+    );
+
+    // 3. Use onSnapshot with the query
+    const unsubscribe = onSnapshot(q,
+      (querySnapshot) => {
+        const conversasArray: Conversation[] = [];
+        querySnapshot.forEach((documentSnapshot: { id: any; data: () => { (): any; new(): any; titulo: any; dataCriacao: any; dataAlteracao: any; }; }) => {
+          conversasArray.push({
+            id: documentSnapshot.id,
+            // Use .data() directly
+            titulo: documentSnapshot.data().titulo,
+            dataCriacao: documentSnapshot.data().dataCriacao,
+            dataAlteracao: documentSnapshot.data().dataAlteracao,
+          });
+        });
+        console.log(`✅ ${conversasArray.length} conversas encontradas`);
+        setConversations(conversasArray);
+      },
+      (error: any) => {
+        console.error('❌ Erro ao buscar conversas:', error);
+        Alert.alert('Erro', 'Não foi possível carregar as conversas.');
+      }
+    );
 
     return () => unsubscribe();
   }, [user, isAuthLoading]);
 
   // ===================================================================
-  // PROCESSAR COMANDOS DE VOZ
+  // PROCESSAR RESULTADO DO RECONHECIMENTO
   // ===================================================================
-  const processarComando = (fala: string) => {
-    console.log(`[História] Step: ${step}, Fala: "${fala}"`);
+  useEffect(() => {
+    if (!recognizedText.trim() || !modalVisible) return;
 
-    // Ignora eco do próprio app
-    if (ehEco(fala, ["digite", "por favor", "conversa"])) {
-      console.log("[História] Ignorando eco do app");
-      return;
-    }
+    const fala = recognizedText.toLowerCase().trim();
+    console.log(`[Histórico] Step: ${step}, Fala: "${fala}"`);
 
     // Estágio 1: Aguardando a palavra "título"
     if (step === 'aguardandoPalavraTitulo') {
-      if (contemPalavra(fala, ["título", "titulo"])) {
-        console.log("✅ Palavra 'título' detectada!");
-        setStep('aguardandoTitulo');
-        falar("Escutando", () => ouvir(true, RECONHECIMENTO_CONTINUO));
-      }
-    }
+      if (fala.includes('título') || fala.includes('titulo')) {
+        console.log("✅ Palavra 'título' detectada!");
+        setStep('aguardandoTitulo');
+        setRecognizedText('');
+        speak("Escutando o título", () => {
+          startListening(true);
+        });
+      } else {
+        // Ignora outras palavras
+        setRecognizedText('');
+      }
+    }
     
     // Estágio 2: Capturando o título completo
     else if (step === 'aguardandoTitulo') {
-        console.log("[História] Título capturado:", fala);
-        setTituloInput(fala);
-        setStep('idle');
-        pararReconhecimento();
-        
-        // Salva automaticamente
-        setTimeout(() => {
-          criarConversaComTitulo(fala);
-        }, 100);
-      }
-    };
+      console.log("[Histórico] Título capturado:", recognizedText);
+      setTituloInput(recognizedText);
+      setStep('idle');
+      stopListening();
+      
+      setTimeout(() => {
+        criarConversaComTitulo(recognizedText);
+      }, 100);
+    }
+  }, [recognizedText, step, modalVisible]);
 
+  // ===================================================================
+  // EXCLUIR CONVERSA
+  // ===================================================================
   const excluirConversa = (conversationId: string, titulo: string) => {
-    if (!user) return;
+    if (!user) return;
 
-    Alert.alert(
-      "Confirmar Exclusão",
-      `Tem certeza de que deseja excluir a conversa "${titulo}"? Esta ação não pode ser desfeita.`,
-      [
-        { 
-          text: "Cancelar", 
-          style: "cancel" 
-        },
-        { 
-          text: "Excluir", 
-          style: "destructive", 
-          // Chama a função que realmente deleta
-          onPress: () => deletarDocumentosDaConversa(conversationId) 
-        }
-      ]
-    );
-  };
+    Alert.alert(
+      "Confirmar Exclusão",
+      `Tem certeza de que deseja excluir a conversa "${titulo}"? Esta ação não pode ser desfeita.`,
+      [
+        { 
+          text: "Cancelar", 
+          style: "cancel" 
+        },
+        { 
+          text: "Excluir", 
+          style: "destructive", 
+          onPress: () => deletarDocumentosDaConversa(conversationId) 
+        }
+      ]
+    );
+  };
 
   const deletarDocumentosDaConversa = async (conversationId: string) => {
     if (!user) return;
 
-    console.log(`🗑️ Excluindo conversa ${conversationId} e suas sub-coleções...`);
+    console.log(`🗑️ Excluindo conversa ${conversationId}...`);
     
     try {
-      // 1. Obter a referência da sub-coleção 'mensagens'
       const mensagensRef = firestore()
         .collection('conversas')
         .doc(conversationId)
         .collection('mensagens');
 
-      // 2. Buscar todos os documentos dessa sub-coleção
       const mensagensSnapshot = await mensagensRef.get();
 
-      // 3. Deletar todos os documentos da sub-coleção em um "batch" (lote)
       if (!mensagensSnapshot.empty) {
         console.log(`   ...excluindo ${mensagensSnapshot.size} mensagens.`);
         const batch = firestore().batch();
@@ -172,25 +177,12 @@ const HistoryScreen: React.FC = () => {
         await batch.commit();
       }
 
-      // [OPCIONAL, MAS RECOMENDADO]
-      // 4. Deletar todos os arquivos no Storage
-      //    (Isso é mais complexo, pois o SDK do cliente não "lista" arquivos facilmente)
-      //    (Podemos pular isso por agora, os arquivos órfãos não quebram o app, só geram custo)
-      /*
-      const storageRef = storage().ref(`conversas/${conversationId}`);
-      // Você precisaria de uma Cloud Function para listar e deletar,
-      // ou deletar cada foto manualmente quando a mensagem é deletada.
-      // Vamos pular isso por enquanto para focar no bug principal.
-      */
-
-      // 5. Deletar o documento principal da conversa (AGORA que ele está vazio)
       console.log('   ...excluindo documento principal da conversa.');
       await firestore()
         .collection('conversas')
         .doc(conversationId)
         .delete();
 
-      // 6. Remover a referência do histórico do usuário
       console.log('   ...removendo do histórico do usuário.');
       await firestore()
         .collection('usuarios')
@@ -200,7 +192,6 @@ const HistoryScreen: React.FC = () => {
         });
       
       console.log('✅ Conversa excluída e removida do histórico.');
-      // O onSnapshot da HistoryScreen cuidará de atualizar a UI.
 
     } catch (error) {
       console.error("❌ Erro ao excluir conversa:", error);
@@ -211,50 +202,6 @@ const HistoryScreen: React.FC = () => {
   };
 
   // ===================================================================
-  // CAPTURA DA FALA
-  // ===================================================================
-  useSpeechRecognitionEvent(
-    "result",
-    (event: ExpoSpeechRecognitionResultEvent) => {
-      if (!modalVisible || !isScreenFocused) return; // não processa se modal não está aberto
-      const fala = event.results?.[0]?.transcript?.toLowerCase() || "";
-      if (fala.trim()) {
-        console.log("[História] Usuário disse:", fala);
-        processarComando(fala);
-      }
-    }
-  );
-
-  useSpeechRecognitionEvent("error", (event) => {
-    if (modalVisible&& !isScreenFocused) {
-      const errorCode = event.error;
-      console.error("[Speech] Erro:", errorCode);
-
-      if (errorCode !== 'no-speech' && step !== 'idle') {
-        falar('Ocorreu um erro. Você pode digitar o título.', () => {});
-      }
-      
-      // Se estava aguardando "título", continua ouvindo
-      if (step === 'aguardandoPalavraTitulo') {
-        setTimeout(() => ouvir(modalVisible, RECONHECIMENTO_CONTINUO), 500);
-      }
-    }
-  });
-
-  useSpeechRecognitionEvent("end", () => {
-    if (modalVisible && step === 'aguardandoPalavraTitulo' && !isScreenFocused) {
-      console.log("⏰ Reconhecimento terminou, reiniciando...");
-      setTimeout(() => ouvir(modalVisible, RECONHECIMENTO_CONTINUO), 500);
-    }
-  });
-
-  useEffect(() => {
-    return () => {
-      pararTudo();
-    };
-  }, []);
-
-  // ===================================================================
   // CRIAR CONVERSA NO FIRESTORE
   // ===================================================================
   const criarConversaComTitulo = async (titulo: string) => {
@@ -263,7 +210,7 @@ const HistoryScreen: React.FC = () => {
     const tituloFinal = titulo.trim();
     
     if (!tituloFinal) {
-      Alert.alert('Atenção', 'Por favor, digite o título ou fale. Título. Caso queira informa-lo por voz.');
+      Alert.alert('Atenção', 'Por favor, digite o título ou diga "título" para informá-lo por voz.');
       return;
     }
 
@@ -292,9 +239,7 @@ const HistoryScreen: React.FC = () => {
           { merge: true }
         );
 
-      falar(`Conversa ${tituloFinal} criada com sucesso!`, () => {});
-
-      // Fecha o modal
+      speak(`Conversa ${tituloFinal} criada com sucesso!`);
       fecharModal();
 
     } catch (error) {
@@ -317,21 +262,24 @@ const HistoryScreen: React.FC = () => {
     setStep('aguardandoPalavraTitulo');
     setModalVisible(true);
     setIsSaving(false);
+    setRecognizedText('');
     
-    // Inicia o fluxo de voz
     setTimeout(() => {
-      falar("Por favor, digite o título ou fale. Título. Caso queira informa-lo por voz.", () => ouvir(true, RECONHECIMENTO_CONTINUO));
-    }, 300);
+      speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
+        startListening(true);
+      });
+    }, 300);
   };
 
   const fecharModal = () => {
-    setModalVisible(false);
-    setTituloInput('');
-    setStep('idle');
-    setIsSaving(false);
-    
-    pararTudo();
-  };
+    setModalVisible(false);
+    setTituloInput('');
+    setStep('idle');
+    setIsSaving(false);
+    setRecognizedText('');
+    
+    stopListening();
+  };
 
   // ===================================================================
   // ESTILOS
@@ -353,33 +301,33 @@ const HistoryScreen: React.FC = () => {
       padding: 16,
       backgroundColor: cores.fundo,
     },
-    item: {
-      padding: 16,
-      marginBottom: 8,
-      borderRadius: 8,
-      backgroundColor: cores.barrasDeNavegacao,
-      flexDirection: 'row', // MODIFICADO
-      justifyContent: 'space-between', // MODIFICADO
-      alignItems: 'center', // MODIFICADO
-    },
-    itemContent: { // NOVO
-      flex: 1, // Faz o texto ocupar o espaço e empurrar o botão
-      marginRight: 12, // Espaço entre o texto e o botão
-    },
-    itemText: {
-      fontSize: getFontSize('medium'),
-      color: cores.texto,
-      fontWeight: '500', // NOVO: Dando um leve destaque ao título
-    },
-    itemDateText: { // NOVO
-      fontSize: getFontSize('small'),
-      color: cores.texto || '#888', // Usa cor secundária ou cinza
-      marginTop: 4,
-    },
-    deleteButton: { // NOVO
-      padding: 8, // Aumenta a área de toque
-      margin: -8, // Compensa o padding para alinhar visualmente
-    },
+    item: {
+      padding: 16,
+      marginBottom: 8,
+      borderRadius: 8,
+      backgroundColor: cores.barrasDeNavegacao,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    itemContent: {
+      flex: 1,
+      marginRight: 12,
+    },
+    itemText: {
+      fontSize: getFontSize('medium'),
+      color: cores.texto,
+      fontWeight: '500',
+    },
+    itemDateText: {
+      fontSize: getFontSize('small'),
+      color: cores.texto || '#888',
+      marginTop: 4,
+    },
+    deleteButton: {
+      padding: 8,
+      margin: -8,
+    },
     empty: {
       fontSize: getFontSize('medium'),
       textAlign: 'center',
@@ -405,7 +353,6 @@ const HistoryScreen: React.FC = () => {
       fontSize: getFontSize('medium'),
       fontWeight: 'bold',
     },
-    // Estilos do Modal
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.7)',
@@ -507,9 +454,6 @@ const HistoryScreen: React.FC = () => {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    saveButtonDisabled: {
-      opacity: 0.5,
-    },
     saveButtonText: {
       color: cores.fundo,
       fontSize: getFontSize('medium'),
@@ -553,12 +497,10 @@ const HistoryScreen: React.FC = () => {
     );
   }
 
-  const isListening = step !== 'idle';
   const aguardandoPalavraTitulo = step === 'aguardandoPalavraTitulo';
 
   return (
     <View style={[styles.container, { flex: 1 }]}>
-      {/* Lista de Conversas */}
       <FlatList
         data={conversations}
         keyExtractor={(item) => item.id}
@@ -592,19 +534,16 @@ const HistoryScreen: React.FC = () => {
         )}
       />
 
-      {/* Botão de Criação */}
       <TouchableOpacity
         style={styles.createButton}
         onPress={abrirModal}
         accessibilityLabel="Criar nova conversa"
-        accessibilityHint="Toque para abrir o modal e criar uma nova conversa"
       >
         <Text style={styles.createButtonText}>
           Criar Nova Conversa
         </Text>
       </TouchableOpacity>
 
-      {/* Modal de Criação */}
       <Modal
         visible={modalVisible}
         transparent={true}
@@ -620,7 +559,6 @@ const HistoryScreen: React.FC = () => {
           />
           
           <View style={styles.modalContent}>
-            {/* Header */}
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Nova Conversa</Text>
               <TouchableOpacity 
@@ -636,17 +574,15 @@ const HistoryScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Indicador de escuta */}
             {isListening && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
                 <Text style={styles.listeningText}>
-                  {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo...'}
+                  {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo título...'}
                 </Text>
               </View>
             )}
 
-            {/* Input */}
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Título da Conversa</Text>
               <View style={styles.inputWrapper}>
@@ -655,16 +591,13 @@ const HistoryScreen: React.FC = () => {
                   value={tituloInput}
                   onChangeText={(text) => {
                     setTituloInput(text);
-                    
-                    // Para a escuta se o usuário começar a digitar
-                    if (step === 'aguardandoPalavraTitulo') {
-                      console.log("✋ Usuário começou a digitar, parando escuta");
-                      setStep('idle');
-                      pararReconhecimento();
-                    }
+                    if (step !== 'idle') {
+                      setStep('idle');
+                      stopListening();
+                    }
                   }}
                   placeholder="Digite ou fale o título"
-                  placeholderTextColor='#000'
+                  placeholderTextColor='#999'
                   editable={!isSaving}
                   autoFocus={false}
                 />
@@ -672,7 +605,10 @@ const HistoryScreen: React.FC = () => {
                   style={styles.micButton}
                   onPress={() => {
                     setStep('aguardandoPalavraTitulo');
-                    falar("Por favor, digite o título ou fale. Título. Caso queira informa-lo por voz.", () => ouvir());
+                    setRecognizedText('');
+                    speak("Diga 'título' para começar", () => {
+                      startListening(true);
+                    });
                   }}
                   disabled={isListening || isSaving}
                 >
@@ -685,7 +621,6 @@ const HistoryScreen: React.FC = () => {
               </View>
             </View>
 
-            {/* Botões - Aparecem quando não está aguardando título por voz */}
             {step === 'idle' && !isSaving && (
               <View style={styles.modalActions}>
                 <TouchableOpacity 
@@ -704,10 +639,9 @@ const HistoryScreen: React.FC = () => {
               </View>
             )}
 
-            {/* Indicador de salvamento */}
             {isSaving && (
               <View style={styles.savingIndicator}>
-                <ActivityIndicator size="small" color={cores.texto} />
+                <ActivityIndicator size="small" color={cores.fundo} />
                 <Text style={styles.savingText}>Salvando conversa...</Text>
               </View>
             )}

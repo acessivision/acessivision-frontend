@@ -14,15 +14,11 @@ import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
-import * as Speech from 'expo-speech';
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-  ExpoSpeechRecognitionResultEvent,
-} from "expo-speech-recognition";
+import { useSpeech } from '../../hooks/useSpeech';
 import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
-
+import { Platform } from 'react-native';
+import SpeechManager from '../../utils/speechManager';
 
 interface Photo {
   uri: string;
@@ -38,33 +34,54 @@ const CameraScreen: React.FC = () => {
   const cameraRef = useRef<CameraView>(null);
   const isFocused = useIsFocused();
   const { conversaId, mode } = useLocalSearchParams<{ conversaId?: string, mode?: string }>();
+  
   const [capturedPhoto, setCapturedPhoto] = useState<Photo | null>(null);
   const [isSending, setIsSending] = useState(false);
-  const [isListeningForQuestion, setIsListeningForQuestion] = useState(false);
-  const [recognizedQuestion, setRecognizedQuestion] = useState("");
+  const [waitingForQuestion, setWaitingForQuestion] = useState(false);
 
   const {
-    registerAction,
-    unregisterAction,
     pendingSpokenText,
     clearPending,
-    stopListening,
   } = useVoiceCommands();
 
-  // Função para falar
-  const falar = (texto: string, callback?: () => void) => {
-    Speech.stop();
-    Speech.speak(texto, {
-      language: "pt-BR",
-      onDone: () => {
-        if (callback) callback();
-      },
-      onStopped: () => {
-        if (callback) callback();
-      },
-    });
-  };
+  // ✅ Usa o novo hook de voz
+  const { 
+    speak, 
+    startListening,
+    stopListening,
+    isListening,
+    recognizedText,
+    setRecognizedText
+  } = useSpeech({
+    enabled: isFocused && waitingForQuestion, // Só escuta quando esperando pergunta
+    mode: 'local',
+  });
 
+  // ===================================================================
+  // PROCESSAR PERGUNTA RECONHECIDA
+  // ===================================================================
+  useEffect(() => {
+    if (!recognizedText.trim() || !waitingForQuestion || !capturedPhoto) return;
+
+    console.log("[Camera] Pergunta reconhecida:", recognizedText);
+
+    // Valida se não é vazio
+    if (!recognizedText.trim()) {
+      console.warn('[Camera] Resultado da fala estava vazio.');
+      setRecognizedText('');
+      return;
+    }
+
+    // Desativa o estado de espera e processa
+    setWaitingForQuestion(false);
+    handleUploadAndProcess(capturedPhoto, recognizedText);
+    setRecognizedText('');
+
+  }, [recognizedText, waitingForQuestion, capturedPhoto]);
+
+  // ===================================================================
+  // UPLOAD E PROCESSAMENTO
+  // ===================================================================
   const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
     if (isSending) {
       console.log("[Upload] Ignorado, upload já em progresso.");
@@ -74,6 +91,7 @@ const CameraScreen: React.FC = () => {
     console.log(`[Upload] Iniciando. Modo: ${mode}, ID Conversa: ${conversaId}`);
 
     setIsSending(true);
+    stopListening(); // Garante que o reconhecimento está parado
 
     try {
       // 1. CHAMA O BACKEND (Moondream)
@@ -89,7 +107,7 @@ const CameraScreen: React.FC = () => {
       }
 
       const result = await response.json();
-      const description = result.description; // A resposta do Bot
+      const description = result.description;
 
       if (!description) {
         throw new Error("A resposta do servidor não continha uma descrição.");
@@ -119,7 +137,7 @@ const CameraScreen: React.FC = () => {
           .add({
             sender: 'user',
             text: prompt,
-            imageUri: downloadURL, // Salva a URL da foto
+            imageUri: downloadURL,
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
 
@@ -131,7 +149,7 @@ const CameraScreen: React.FC = () => {
           .add({
             sender: 'bot',
             text: description,
-            imageUri: null, // O bot não envia imagem
+            imageUri: null,
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
     
@@ -141,8 +159,8 @@ const CameraScreen: React.FC = () => {
 
       } else {
         // Comportamento original: Apenas fala a resposta
-        console.log(`[Speech] A falar a descrição: "${description}"`);
-        Speech.speak(description, { language: 'pt-BR' });
+        console.log(`[Speech] Falando a descrição: "${description}"`);
+        await speak(description);
       }
 
     } catch (error) {
@@ -153,158 +171,113 @@ const CameraScreen: React.FC = () => {
       }
       Alert.alert("Erro no Upload", errorMessage);
     } finally {
-      setCapturedPhoto(null);
-      setRecognizedQuestion("");
-      setIsListeningForQuestion(false);
-      setIsSending(false);
-    }
-  };
+    setCapturedPhoto(null);
+    setWaitingForQuestion(false); // Disables local useSpeech
+    setIsSending(false);
 
-  useSpeechRecognitionEvent("result", (event: ExpoSpeechRecognitionResultEvent) => { // Use o tipo importado
-    // SÓ processa se estiver no estado de ouvir a pergunta DA FOTO
-    if (isListeningForQuestion && capturedPhoto) {
-      const transcription = event.results?.[0]?.transcript || "";
-      if (transcription) { // Evita processar resultados vazios
-          console.log("[Speech - Local] Recognized question:", transcription);
-          setRecognizedQuestion(transcription); // Atualiza o estado local
-      }
-    } else {
-      // Ignora resultados se não estiver esperando a pergunta da foto
-      // (o listener global do contexto vai pegar)
-    }
-  });
+    // ==========================================
+    // EXPLICITLY RE-ENABLE GLOBAL LISTENER
+    // ==========================================
+    console.log("[Upload] Finally block: Attempting to ensure global listener is enabled.");
+    // Import SpeechManager if not already imported at top
+    // import SpeechManager from '../../utils/speechManager'; 
+    SpeechManager.enable(); // Tell the manager it SHOULD be enabled globally
+    // The enable() function itself should handle checking if it needs to actually start
+    // ==========================================
+  }
+};
 
-  useSpeechRecognitionEvent("end", () => {
-    // ADICIONE ESTA VERIFICAÇÃO
-    if (isSending) {
-      console.log("[Speech] 'end' event ignorado, upload em progresso.");
-      return; 
-    }
-
-    if (isListeningForQuestion && capturedPhoto && recognizedQuestion) {
-      console.log("[Speech] Recognition ended, chamando handler");
-      handleUploadAndProcess(capturedPhoto, recognizedQuestion); 
-    }
-  });
-
-  const takePictureAndUpload = async (spokenText: string): Promise<void> => {
-    if (!cameraRef.current) {
-      Alert.alert("Erro", "Câmera não está pronta.");
-      return;
-    }
-
-    try {
-      console.log("[Camera] Taking picture for voice command...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
-
-      if (!photo) {
-        Alert.alert("Erro", "Não foi possível capturar a foto.");
-        return;
-      }
-
-      // Chama a nova função unificada
-      await handleUploadAndProcess(photo, spokenText);
-
-    } catch (error) {
-      console.error("[Camera] Error in takePictureAndUpload:", error);
-      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
-    }
-  };
-
-const startListeningForQuestion = async () => {
-    try {
-      setIsListeningForQuestion(true);
-      setRecognizedQuestion("");
-      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!result.granted) {
-        Alert.alert("Permissão negada", "Precisamos de permissão para usar o microfone.");
-        setIsListeningForQuestion(false);
-        setCapturedPhoto(null);
-        return;
-      }
-      await ExpoSpeechRecognitionModule.start({ lang: "pt-BR", /* ...outras opções */ });
-      console.log("[Speech] Started listening for question");
-    } catch (error) {
-      console.error("[Speech] Error starting recognition:", error);
-      Alert.alert("Erro", "Não foi possível iniciar o reconhecimento de voz");
-      setIsListeningForQuestion(false);
-      setCapturedPhoto(null);
-    }
-  };
-
-  // Função do botão MODIFICADA (não precisa mais do upload)
-  const takePictureForButton = async (): Promise<void> => {
+  // ===================================================================
+  // TIRAR FOTO (COMANDO DE VOZ GLOBAL)
+  // ===================================================================
+  const takePictureForVoiceCommand = async (spokenText: string): Promise<void> => {
     if (!cameraRef.current) {
       Alert.alert("Erro", "Câmera não está pronta.");
       return;
     }
 
-    stopListening();
-
     try {
-      console.log("[Camera] Taking picture for button...");
+      console.log("[Camera] Taking picture for voice command...");
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
         return;
       }
 
-      // 2. Guarda a foto (o estado local 'capturedPhoto' ainda é útil aqui)
-      setCapturedPhoto(photo); 
+      await handleUploadAndProcess(photo, spokenText);
 
-      // 3. Fala a pergunta
-      falar("O que você deseja saber sobre a foto?", () => {
-        startListeningForQuestion();
-        // 4. NO CALLBACK do 'falar':
-        console.log("[Camera Button] Fala concluída. Mudando estado e reiniciando listener global...");
-      });
+    } catch (error) {
+      console.error("[Camera] Error in takePictureForVoiceCommand:", error);
+      Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
+    }
+  };
+
+  // ===================================================================
+  // TIRAR FOTO (BOTÃO)
+  // ===================================================================
+  const takePictureForButton = async (): Promise<void> => {
+    if (!cameraRef.current) {
+      Alert.alert("Erro", "Câmera não está pronta.");
+      return;
+    }
+
+    try {
+      console.log("[Camera] Taking picture for button...");
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      
+      if (!photo) {
+        Alert.alert("Erro", "Não foi possível capturar a foto.");
+        return;
+      }
+
+      setRecognizedText('');
+      setCapturedPhoto(photo);
+      setWaitingForQuestion(true);
+
+      // Fala a pergunta e depois inicia o reconhecimento
+      await speak("O que você deseja saber sobre a foto?");
+      startListening(true); // Modo local
 
     } catch (error) {
       console.error("[Camera] Error taking picture:", error);
       Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
-      // Limpa a foto capturada em caso de erro e reinicia o listener
-      setCapturedPhoto(null); 
+      setCapturedPhoto(null);
+      setWaitingForQuestion(false);
     }
   };
 
-  // ---------------- Registro da ação de voz ----------------
+  // ===================================================================
+  // COMANDO DE VOZ PENDENTE (do contexto global)
+  // ===================================================================
   useEffect(() => {
-    if (isFocused) {
-      registerAction('takePictureAndUpload', takePictureAndUpload);
-      return () => unregisterAction('takePictureAndUpload');
-    }
-  }, [isFocused, handleUploadAndProcess]);
-
-  // Hook para executar a ação de voz pendente
-  useEffect(() => {
-    // Se a tela estiver em foco e houver um comando de voz pendente para tirar foto
     if (isFocused && pendingSpokenText) {
       console.log(`[Camera] Executando ação de voz pendente: "${pendingSpokenText}"`);
-      // Chama a função para tirar a foto com o texto que veio do comando de voz
-      takePictureAndUpload(pendingSpokenText);
-      // Limpa o comando pendente para garantir que não seja executado novamente
+      takePictureForVoiceCommand(pendingSpokenText);
       clearPending();
     }
-  }, [isFocused, pendingSpokenText, handleUploadAndProcess]);
+  }, [isFocused, pendingSpokenText]);
 
-  // ---------------- Camera & upload ----------------
+  // ===================================================================
+  // CRIAR FORM DATA
+  // ===================================================================
   const createFormData = (photo: Photo, prompt: string): FormData => {
     const formData = new FormData();
 
-    // 1. Adiciona a imagem
     formData.append("file", {
       uri: photo.uri,
       type: "image/jpeg",
       name: "photo.jpg",
     } as any);
 
-    // 2. Adiciona o texto da pergunta do usuário
     formData.append("prompt", prompt);
 
     return formData;
   };
 
-  // ---------------- UI ----------------
+  // ===================================================================
+  // RENDER
+  // ===================================================================
   if (!permission) return <View />;
 
   if (!permission.granted) {
@@ -334,6 +307,7 @@ const startListeningForQuestion = async () => {
       {isFocused && (
         <>
           <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} />
+
           {/* Camera Button */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
@@ -341,6 +315,7 @@ const startListeningForQuestion = async () => {
               onPress={takePictureForButton}
               accessibilityLabel="Tirar foto"
               role="button"
+              disabled={isSending || waitingForQuestion}
             >
               <Image
                 source={
@@ -348,7 +323,10 @@ const startListeningForQuestion = async () => {
                     ? require("../../assets/images/icone-camera-escuro.png")
                     : require("../../assets/images/icone-camera-claro.png")
                 }
-                style={styles.iconeCamera}
+                style={[
+                  styles.iconeCamera,
+                  (isSending || waitingForQuestion) && { opacity: 0.5 }
+                ]}
               />
             </TouchableOpacity>
           </View>
@@ -359,7 +337,10 @@ const startListeningForQuestion = async () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center" },
+  container: { 
+    flex: 1, 
+    justifyContent: "center" 
+  },
   message: {
     textAlign: "center",
     paddingBottom: 10,
@@ -371,81 +352,12 @@ const styles = StyleSheet.create({
     bottom: 40,
     alignSelf: "center",
   },
-  button: { alignItems: "center" },
-  iconeCamera: { width: 100, height: 100 },
-  voiceStatusContainer: {
-    position: "absolute",
-    top: 60,
-    alignSelf: "center",
+  button: { 
+    alignItems: "center" 
   },
-  voiceStatusBox: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statusText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  listeningIndicator: {
-    marginLeft: 10,
-  },
-  listeningDot: {
-    fontSize: 16,
-  },
-  recognizedTextContainer: {
-    position: "absolute",
-    top: 120,
-    left: 20,
-    right: 20,
-  },
-  recognizedTextBox: {
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderRadius: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  recognizedTextLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 5,
-    fontWeight: "500",
-  },
-  recognizedText: {
-    fontSize: 16,
-    color: "#000",
-    fontWeight: "600",
-  },
-  debugContainer: {
-    position: "absolute",
-    bottom: 160,
-    left: 20,
-    right: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  debugButton: {
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    flex: 0.48,
-  },
-  debugButtonText: {
-    color: "#000",
-    fontSize: 12,
-    textAlign: "center",
-    fontWeight: "600",
+  iconeCamera: { 
+    width: 100, 
+    height: 100 
   },
 });
 

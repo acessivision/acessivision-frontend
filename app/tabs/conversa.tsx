@@ -13,15 +13,21 @@ import {
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import firestore from '@react-native-firebase/firestore';
-import { useRoute, useIsFocused } from '@react-navigation/native';
-import { useHeaderHeight } from '@react-navigation/elements';
-import { useAuth } from '../../components/AuthContext';
+import firestore, { 
+  collection, 
+  doc, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  serverTimestamp, 
+  updateDoc,
+  query // Import query as well
+} from '@react-native-firebase/firestore';
+import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../../components/ThemeContext';
-import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
-import { useNavigation } from '@react-navigation/native';
+import { useSpeech } from '../../hooks/useSpeech'; // ✅ Novo hook
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLayout } from '../../components/LayoutContext';
 
 const SERVER_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000/upload`;
 
@@ -35,74 +41,53 @@ interface Message {
 
 const ConversationScreen: React.FC = () => {
   const router = useRouter();
-  const navigation = useNavigation();
   const isScreenFocused = useIsFocused();
   const { conversaId, titulo } = useLocalSearchParams<{ conversaId: string, titulo: string }>();
-  const { user } = useAuth();
+  const { headerHeight } = useLayout();
   const { cores, getFontSize, getIconSize } = useTheme();
   const flatListRef = useRef<FlatList>(null);
-  const { top } = useSafeAreaInsets();
-  const headerHeight = Platform.OS === 'ios' ? top + 44 : 56;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [activeImage, setActiveImage] = useState<string | null>(null);
   
-  // Estado para controlar manualmente o microfone
-  const [userWantsMic, setUserWantsMic] = useState(false);
+  // ✅ Estado para controlar se o usuário quer usar o microfone
+  const [micEnabled, setMicEnabled] = useState(false);
 
-  // CRÍTICO: Passa autoStart: false para desabilitar o comportamento automático do hook
-  const { isListening, startListening, stopListening } = useSpeechRecognition({
-    isFocused: isScreenFocused && userWantsMic, // Só permite quando tela focada E usuário quer
-    onFinalResult: (text: string) => {
-      setInputText(prev => prev + text);
-      // Desativa o microfone após receber o resultado
-      setUserWantsMic(false);
-    },
-    autoStart: false, // DESABILITA o auto-start do hook
+  // ✅ Usa o novo hook de voz
+  const { 
+    speak, 
+    startListening, 
+    stopListening,
+    isListening,
+    recognizedText,
+    setRecognizedText
+  } = useSpeech({
+    enabled: isScreenFocused && micEnabled, // Só ativa quando usuário habilita
+    mode: 'local',
   });
 
-  // Sincroniza o estado do microfone com a intenção do usuário
-  useEffect(() => {
-    if (!isScreenFocused) {
-      // Se a tela não está focada, desliga tudo
-      setUserWantsMic(false);
-      if (isListening) {
-        stopListening();
-      }
-      return;
-    }
-
-    // Se o usuário quer o microfone e não está escutando, inicia
-    if (userWantsMic && !isListening) {
-      console.log('[MIC] Usuário quer microfone, iniciando...');
-      startListening();
-    } 
-    // Se o usuário NÃO quer o microfone mas está escutando, para
-    else if (!userWantsMic && isListening) {
-      console.log('[MIC] Usuário não quer microfone, parando...');
-      stopListening();
-    }
-  }, [userWantsMic, isListening, isScreenFocused]);
-
+  // ===================================================================
+  // BUSCAR MENSAGENS DO FIRESTORE
+  // ===================================================================
   useEffect(() => {
     if (!conversaId) return;
 
     if (isScreenFocused) {
       console.log(`[Firestore] TELA EM FOCO: Iniciando listener para ${conversaId}`);
+
+      const messagesCollectionRef = collection(firestore(), 'conversas', conversaId, 'mensagens');
+
+      const q = query(messagesCollectionRef, orderBy('timestamp', 'asc'));
       
-      const unsubscribe = firestore()
-        .collection('conversas')
-        .doc(conversaId)
-        .collection('mensagens')
-        .orderBy('timestamp', 'asc')
-        .onSnapshot(
-          (snapshot) => {
-            const msgs = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data(),
-            })) as Message[];
+      const unsubscribe = onSnapshot(q,
+        (snapshot) => {
+          const msgs = snapshot.docs.map((doc: { id: any; data: () => any; }) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Message[];
+          setMessages(msgs);
             
             setMessages(msgs);
 
@@ -124,20 +109,54 @@ const ConversationScreen: React.FC = () => {
     } else {
       setMessages([]);
       setActiveImage(null);
-      setUserWantsMic(false);
+      setMicEnabled(false);
     }
 
   }, [conversaId, isScreenFocused]);
 
-  // Função para alternar o microfone
+  // ===================================================================
+  // PROCESSAR RESULTADO DO RECONHECIMENTO DE VOZ
+  // ===================================================================
+  useEffect(() => {
+    // Só processa se tiver texto e microfone estiver habilitado
+    if (!recognizedText.trim() || !micEnabled) return;
+
+    console.log("[Conversa] Texto reconhecido:", recognizedText);
+
+    // Verifica se tem imagem ativa
+    if (!activeImage) {
+      console.warn('[Conversa] Não há imagem ativa para enviar esta pergunta.');
+      Alert.alert('Erro', 'Nenhuma imagem está ativa para enviar esta pergunta.');
+      setRecognizedText('');
+      return;
+    }
+
+    // Salva o texto antes de limpar
+    const textoParaEnviar = recognizedText;
+    
+    // Desativa o microfone e limpa o texto ANTES de enviar
+    setMicEnabled(false);
+    setRecognizedText('');
+    
+    // Envia a mensagem
+    enviarMensagem(textoParaEnviar);
+
+  }, [recognizedText]); // ✅ Remove micEnabled e activeImage das dependências
+
+  // ===================================================================
+  // ALTERNAR MICROFONE
+  // ===================================================================
   const toggleMicrophone = () => {
-    console.log('[MIC] Toggle clicado. Estado atual userWantsMic:', userWantsMic, 'isListening:', isListening);
-    setUserWantsMic(prev => !prev);
+    console.log('[MIC] Toggle clicado. Estado atual:', micEnabled);
+    setMicEnabled(prev => !prev);
   };
 
+  // ===================================================================
+  // NAVEGAR PARA TIRAR FOTO
+  // ===================================================================
   const handlePickImage = () => {
     // Desativa o microfone ao sair para tirar foto
-    setUserWantsMic(false);
+    setMicEnabled(false);
     
     router.push({
       pathname: '/tabs',
@@ -148,36 +167,48 @@ const ConversationScreen: React.FC = () => {
     });
   };
 
-  const enviarMensagem = async () => {
-    const texto = inputText.trim();
+  // ===================================================================
+  // ENVIAR MENSAGEM
+  // ===================================================================
+  const enviarMensagem = async (textOverride?: string) => {
+    const texto = (textOverride !== undefined ? textOverride : inputText).trim();
 
     if (!texto) {
-      Alert.alert('Atenção', 'Por favor, digite uma pergunta.');
+      Alert.alert('Atenção', 'Por favor, digite ou fale uma pergunta.');
       return;
     }
 
     if (!activeImage) {
-      Alert.alert('Erro', 'Não há uma imagem ativa para perguntar. Por favor, tire uma foto primeiro.');
+      Alert.alert('Erro', 'Não há uma imagem ativa para perguntar...');
       return;
     }
 
-    setInputText('');
+    // Limpa o input apenas se não veio do reconhecimento de voz
+    if (textOverride === undefined) {
+      setInputText('');
+    }
+    
     setIsSending(true);
-    // Desativa o microfone ao enviar mensagem
-    setUserWantsMic(false);
 
     try {
-      await firestore()
-        .collection('conversas')
-        .doc(conversaId)
-        .collection('mensagens')
-        .add({
-          sender: 'user',
-          text: texto,
-          imageUri: activeImage, 
-          timestamp: firestore.FieldValue.serverTimestamp(),
-        });
+      // --- References ---
+      const conversationDocRef = doc(firestore(), 'conversas', conversaId);
+      const messagesCollectionRef = collection(conversationDocRef, 'mensagens'); // Subcollection ref
+
+      // 1. Salva mensagem do usuário no Firestore using addDoc
+      await addDoc(messagesCollectionRef, {
+        sender: 'user',
+        text: texto,
+        imageUri: activeImage,
+        timestamp: serverTimestamp(), // Use serverTimestamp()
+      });
+
+      // 2. Atualiza data de alteração da conversa using updateDoc
+      await updateDoc(conversationDocRef, {
+        dataAlteracao: serverTimestamp(), // Use serverTimestamp()
+      });
     
+      // 3. Prepara FormData para enviar ao servidor
       const formData = new FormData();
       formData.append('prompt', texto);
       
@@ -191,6 +222,7 @@ const ConversationScreen: React.FC = () => {
         type,
       } as any);
 
+      // 4. Envia para o servidor
       const response = await fetch(SERVER_URL, {
         method: 'POST',
         body: formData,
@@ -211,6 +243,7 @@ const ConversationScreen: React.FC = () => {
         throw new Error("O servidor respondeu, mas não enviou uma 'description'.");
       }
 
+      // 5. Salva resposta da API no Firestore
       await firestore()
         .collection('conversas')
         .doc(conversaId)
@@ -234,25 +267,27 @@ const ConversationScreen: React.FC = () => {
     }
   };
 
+  // ===================================================================
+  // RENDER
+  // ===================================================================
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: cores.fundo }]} 
+  <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: cores.fundo }]}
+      // 2. Use 'height' for Android, 'padding' for iOS
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
+      keyboardVerticalOffset={headerHeight}
     >
+    <View style={[styles.container, { backgroundColor: cores.fundo }]}>
       <FlatList
-        ref={flatListRef} 
-        style={{ flex: 1, paddingHorizontal: 10 }}
+        ref={flatListRef}
+        style={{ paddingHorizontal: 10 }}
         data={messages}
         keyExtractor={item => item.id}
         renderItem={({ item }) => {
           const senderLabel = item.sender === 'user' ? "Sua mensagem" : "Acessivision";
           const imageDescription = item.imageUri ? "Contém imagem." : ""; 
           const textContent = item.text ? String(item.text) : "";
-          const accessibilityLabelParts = [senderLabel];
-          if (imageDescription) accessibilityLabelParts.push(imageDescription);
-          if (textContent) accessibilityLabelParts.push(textContent);
-          const combinedLabel = accessibilityLabelParts.join(' '); 
+          const combinedLabel = [senderLabel, imageDescription, textContent].filter(Boolean).join(' ');
 
           return (
             <View
@@ -271,13 +306,9 @@ const ConversationScreen: React.FC = () => {
                   resizeMode="cover"
                 />
               )}
-
               {item.text && (
-                <Text 
-                  style={[styles.messageText, { color: cores.texto }]}
-                  accessible={false} 
-                >
-                  {String(item.text)} 
+                <Text style={[styles.messageText, { color: cores.texto }]} accessible={false}>
+                  {String(item.text)}
                 </Text>
               )}
             </View>
@@ -286,12 +317,12 @@ const ConversationScreen: React.FC = () => {
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
         onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
       />
-      
+
       <View style={[styles.inputContainer, { backgroundColor: cores.barrasDeNavegacao }]}>
         <TouchableOpacity 
           onPress={handlePickImage}
           style={styles.imagePickerButton}
-          accessibilityLabel='Nova foto'
+          accessibilityLabel={activeImage ? 'Foto ativa. Toque para tirar uma nova foto' : 'Tirar foto'}
         >
           {activeImage ? (
             <Image source={{ uri: activeImage }} style={styles.activeImagePreview} />
@@ -299,7 +330,7 @@ const ConversationScreen: React.FC = () => {
             <Ionicons name="camera" size={getIconSize('medium')} color={cores.icone} />
           )}
         </TouchableOpacity>
-        
+
         <TextInput
           style={[styles.input, { color: cores.texto, backgroundColor: cores.fundo }]}
           placeholder="Faça uma pergunta..."
@@ -308,23 +339,24 @@ const ConversationScreen: React.FC = () => {
           onChangeText={setInputText}
           multiline
         />
-        
+
         <TouchableOpacity 
-          onPress={toggleMicrophone} 
+          onPress={toggleMicrophone}
           style={styles.micButton}
-          accessibilityLabel={userWantsMic ? "Desativar microfone" : "Ativar microfone"}
+          accessibilityLabel={micEnabled ? "Desativar microfone" : "Ativar microfone"}
         >
           <Ionicons 
-            name={userWantsMic ? 'mic' : 'mic-outline'}
+            name={micEnabled ? 'mic' : 'mic-outline'}
             size={getIconSize('medium')}
-            color={userWantsMic ? cores.texto : cores.icone}
+            color={micEnabled ? cores.texto : cores.icone}
           />
         </TouchableOpacity>
-        
+
         <TouchableOpacity 
-          onPress={enviarMensagem} 
-          disabled={isSending} 
+          onPress={() => enviarMensagem()}
+          disabled={isSending}
           style={styles.sendButton}
+          accessibilityHint="Enviar mensagem"
         >
           {isSending ? (
             <ActivityIndicator size="small" color={cores.texto} />
@@ -333,8 +365,10 @@ const ConversationScreen: React.FC = () => {
           )}
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
-  );
+    </View>
+  </KeyboardAvoidingView>
+);
+
 };
 
 const styles = StyleSheet.create({
@@ -398,11 +432,6 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     padding: 10,
-    marginBottom: 4,
-  },
-  senderNameLabel: {
-    fontSize: 12,
-    fontWeight: '600',
     marginBottom: 4,
   },
 });

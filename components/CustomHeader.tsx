@@ -1,18 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../components/ThemeContext';
 import { usePathname } from 'expo-router';
+import { LayoutChangeEvent } from 'react-native';
 
 interface CustomHeaderProps {
   title: string;
   mudaTema?: () => void;
   abreLogin?: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
-export default function CustomHeader({ title, mudaTema, abreLogin }: CustomHeaderProps) {
+export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
   const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
   const pathname = usePathname();
@@ -71,7 +73,7 @@ export default function CustomHeader({ title, mudaTema, abreLogin }: CustomHeade
   });
 
   return (
-    <View style={styles.header} accessible={false}>
+    <View style={styles.header} accessible={false} onLayout={onLayout}>
       <View style={[styles.sideContainer, { justifyContent: 'flex-start' }]} accessible={false}>
         <TouchableOpacity
           onPress={mudaTema}
