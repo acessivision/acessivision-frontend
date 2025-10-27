@@ -17,7 +17,6 @@ import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
-import { Platform } from 'react-native';
 import SpeechManager from '../../utils/speechManager';
 
 interface Photo {
@@ -44,7 +43,6 @@ const CameraScreen: React.FC = () => {
     clearPending,
   } = useVoiceCommands();
 
-  // ✅ Usa o novo hook de voz
   const { 
     speak, 
     startListening,
@@ -53,7 +51,7 @@ const CameraScreen: React.FC = () => {
     recognizedText,
     setRecognizedText
   } = useSpeech({
-    enabled: isFocused && waitingForQuestion, // Só escuta quando esperando pergunta
+    enabled: isFocused && waitingForQuestion,
     mode: 'local',
   });
 
@@ -65,14 +63,12 @@ const CameraScreen: React.FC = () => {
 
     console.log("[Camera] Pergunta reconhecida:", recognizedText);
 
-    // Valida se não é vazio
     if (!recognizedText.trim()) {
       console.warn('[Camera] Resultado da fala estava vazio.');
       setRecognizedText('');
       return;
     }
 
-    // Desativa o estado de espera e processa
     setWaitingForQuestion(false);
     handleUploadAndProcess(capturedPhoto, recognizedText);
     setRecognizedText('');
@@ -80,7 +76,7 @@ const CameraScreen: React.FC = () => {
   }, [recognizedText, waitingForQuestion, capturedPhoto]);
 
   // ===================================================================
-  // UPLOAD E PROCESSAMENTO
+  // UPLOAD E PROCESSAMENTO - USANDO BASE64
   // ===================================================================
   const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
     if (isSending) {
@@ -88,48 +84,74 @@ const CameraScreen: React.FC = () => {
       return;
     }
 
-    console.log(`[Upload] Iniciando. Modo: ${mode}, ID Conversa: ${conversaId}`);
+    console.log(`[Upload] 🚀 Iniciando upload com BASE64`);
+    console.log('[Upload] Modo:', mode, 'Conversa:', conversaId);
+    console.log('[Upload] Foto URI:', photo.uri);
+    console.log('[Upload] Prompt:', prompt);
 
     setIsSending(true);
-    stopListening(); // Garante que o reconhecimento está parado
+    stopListening();
 
     try {
-      // 1. CHAMA O BACKEND (Moondream)
-      const formData = createFormData(photo, prompt);
+      // ✅ USAR BASE64 DIRETO DA CÂMERA
+      console.log('[Upload] 📸 Usando base64 da câmera...');
+      
+      if (!photo.base64) {
+        throw new Error('Foto não contém base64. A câmera deve estar configurada com base64: true');
+      }
+
+      const base64 = photo.base64;
+      console.log(`[Upload] ✅ Base64 pronto (${base64.length} caracteres)`);
+
+      // ✅ ENVIAR COMO JSON
+      console.log('[Upload] 📤 Enviando requisição JSON para:', SERVER_URL);
       const response = await fetch(SERVER_URL, {
-        method: "POST",
-        body: formData,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64,
+          prompt: prompt,
+        }),
       });
+
+      console.log('[Upload] 📥 Resposta recebida');
+      console.log('[Upload] Status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('[Upload] ❌ Erro do servidor:', errorText);
         throw new Error(`Erro do servidor: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('[Upload] 🎉 Resultado:', result);
+      
       const description = result.description;
 
       if (!description) {
         throw new Error("A resposta do servidor não continha uma descrição.");
       }
 
+      console.log('[Upload] ✅ Descrição recebida:', description);
+
       // =======================================================
       // LÓGICA CONDICIONAL (MODO CHAT)
       // =======================================================
       if (mode === 'chat' && conversaId) {
-        console.log(`[Firestore] Salvando na conversa ${conversaId}`);
+        console.log(`[Firestore] 💾 Salvando na conversa ${conversaId}`);
 
-        // 2. FAZ UPLOAD DA FOTO PARA O FIREBASE STORAGE
         const filename = photo.uri.split('/').pop() || `photo-${Date.now()}.jpg`;
         const storagePath = `conversas/${conversaId}/${filename}`;
         
-        console.log(`[Storage] Fazendo upload para: ${storagePath}`);
+        console.log(`[Storage] ☁️ Fazendo upload para: ${storagePath}`);
         const storageRef = storage().ref(storagePath);
         await storageRef.putFile(photo.uri);
         const downloadURL = await storageRef.getDownloadURL();
-        console.log(`[Storage] Foto salva em: ${downloadURL}`);
+        console.log(`[Storage] ✅ Foto salva em: ${downloadURL}`);
 
-        // 3. SALVA A MENSAGEM DO USUÁRIO (MENSAGEM 1)
         await firestore()
           .collection('conversas')
           .doc(conversaId)
@@ -141,7 +163,6 @@ const CameraScreen: React.FC = () => {
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
 
-        // 4. SALVA A RESPOSTA DO BOT (MENSAGEM 2)
         await firestore()
           .collection('conversas')
           .doc(conversaId)
@@ -153,39 +174,37 @@ const CameraScreen: React.FC = () => {
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
     
-        // 5. VOLTA PARA A TELA DE CHAT
-        console.log("Salvamento concluído. Voltando para o chat...");
+        console.log("[Firestore] ✅ Salvamento concluído. Voltando para o chat...");
         router.back();
 
       } else {
-        // Comportamento original: Apenas fala a resposta
-        console.log(`[Speech] Falando a descrição: "${description}"`);
+        console.log(`[Speech] 🔊 Falando a descrição: "${description}"`);
         await speak(description);
       }
 
     } catch (error) {
-      console.error("[Upload] Error:", error);
+      console.error("[Upload] ❌ Error completo:", error);
+      
       let errorMessage = 'Ocorreu um erro desconhecido.';
       if (error instanceof Error) {
+        console.error("[Upload] Error message:", error.message);
         errorMessage = error.message;
+        
+        if (error.message.includes('Network request failed')) {
+          errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+        }
       }
+      
       Alert.alert("Erro no Upload", errorMessage);
     } finally {
-    setCapturedPhoto(null);
-    setWaitingForQuestion(false); // Disables local useSpeech
-    setIsSending(false);
+      setCapturedPhoto(null);
+      setWaitingForQuestion(false);
+      setIsSending(false);
 
-    // ==========================================
-    // EXPLICITLY RE-ENABLE GLOBAL LISTENER
-    // ==========================================
-    console.log("[Upload] Finally block: Attempting to ensure global listener is enabled.");
-    // Import SpeechManager if not already imported at top
-    // import SpeechManager from '../../utils/speechManager'; 
-    SpeechManager.enable(); // Tell the manager it SHOULD be enabled globally
-    // The enable() function itself should handle checking if it needs to actually start
-    // ==========================================
-  }
-};
+      console.log("[Upload] 🔄 Re-habilitando listener global.");
+      SpeechManager.enable();
+    }
+  };
 
   // ===================================================================
   // TIRAR FOTO (COMANDO DE VOZ GLOBAL)
@@ -197,8 +216,11 @@ const CameraScreen: React.FC = () => {
     }
 
     try {
-      console.log("[Camera] Taking picture for voice command...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      console.log("[Camera] 📸 Taking picture for voice command...");
+      const photo = await cameraRef.current.takePictureAsync({ 
+        quality: 0.5,
+        base64: true // ✅ Captura base64 direto da câmera
+      });
 
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
@@ -208,7 +230,7 @@ const CameraScreen: React.FC = () => {
       await handleUploadAndProcess(photo, spokenText);
 
     } catch (error) {
-      console.error("[Camera] Error in takePictureForVoiceCommand:", error);
+      console.error("[Camera] ❌ Error in takePictureForVoiceCommand:", error);
       Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
     }
   };
@@ -223,8 +245,11 @@ const CameraScreen: React.FC = () => {
     }
 
     try {
-      console.log("[Camera] Taking picture for button...");
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      console.log("[Camera] 📸 Taking picture for button...");
+      const photo = await cameraRef.current.takePictureAsync({ 
+        quality: 0.5,
+        base64: true // ✅ Captura base64 direto da câmera
+      });
       
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
@@ -235,12 +260,11 @@ const CameraScreen: React.FC = () => {
       setCapturedPhoto(photo);
       setWaitingForQuestion(true);
 
-      // Fala a pergunta e depois inicia o reconhecimento
       await speak("O que você deseja saber sobre a foto?");
-      startListening(true); // Modo local
+      startListening(true);
 
     } catch (error) {
-      console.error("[Camera] Error taking picture:", error);
+      console.error("[Camera] ❌ Error taking picture:", error);
       Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
       setCapturedPhoto(null);
       setWaitingForQuestion(false);
@@ -248,32 +272,15 @@ const CameraScreen: React.FC = () => {
   };
 
   // ===================================================================
-  // COMANDO DE VOZ PENDENTE (do contexto global)
+  // COMANDO DE VOZ PENDENTE
   // ===================================================================
   useEffect(() => {
     if (isFocused && pendingSpokenText) {
-      console.log(`[Camera] Executando ação de voz pendente: "${pendingSpokenText}"`);
+      console.log(`[Camera] 🎤 Executando ação de voz pendente: "${pendingSpokenText}"`);
       takePictureForVoiceCommand(pendingSpokenText);
       clearPending();
     }
   }, [isFocused, pendingSpokenText]);
-
-  // ===================================================================
-  // CRIAR FORM DATA
-  // ===================================================================
-  const createFormData = (photo: Photo, prompt: string): FormData => {
-    const formData = new FormData();
-
-    formData.append("file", {
-      uri: photo.uri,
-      type: "image/jpeg",
-      name: "photo.jpg",
-    } as any);
-
-    formData.append("prompt", prompt);
-
-    return formData;
-  };
 
   // ===================================================================
   // RENDER
@@ -308,7 +315,6 @@ const CameraScreen: React.FC = () => {
         <>
           <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} />
 
-          {/* Camera Button */}
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={styles.button}
