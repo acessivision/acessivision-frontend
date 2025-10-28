@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { 
   FlatList, 
   StyleSheet, 
@@ -15,9 +15,11 @@ import { useTheme } from '../../components/ThemeContext';
 import { useAuth } from '../../components/AuthContext';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
-import { toTitleCase } from 'utils/toTitleCase';
+import { toTitleCase } from '../../utils/toTitleCase';
 import { useSpeech } from '../../hooks/useSpeech';
-import firestore, { Timestamp, collection, query, where, orderBy, onSnapshot, doc, getDocs, writeBatch, deleteDoc, updateDoc, FieldValue, addDoc, serverTimestamp, setDoc, arrayUnion } from '@react-native-firebase/firestore';
+
+// ✅ Imports modulares do Firebase v9+
+import { getFirestore, collection, query, where, orderBy, onSnapshot, doc, getDocs, writeBatch, deleteDoc, updateDoc, addDoc, serverTimestamp, setDoc, arrayUnion, arrayRemove, Timestamp } from '@react-native-firebase/firestore';
 
 interface Conversation {
   id: string;
@@ -41,11 +43,16 @@ const HistoryScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState<StepType>('idle');
 
+  // ✅ Ref para rastrear se já processamos o título
+  const tituloProcessadoRef = useRef(false);
+  const tituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ✅ Usa o novo hook de voz
   const { 
     speak, 
     startListening, 
-    stopListening, 
+    stopListening,
+    stopSpeaking, // ✅ Adiciona stopSpeaking para cancelar fala
     isListening,
     recognizedText,
     setRecognizedText 
@@ -60,24 +67,21 @@ const HistoryScreen: React.FC = () => {
   useEffect(() => {
     if (!user || isAuthLoading) return;
 
-    // 1. Get collection reference
-    const conversasCollectionRef = collection(firestore(), 'conversas');
-
-    // 2. Create the query using modular functions
+    // ✅ API modular
+    const db = getFirestore();
+    const conversasCollectionRef = collection(db, 'conversas');
     const q = query(
       conversasCollectionRef,
       where('ownerUid', '==', user.uid),
       orderBy('dataAlteracao', 'desc')
     );
 
-    // 3. Use onSnapshot with the query
     const unsubscribe = onSnapshot(q,
       (querySnapshot) => {
         const conversasArray: Conversation[] = [];
-        querySnapshot.forEach((documentSnapshot: { id: any; data: () => { (): any; new(): any; titulo: any; dataCriacao: any; dataAlteracao: any; }; }) => {
+        querySnapshot.forEach((documentSnapshot) => {
           conversasArray.push({
             id: documentSnapshot.id,
-            // Use .data() directly
             titulo: documentSnapshot.data().titulo,
             dataCriacao: documentSnapshot.data().dataCriacao,
             dataAlteracao: documentSnapshot.data().dataAlteracao,
@@ -86,7 +90,7 @@ const HistoryScreen: React.FC = () => {
         console.log(`✅ ${conversasArray.length} conversas encontradas`);
         setConversations(conversasArray);
       },
-      (error: any) => {
+      (error) => {
         console.error('❌ Erro ao buscar conversas:', error);
         Alert.alert('Erro', 'Não foi possível carregar as conversas.');
       }
@@ -96,41 +100,61 @@ const HistoryScreen: React.FC = () => {
   }, [user, isAuthLoading]);
 
   // ===================================================================
-  // PROCESSAR RESULTADO DO RECONHECIMENTO
+  // PROCESSAR RECONHECIMENTO DE VOZ
   // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim() || !modalVisible) return;
 
     const fala = recognizedText.toLowerCase().trim();
-    console.log(`[Histórico] Step: ${step}, Fala: "${fala}"`);
+    console.log(`[Histórico] Step: ${step}, Fala: "${fala}", isListening: ${isListening}`);
 
-    // Estágio 1: Aguardando a palavra "título"
-    if (step === 'aguardandoPalavraTitulo') {
-      if (fala.includes('título') || fala.includes('titulo')) {
-        console.log("✅ Palavra 'título' detectada!");
-        setStep('aguardandoTitulo');
-        setRecognizedText('');
-        speak("Escutando o título", () => {
-          startListening(true);
-        });
-      } else {
-        // Ignora outras palavras
-        setRecognizedText('');
-      }
-    }
-    
-    // Estágio 2: Capturando o título completo
-    else if (step === 'aguardandoTitulo') {
-      console.log("[Histórico] Título capturado:", recognizedText);
-      setTituloInput(recognizedText);
-      setStep('idle');
-      stopListening();
+    // ✅ Passo 1: Detectar palavra "título"
+    if (step === 'aguardandoPalavraTitulo' && (fala.includes('título') || fala.includes('titulo'))) {
+      console.log("✅ Palavra 'título' detectada!");
+      setStep('aguardandoTitulo');
+      setRecognizedText('');
+      tituloProcessadoRef.current = false; // Reset flag
       
-      setTimeout(() => {
-        criarConversaComTitulo(recognizedText);
-      }, 100);
+      // Limpa timeout anterior se existir
+      if (tituloTimeoutRef.current) {
+        clearTimeout(tituloTimeoutRef.current);
+        tituloTimeoutRef.current = null;
+      }
+      
+      speak("Escutando o título. Fale e aguarde um momento.", () => {
+        startListening(true); // Start listening for the full title
+      });
+      return;
     }
-  }, [recognizedText, step, modalVisible]);
+
+    // ✅ Passo 2: Acumular texto falado com debounce
+    if (step === 'aguardandoTitulo' && fala && !tituloProcessadoRef.current) {
+      console.log(`📝 Acumulando título: "${fala}"`);
+      
+      // Limpa timeout anterior
+      if (tituloTimeoutRef.current) {
+        clearTimeout(tituloTimeoutRef.current);
+      }
+      
+      // ✅ Aguarda 2 segundos de silêncio antes de processar
+      tituloTimeoutRef.current = setTimeout(() => {
+        if (!tituloProcessadoRef.current && fala) {
+          console.log(`✅ Título final capturado: "${fala}"`);
+          tituloProcessadoRef.current = true;
+          
+          stopListening();
+          
+          // Cria a conversa automaticamente com o título falado
+          speak(`Criando conversa com título: ${fala}`, () => {
+            criarConversaComTitulo(fala);
+          });
+        }
+      }, 2000); // ✅ Espera 2 segundos de pausa
+      
+      return;
+    }
+
+  }, [recognizedText, step, modalVisible, isListening]);
 
   // ===================================================================
   // EXCLUIR CONVERSA
@@ -161,35 +185,29 @@ const HistoryScreen: React.FC = () => {
     console.log(`🗑️ Excluindo conversa ${conversationId}...`);
     
     try {
-      const mensagensRef = firestore()
-        .collection('conversas')
-        .doc(conversationId)
-        .collection('mensagens');
-
-      const mensagensSnapshot = await mensagensRef.get();
+      // ✅ API modular
+      const db = getFirestore();
+      const mensagensRef = collection(doc(collection(db, 'conversas'), conversationId), 'mensagens');
+      const mensagensSnapshot = await getDocs(mensagensRef);
 
       if (!mensagensSnapshot.empty) {
         console.log(`   ...excluindo ${mensagensSnapshot.size} mensagens.`);
-        const batch = firestore().batch();
-        mensagensSnapshot.docs.forEach((doc) => {
-          batch.delete(doc.ref);
+        const batch = writeBatch(db);
+        mensagensSnapshot.docs.forEach((docSnapshot) => {
+          batch.delete(docSnapshot.ref);
         });
         await batch.commit();
       }
 
       console.log('   ...excluindo documento principal da conversa.');
-      await firestore()
-        .collection('conversas')
-        .doc(conversationId)
-        .delete();
+      const conversaDocRef = doc(collection(db, 'conversas'), conversationId);
+      await deleteDoc(conversaDocRef);
 
       console.log('   ...removendo do histórico do usuário.');
-      await firestore()
-        .collection('usuarios')
-        .doc(user.uid)
-        .update({
-          historico: firestore.FieldValue.arrayRemove(conversationId)
-        });
+      const userDocRef = doc(collection(db, 'usuarios'), user.uid);
+      await updateDoc(userDocRef, {
+        historico: arrayRemove(conversationId)
+      });
       
       console.log('✅ Conversa excluída e removida do histórico.');
 
@@ -218,26 +236,27 @@ const HistoryScreen: React.FC = () => {
     setIsSaving(true);
 
     try {
-      const newConversationRef = await firestore()
-        .collection('conversas')
-        .add({
-          titulo: tituloFinal,
-          dataCriacao: firestore.FieldValue.serverTimestamp(),
-          dataAlteracao: firestore.FieldValue.serverTimestamp(),
-          ownerUid: user.uid,
-        });
+      // ✅ API modular
+      const db = getFirestore();
+      const conversasCollectionRef = collection(db, 'conversas');
+      
+      const newConversationRef = await addDoc(conversasCollectionRef, {
+        titulo: tituloFinal,
+        dataCriacao: serverTimestamp(),
+        dataAlteracao: serverTimestamp(),
+        ownerUid: user.uid,
+      });
 
       console.log('✅ Conversa criada com ID:', newConversationRef.id);
 
-      await firestore()
-        .collection('usuarios')
-        .doc(user.uid)
-        .set(
-          {
-            historico: firestore.FieldValue.arrayUnion(newConversationRef.id)
-          },
-          { merge: true }
-        );
+      const userDocRef = doc(collection(db, 'usuarios'), user.uid);
+      await setDoc(
+        userDocRef,
+        {
+          historico: arrayUnion(newConversationRef.id)
+        },
+        { merge: true }
+      );
 
       speak(`Conversa ${tituloFinal} criada com sucesso!`);
       fecharModal();
@@ -263,6 +282,7 @@ const HistoryScreen: React.FC = () => {
     setModalVisible(true);
     setIsSaving(false);
     setRecognizedText('');
+    tituloProcessadoRef.current = false; // Reset flag
     
     setTimeout(() => {
       speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
@@ -277,6 +297,13 @@ const HistoryScreen: React.FC = () => {
     setStep('idle');
     setIsSaving(false);
     setRecognizedText('');
+    tituloProcessadoRef.current = false; // Reset flag
+    
+    // ✅ Limpa timeout se existir
+    if (tituloTimeoutRef.current) {
+      clearTimeout(tituloTimeoutRef.current);
+      tituloTimeoutRef.current = null;
+    }
     
     stopListening();
   };
@@ -290,6 +317,7 @@ const HistoryScreen: React.FC = () => {
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
+      backgroundColor: cores.fundo
     },
     loginMessage: {
       fontSize: 18,
@@ -583,6 +611,15 @@ const HistoryScreen: React.FC = () => {
               </View>
             )}
 
+            {/* ✅ Mostrar texto sendo capturado */}
+            {step === 'aguardandoTitulo' && recognizedText && (
+              <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
+                <Text style={styles.listeningText}>
+                  "{recognizedText}"
+                </Text>
+              </View>
+            )}
+
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Título da Conversa</Text>
               <View style={styles.inputWrapper}>
@@ -594,6 +631,7 @@ const HistoryScreen: React.FC = () => {
                     if (step !== 'idle') {
                       setStep('idle');
                       stopListening();
+                      tituloProcessadoRef.current = false;
                     }
                   }}
                   placeholder="Digite ou fale o título"
@@ -606,6 +644,7 @@ const HistoryScreen: React.FC = () => {
                   onPress={() => {
                     setStep('aguardandoPalavraTitulo');
                     setRecognizedText('');
+                    tituloProcessadoRef.current = false;
                     speak("Diga 'título' para começar", () => {
                       startListening(true);
                     });

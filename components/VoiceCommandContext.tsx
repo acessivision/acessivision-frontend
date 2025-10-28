@@ -1,7 +1,7 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, useMemo } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from './ThemeContext';
 import { useAudioSetup } from '../hooks/useAudioSetup';
-import { useSpeech } from '../hooks/useSpeech'; // ✅ Usa o novo hook
+import { useSpeech } from '../hooks/useSpeech';
 import { useIntentHandler, VoiceState as IntentHandlerVoiceState } from '../hooks/useIntentHandler';
 import SpeechManager from '../utils/speechManager';
 
@@ -29,6 +29,9 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   
   const [voiceState, setVoiceState] = useState<VoiceState>('waiting_wake');
 
+  // ✅ Track if listener is already registered to prevent duplicates
+  const listenerRegisteredRef = useRef(false);
+
   // Setup de áudio e TTS
   const { speak, stopCurrentAudio, registerAudioPlayer, unregisterAudioPlayer } = useAudioSetup();
   
@@ -40,11 +43,10 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     startListening,
     stopListening,
   } = useSpeech({
-    enabled: true, // Sempre habilitado para comandos globais
+    enabled: true,
     mode: 'global',
     onResult: (text: string) => {
       console.log('[VoiceContext] Global result received:', text);
-      // A lógica de processamento é feita no useEffect abaixo
     }
   });
 
@@ -58,35 +60,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setVoiceState,
     setRecognizedText,
   });
-
-  // ===================================================================
-  // PROCESSAR COMANDOS GLOBAIS
-  // ===================================================================
-  // useEffect(() => {
-  //   if (!recognizedText.trim()) return;
-
-  //   console.log(`[VoiceContext] Processing: "${recognizedText}", State: ${voiceState}`);
-
-  //   // Processa confirmação
-  //   if (voiceState === "waiting_confirmation") {
-  //     handleConfirmationResponse(recognizedText);
-  //     return;
-  //   }
-
-  //   // Processa comandos gerais
-  //   if (voiceState === 'waiting_wake' || voiceState === 'listening_command') {
-  //     processCommand(
-  //       recognizedText,
-  //       voiceState,
-  //       stopCurrentAudio,
-  //       setPendingIntent,
-  //       setPendingOriginalText,
-  //       setPendingSpokenText,
-  //       clearPending
-  //     );
-  //   }
-
-  // }, [recognizedText, voiceState]);
 
   // ===================================================================
   // HANDLER DE CONFIRMAÇÃO
@@ -135,71 +108,93 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const clearPending = useCallback(() => setPendingSpokenText(null), []);
 
   // ===================================================================
-  // REGISTRAR LISTENER NO SPEECHMANAGER
+  // REFS PARA MANTER ESTADO ATUALIZADO NO LISTENER
+  // ===================================================================
+  const voiceStateRef = useRef(voiceState);
+  const handleConfirmationResponseRef = useRef(handleConfirmationResponse);
+  const processCommandRef = useRef(processCommand);
+  const stopListeningRef = useRef(stopListening);
+  const stopCurrentAudioRef = useRef(stopCurrentAudio);
+
+  // Atualiza as refs sempre que as dependências mudarem
+  useEffect(() => {
+    voiceStateRef.current = voiceState;
+  }, [voiceState]);
+
+  useEffect(() => {
+    handleConfirmationResponseRef.current = handleConfirmationResponse;
+  }, [handleConfirmationResponse]);
+
+  useEffect(() => {
+    processCommandRef.current = processCommand;
+  }, [processCommand]);
+
+  useEffect(() => {
+    stopListeningRef.current = stopListening;
+  }, [stopListening]);
+
+  useEffect(() => {
+    stopCurrentAudioRef.current = stopCurrentAudio;
+  }, [stopCurrentAudio]);
+
+  // ===================================================================
+  // REGISTRAR LISTENER NO SPEECHMANAGER - ONLY ONCE
   // ===================================================================
   useEffect(() => {
-    // This function is called by SpeechManager ONLY with FINAL results
+    // ✅ Prevent duplicate registration
+    if (listenerRegisteredRef.current) {
+      console.log('[VoiceContext] Listener already registered, skipping');
+      return;
+    }
+
     const listener = (finalText: string) => {
       console.log('[VoiceContext] Received FINAL result via Listener:', finalText);
 
-      // --- MOVED PROCESSING LOGIC HERE ---
-      if (!finalText.trim()) return; // Ignore empty final results
-
-      // Update UI state with the final text (optional but good)
-      setRecognizedText(finalText); 
-
-      console.log(`[VoiceContext] Processing FINAL: "${finalText}", State: ${voiceState}`);
-
-      // Process confirmation if needed
-      if (voiceState === "waiting_confirmation") {
-         // Stop listening BEFORE handling confirmation
-         stopListening(); // Use stopListening from useSpeech hook
-         handleConfirmationResponse(finalText); // Assumes stable via useCallback
-         return; // Don't process as a general command
+      const trimmedText = finalText.trim();
+      
+      if (!trimmedText) {
+        console.log('[VoiceContext] Ignoring empty/whitespace-only result');
+        return;
       }
 
-      // Process general commands
-      if (voiceState === 'waiting_wake' || voiceState === 'listening_command') {
-        // No setTimeout needed here, 'isFinal' guarantees stability
-        processCommand( // Assumes stable via useCallback
-          finalText,
-          voiceState,
-          stopCurrentAudio, // Ensure stable from useAudioSetup
+      setRecognizedText(trimmedText); 
+
+      // ✅ Use .current to get the latest state value
+      const currentState = voiceStateRef.current;
+      console.log(`[VoiceContext] Processing FINAL: "${trimmedText}", State: ${currentState}`);
+
+      if (currentState === "waiting_confirmation") {
+        stopListeningRef.current();
+        handleConfirmationResponseRef.current(trimmedText);
+        return;
+      }
+
+      if (currentState === 'waiting_wake' || currentState === 'listening_command') {
+        processCommandRef.current(
+          trimmedText,
+          currentState,
+          stopCurrentAudioRef.current,
           setPendingIntent,
           setPendingOriginalText,
           setPendingSpokenText,
           clearPending
         );
       } else {
-         console.log('[Voice] Ignoring final result - wrong state:', voiceState);
+        console.log('[Voice] Ignoring final result - wrong state:', currentState);
       }
-      // --- END OF MOVED LOGIC ---
     };
 
     SpeechManager.addListener(listener);
-    console.log('[VoiceContext] Global listener ADDED.');
+    listenerRegisteredRef.current = true;
+    console.log('[VoiceContext] Global listener REGISTERED (once)');
 
-    // Cleanup function
+    // ✅ Cleanup only on component unmount
     return () => {
       SpeechManager.removeListener(listener);
-      console.log('[VoiceContext] Global listener REMOVED.');
+      listenerRegisteredRef.current = false;
+      console.log('[VoiceContext] Global listener UNREGISTERED');
     };
-
-  // ✅ DEPENDENCIES: Include everything used INSIDE the listener function
-  }, [
-      voiceState, // State value
-      // Stable functions (ensure they are wrapped correctly where defined)
-      handleConfirmationResponse,
-      processCommand,
-      stopListening, // From useSpeech (should be stable)
-      stopCurrentAudio, // From useAudioSetup (ensure stable)
-      // State setters (stable by default)
-      setPendingIntent,
-      setPendingOriginalText,
-      setPendingSpokenText,
-      clearPending,
-      setRecognizedText, // Added because we update it inside
-  ]);
+  }, []); // ✅ Empty dependency array - register ONCE
 
   const value = useMemo(() => ({
     isListening,

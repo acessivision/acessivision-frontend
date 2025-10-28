@@ -2,7 +2,7 @@ import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
 import { useRouter, usePathname } from 'expo-router';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
 
-type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/tabs/editarPerfil' | '/login' | '/cadastro';
+type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/tabs/editarPerfil' | '/login';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
 
 interface UseIntentHandlerProps {
@@ -65,6 +65,8 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       nomeTela = 'histórico';
     } else if (nomeTela === 'menu') {
       nomeTela = 'mehnu'
+    } else if (nomeTela === 'tabs') {
+      nomeTela = 'câmera'
     }
     speak(`Indo para ${nomeTela || 'tela inicial'}...`, () => {
       console.log(`[Voice] Navigation speak finished. Navigating to ${targetPath}...`);
@@ -160,7 +162,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         // --- Handle navigation differently ---
         case 'cadastro':
             stopListening();
-            router.push('/cadastro');
+            router.push('/login');
             // Rely on focus change to restart, but reset busy flag
             isBusyRef.current = false;
             break;
@@ -200,67 +202,108 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   }, []);
 
   const processCommand = useCallback((
-    spokenText: string, 
-    voiceState: string,
-    stopCurrentAudio: () => void, 
-    setPendingIntent: (intent: string) => void, 
-    setPendingOriginalText: (text: string) => void, 
-    setPendingSpokenText?: (text: string) => void, 
-    clearPending?: () => void
-  ) => {
-    const now = Date.now();
-    if (!spokenText.trim()) return;
-    if (spokenText === lastProcessedCommandRef.current && (now - lastProcessedTimeRef.current < 2000)) return console.log('[Voice] Blocked near-duplicate:', spokenText);
-    if (isBusyRef.current) return console.log('[Voice] Busy, skipping command:', spokenText);
+  spokenText: string, 
+  voiceState: string,
+  stopCurrentAudio: () => void, 
+  setPendingIntent: (intent: string) => void, 
+  setPendingOriginalText: (text: string) => void, 
+  setPendingSpokenText?: (text: string) => void, 
+  clearPending?: () => void
+) => {
+  const now = Date.now();
+  
+  // ✅ TRIM the text BEFORE any checks
+  const trimmedText = spokenText.trim();
+  
+  if (!trimmedText) return;
+  
+  // ✅ Use trimmed text for duplicate detection
+  if (trimmedText === lastProcessedCommandRef.current && (now - lastProcessedTimeRef.current < 2000)) {
+    return console.log('[Voice] Blocked near-duplicate:', trimmedText);
+  }
+  
+  if (isBusyRef.current) {
+    return console.log('[Voice] Busy, skipping command:', trimmedText);
+  }
 
-    lastProcessedCommandRef.current = spokenText;
-    lastProcessedTimeRef.current = now;
-    isBusyRef.current = true;
+  // ✅ Store trimmed text as last processed
+  lastProcessedCommandRef.current = trimmedText;
+  lastProcessedTimeRef.current = now;
+  isBusyRef.current = true;
 
-    try {
-      if (voiceState === "waiting_wake") {
-        const lowerText = spokenText.toLowerCase();
-        if (lowerText.includes("escuta")) {
-          stopCurrentAudio();
-          stopListening();
-          speak("Escutando", () => {
-              setVoiceState("listening_command");
-              setRecognizedText("");
-              startListening();
-              isBusyRef.current = false;
-            });
-        } else if (
-          lowerText.includes("pare") || lowerText.includes("parar") || 
-          lowerText.includes("cala a boca") || lowerText.includes("para")
-        ) {
-          stopCurrentAudio();
-          stopListening();
-          isBusyRef.current = false;
-        } else {
-          console.log('[Voice] Ignoring non-command speech:', spokenText);
-          isBusyRef.current = false;
-        }
-      } else if (voiceState === "listening_command") {
-          const prediction = IntentClassifierService.predictWithConfidence(spokenText);
-          const confidencePercent = (prediction.confidence * 100).toFixed(0);
-          console.log(`[Intent] "${spokenText}" -> ${prediction.intent} (${confidencePercent}%)`);
-          setRecognizedText(spokenText);
-          
-          stopListening(); 
-
-          if (prediction.notUnderstood) {
-            speak("Desculpe, não entendi.", restartListeningAfterSpeak); 
-          } else {
-            executeIntent(prediction.intent, spokenText, setPendingSpokenText, clearPending);
-          }
-        }
-    } catch (error) {
-      console.error('[Voice] Error processing input:', error);
+  
+try {
+  if (voiceState === "waiting_wake") {
+    const lowerText = trimmedText.toLowerCase();
+    
+    // ✅ More specific wake word detection
+    // Must be at start or isolated word
+    const wakePatterns = [
+      /^escuta\b/,           // "escuta" at start
+      /\bescuta\b/,          // "escuta" as isolated word
+      /^escute\b/,           // "escute" at start
+      /\bescute\b/           // "escute" as isolated word
+    ];
+    
+    const isWakeWord = wakePatterns.some(pattern => pattern.test(lowerText));
+    
+    // ✅ More specific stop word detection
+    // Must be clear stop intent, not just containing "para"
+    const stopPatterns = [
+      /^pare\b/,                    // "pare" at start
+      /^parar\b/,                   // "parar" at start
+      /^cala a boca\b/,             // "cala a boca" at start
+      /\bpare de\b/,                // "pare de" anywhere
+      /\bpara de\b/,                // "para de" anywhere
+      /\bpara aí\b/,                // "para aí" anywhere
+      /\bpara já\b/,                // "para já" anywhere
+      /\bcala a boca\b/,            // "cala a boca" anywhere
+      /^silêncio\b/,                // "silêncio" at start
+      /^quieto\b/                   // "quieto" at start
+    ];
+    
+    const isStopCommand = stopPatterns.some(pattern => pattern.test(lowerText));
+    
+    if (isWakeWord) {
+      console.log('[Voice] ✅ Wake word detected:', trimmedText);
+      stopCurrentAudio();
       stopListening();
-      speak("Erro ao processar comando.", restartListeningAfterSpeak);
+      speak("Escutando", () => {
+        setVoiceState("listening_command");
+        setRecognizedText("");
+        startListening();
+        isBusyRef.current = false;
+      });
+    } else if (isStopCommand) {
+      console.log('[Voice] 🛑 Stop command detected:', trimmedText);
+      stopCurrentAudio();
+      stopListening();
+      isBusyRef.current = false;
+    } else {
+      console.log('[Voice] Ignoring non-command speech:', trimmedText);
+      isBusyRef.current = false;
     }
+  } else if (voiceState === "listening_command") {
+    const prediction = IntentClassifierService.predictWithConfidence(trimmedText);
+    const confidencePercent = (prediction.confidence * 100).toFixed(0);
+    console.log(`[Intent] "${trimmedText}" -> ${prediction.intent} (${confidencePercent}%)`);
+    setRecognizedText(trimmedText);
+    
+    stopListening(); 
 
-  }, [speak, stopListening, startListening, setVoiceState, setRecognizedText, executeIntent, restartListeningAfterSpeak /*, stopCurrentAudio, etc */ ]);
+    if (prediction.notUnderstood) {
+      speak("Desculpe, não entendi.", restartListeningAfterSpeak); 
+    } else {
+      executeIntent(prediction.intent, trimmedText, setPendingSpokenText, clearPending);
+    }
+  }
+} catch (error) {
+  console.error('[Voice] Error processing input:', error);
+  stopListening();
+  speak("Erro ao processar comando.", restartListeningAfterSpeak);
+}
+
+}, [speak, stopListening, startListening, setVoiceState, setRecognizedText, executeIntent, restartListeningAfterSpeak]);
 
   return {
     executeIntent,

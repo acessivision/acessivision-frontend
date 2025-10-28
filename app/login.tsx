@@ -21,15 +21,9 @@ import { useAuth } from '../components/AuthContext';
 export default function LoginScreen() {
   const titleRef = useRef(null);
   const router = useRouter();
-  const { theme, temaAplicado, cores, getIconSize, getFontSize } = useTheme();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
   const [loading, setLoading] = useState(false);
-  const { login, loginWithGoogle } = useAuth();
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [linkEmail, setLinkEmail] = useState('');
-  const [pendingCredential, setPendingCredential] = useState<any>(null);
+  const { loginWithGoogle } = useAuth();
 
   useEffect(() => {
     const setInitialFocus = async () => {
@@ -47,29 +41,6 @@ export default function LoginScreen() {
     };
     setInitialFocus();
   }, []);
-
-  const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert('Erro', 'Por favor, preencha email e senha.');
-      return;
-    }
-    
-    setLoading(true);
-    
-    try {
-      const result = await login(email, password);
-
-      if (result.success) {
-        router.replace('/tabs');
-      } else {
-        Alert.alert('Erro', result.message);
-      }
-    } catch (error) {
-      Alert.alert('Erro', 'Ocorreu um erro ao fazer login');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -103,10 +74,8 @@ export default function LoginScreen() {
     header: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 16,
-      paddingVertical: 16,
-      paddingBottom: 40,
-      paddingTop: 0,
+      marginTop: 40,
+      marginLeft: 40,
       backgroundColor: cores.barrasDeNavegacao,
     },
     backButton: {
@@ -129,118 +98,38 @@ export default function LoginScreen() {
     keyboardView: {
       flex: 1,
     },
-    scrollContent: {
+    content: {
       flexGrow: 1,
       paddingHorizontal: 24,
-      paddingTop: 60,
-      paddingBottom: 40,
+      justifyContent: 'center',
     },
     logoContainer: {
       alignItems: 'center',
       marginBottom: 40,
     },
     logo: {
-      width: 130,
-      height: 90,
+      width: 160,
+      height: 110,
+      marginBottom: 10,
     },
     title: {
-      fontSize: 28,
+      fontSize: 36,
       fontWeight: 'bold',
       textAlign: 'center',
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
+      color: cores.texto,
       marginBottom: 8,
     },
     subtitle: {
       fontSize: 16,
       textAlign: 'center',
-      color: temaAplicado === 'dark' ? '#ccc' : '#666',
+      color: cores.texto,
       marginBottom: 40,
-    },
-    inputContainer: {
-      marginBottom: 20,
-    },
-    label: {
-      fontSize: 16,
-      fontWeight: '500',
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
-      marginBottom: 8,
-    },
-    input: {
-      height: 56,
-      borderWidth: 2,
-      borderColor: temaAplicado === 'dark' ? '#FFF' : '#000',
-      borderRadius: 8,
-      paddingHorizontal: 16,
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
-      backgroundColor: temaAplicado === 'dark' ? '#111' : '#fff',
-    },
-    passwordContainer: {
-      position: 'relative',
-    },
-    passwordInput: {
-      height: 56,
-      borderWidth: 2,
-      borderColor: temaAplicado === 'dark' ? '#FFF' : '#000',
-      borderRadius: 8,
-      paddingHorizontal: 16,
-      paddingRight: 50,
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
-      backgroundColor: temaAplicado === 'dark' ? '#111' : '#fff',
-    },
-    eyeButton: {
-      position: 'absolute',
-      right: 16,
-      top: 16,
-      padding: 4,
-    },
-    forgotContainer: {
-      alignItems: 'center',
-      marginBottom: 30,
-    },
-    forgotText: {
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
-      textDecorationLine: 'underline',
-    },
-    loginButton: {
-      height: 56,
-      backgroundColor: temaAplicado === 'dark' ? '#fff' : '#000',
-      borderRadius: 8,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 30,
-    },
-    loginButtonText: {
-      fontSize: 18,
-      fontWeight: '600',
-      color: temaAplicado === 'dark' ? '#000' : '#fff',
-    },
-    loginButtonDisabled: {
-      backgroundColor: temaAplicado === 'dark' ? '#888' : '#ccc',
-      opacity: 0.7,
-    },
-    dividerContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 30,
-    },
-    dividerLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: temaAplicado === 'dark' ? '#333' : '#e0e0e0',
-    },
-    dividerText: {
-      marginHorizontal: 16,
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#ccc' : '#666',
     },
     googleButton: {
       height: 56,
-      backgroundColor: temaAplicado === 'dark' ? '#fff' : '#fff',
-      borderWidth: temaAplicado === 'dark' ? 0 : 1,
-      borderColor: '#000',
+      backgroundColor: '#fff',
+      borderWidth: 1,
+      borderColor: cores.texto,
       borderRadius: 8,
       flexDirection: 'row',
       alignItems: 'center',
@@ -258,47 +147,28 @@ export default function LoginScreen() {
       fontWeight: '500',
       color: '#000',
     },
-    createAccountContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    createAccountText: {
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#ccc' : '#666',
-    },
-    createAccountLink: {
-      fontSize: 16,
-      color: temaAplicado === 'dark' ? '#fff' : '#000',
-      textDecorationLine: 'underline',
-      fontWeight: '500',
-    },
   });
 
   return (
     <SafeAreaView style={styles.container}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.header}>
-            <TouchableOpacity 
-              style={styles.backButton} 
-              onPress={handleGoBack}
-              accessibilityRole='button'
-              accessibilityLabel='Voltar'
-            >
-              <View style={styles.backIcon}>
-                <Ionicons 
-                  name="arrow-back" 
-                  size={getIconSize('medium')} 
-                  color={cores.icone} 
-                />
-              </View>
-              <Text style={styles.headerTitle}>Voltar</Text>
-            </TouchableOpacity>
-          </View>
-
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={handleGoBack}
+            accessibilityRole='button'
+            accessibilityLabel='Voltar'
+          >
+            <View style={styles.backIcon}>
+              <Ionicons 
+                name="arrow-back" 
+                size={getIconSize('medium')} 
+                color={cores.icone} 
+              />
+            </View>
+            <Text style={styles.headerTitle}>Voltar</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.content}>
           <View style={styles.logoContainer}>
             <Image
                 source={
@@ -308,69 +178,10 @@ export default function LoginScreen() {
                 }
                 style={styles.logo}
                 />
+              <Text style={styles.title}>AcessiVision</Text>
           </View>
 
-          <Text style={styles.title} ref={titleRef} accessibilityRole="header">Entre com sua Conta</Text>
-          <Text style={styles.subtitle}>Preencha seu email e senha para entrar</Text>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholder='Email'
-              placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
-              editable={!loading}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Senha</Text>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                style={styles.passwordInput}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                placeholder="Senha"
-                placeholderTextColor={theme === 'dark' ? '#888' : '#666'}
-                editable={!loading}
-              />
-              <TouchableOpacity
-                style={styles.eyeButton}
-                onPress={() => setShowPassword(!showPassword)}
-                disabled={loading}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                  size={24}
-                  color={temaAplicado === 'dark' ? '#888' : '#666'}
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TouchableOpacity 
-            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-            accessibilityRole='button'
-          >
-            {loading ? (
-              <ActivityIndicator color={temaAplicado === 'dark' ? '#000' : '#fff'} />
-            ) : (
-              <Text style={styles.loginButtonText}>Entrar</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Ou</Text>
-            <View style={styles.dividerLine} />
-          </View>
+          <Text style={styles.subtitle}>Entre no AcessiVision e desfrute de todas as funcionalidades!</Text>
 
           <TouchableOpacity 
             style={styles.googleButton} 
@@ -380,14 +191,7 @@ export default function LoginScreen() {
             <Image source={require('../assets/images/icone-google.png')} />
             <Text style={styles.googleButtonText}> Entrar com Google</Text>
           </TouchableOpacity>
-
-          <View style={styles.createAccountContainer}>
-            <Text style={styles.createAccountText}>Não tem uma conta? </Text>
-            <TouchableOpacity onPress={() => router.push('/cadastro')} disabled={loading}>
-              <Link href='/cadastro' style={styles.createAccountLink}>Criar Conta</Link>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
+        </View>
     </SafeAreaView>
   );
 }

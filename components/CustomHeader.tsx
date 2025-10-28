@@ -109,7 +109,7 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
         <TouchableOpacity
           onPress={abreLogin}
           style={styles.iconButton}
-          accessibilityLabel="Cadastro"
+          accessibilityLabel="Login"
           accessibilityRole="button"
         >
           <Ionicons 

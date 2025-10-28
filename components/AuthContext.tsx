@@ -7,7 +7,6 @@ import { onAuthStateChanged } from '@react-native-firebase/auth';
 interface AuthContextType {
   user: Usuario | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<any>;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<any>;
 }
@@ -15,7 +14,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
-  login: async () => {},
   logout: async () => {},
   loginWithGoogle: async () => {},
 });
@@ -60,14 +58,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return unsubscribe;
   }, []);
   
-  const login = async (email: string, password: string) => {
-    const result = await authService.login(email, password);
-    if (result.success && result.usuario) {
-      setUser(result.usuario);
-    }
-    return result;
-  };
-  
   const loginWithGoogle = async () => {
     const result = await authService.loginWithGoogle();
     return result;
@@ -78,7 +68,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, loginWithGoogle }}>
+    <AuthContext.Provider value={{ user, isLoading, logout, loginWithGoogle }}>
       {children}
     </AuthContext.Provider>
   );

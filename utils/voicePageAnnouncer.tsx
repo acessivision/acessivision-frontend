@@ -1,32 +1,19 @@
-import * as Speech from 'expo-speech';
 import { usePathname, useGlobalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
-import { useSpeech } from '../hooks/useSpeech';
+import SpeechManager from '../utils/speechManager';
 
 export function VoicePageAnnouncer() {
   const pathname = usePathname();
-
   const params = useGlobalSearchParams<{ titulo?: string }>();
-
-  const { 
-      speak, 
-      startListening, 
-      stopListening, 
-      isListening,
-      recognizedText,
-      setRecognizedText 
-    } = useSpeech({
-      mode: 'local',
-    });
 
   useEffect(() => {
     let pageName = '';
 
-    // 3. Adicione a mesma verificação ANTES do switch
+    // Check for conversation with title first
     if (pathname === '/tabs/conversa' && params.titulo) {
-      pageName = 'Conversa: '+String(params.titulo);
+      pageName = 'Conversa: ' + String(params.titulo);
     } else {
-      // Fallback para a lógica antiga
+      // Fallback to regular page names
       switch (pathname) {
         case '/tabs':
           pageName = 'Câmera';
@@ -35,7 +22,7 @@ export function VoicePageAnnouncer() {
           pageName = 'Histórico';
           break;
         case '/tabs/menu':
-          pageName = 'Mehnu'; // Devido pronúncia
+          pageName = 'Mehnu'; // Due to pronunciation
           break;
         case '/tabs/editarPerfil':
           pageName = 'Editar perfil';
@@ -46,21 +33,19 @@ export function VoicePageAnnouncer() {
         case '/login':
           pageName = 'Login';
           break;
-        case '/cadastro':
-          pageName = 'Cadastro';
-          break;
         default:
           pageName = 'AcessiVision';
       }
     }
 
     if (pageName) {
-      Speech.speak(pageName, {
-        language: 'pt-BR',
-      });
+      // ✅ Use keepListening=true to NOT stop recognition during page announcements
+      // The echo prevention in SpeechManager will ignore if the system hears itself
+      console.log('[VoicePageAnnouncer] Announcing page:', pageName);
+      SpeechManager.speak(pageName, undefined, true); // keepListening = true
     }
     
-  // 4. Adicione 'params.titulo' ao array de dependências
   }, [pathname, params.titulo]);
+  
   return null;
 }

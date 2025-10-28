@@ -5,7 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../components/ThemeContext';
 import { VoiceCommandProvider } from '../components/VoiceCommandContext';
 import * as NavigationBar from 'expo-navigation-bar';
-import { VoicePageAnnouncer } from '../components/VoicePageAnnouncer';
+import { VoicePageAnnouncer } from '../utils/voicePageAnnouncer';
 import { AuthProvider } from '../components/AuthContext';
 import { Platform } from 'react-native';
 import React, { useEffect, useState } from 'react';
@@ -71,15 +71,15 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <ThemeProvider>
-        <VoiceCommandProvider>
+      <VoiceCommandProvider>
+        <ThemeProvider>
           <SafeAreaProvider>
             <ThemedSystemBars />
             <VoicePageAnnouncer />
             <Stack screenOptions={{ headerShown: false }} />
           </SafeAreaProvider>
-        </VoiceCommandProvider>
-      </ThemeProvider>
+        </ThemeProvider>
+      </VoiceCommandProvider>
     </AuthProvider>
   );
 }

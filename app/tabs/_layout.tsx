@@ -5,7 +5,7 @@ import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { toTitleCase } from 'utils/toTitleCase';
+import { toTitleCase } from '../../utils/toTitleCase';
 
 import React from 'react';
 import { LayoutProvider, useLayout } from '../../components/LayoutContext';
