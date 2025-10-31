@@ -140,7 +140,7 @@ export default function ConfigScreen() {
           color: cores.texto,
         },
         deleteText: {
-          color: theme === 'dark' ? '#ffeb3b' : '#d32f2f',
+          color: cores.perigo,
         },
       }),
     [theme, cores, getFontSize, getIconSize]
@@ -179,7 +179,7 @@ export default function ConfigScreen() {
                 <Ionicons
                   name="warning-outline"
                   size={getIconSize('small')}
-                  color={theme === 'dark' ? '#ffeb3b' : '#d32f2f'}
+                  color={cores.perigo}
                 />
               </View>
               <Text style={[styles.optionText, styles.deleteText]}>

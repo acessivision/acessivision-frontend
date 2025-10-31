@@ -28,7 +28,7 @@ interface Conversation {
   dataAlteracao: Timestamp;
 }
 
-type StepType = 'aguardandoPalavraTitulo' | 'aguardandoTitulo' | 'idle';
+type StepType = 'aguardandoPalavraTitulo' | 'aguardandoTitulo' | 'aguardandoConfirmacaoExclusao' | 'idle';
 
 const HistoryScreen: React.FC = () => {
   const router = useRouter();
@@ -43,21 +43,25 @@ const HistoryScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState<StepType>('idle');
 
-  // ✅ Ref para rastrear se já processamos o título
+  // ✅ Estados para confirmação de exclusão
+  const [conversaParaExcluir, setConversaParaExcluir] = useState<{ id: string; titulo: string } | null>(null);
+
+  // ✅ Refs para timeouts
   const tituloProcessadoRef = useRef(false);
   const tituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const confirmacaoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ✅ Usa o novo hook de voz
   const { 
     speak, 
     startListening, 
     stopListening,
-    stopSpeaking, // ✅ Adiciona stopSpeaking para cancelar fala
+    stopSpeaking,
     isListening,
     recognizedText,
     setRecognizedText 
   } = useSpeech({
-    enabled: isScreenFocused && modalVisible, // Só ativa quando modal está aberto
+    enabled: isScreenFocused && (modalVisible || !!conversaParaExcluir), // ✅ Ativa quando modal está aberto OU esperando confirmação
     mode: 'local',
   });
 
@@ -67,7 +71,6 @@ const HistoryScreen: React.FC = () => {
   useEffect(() => {
     if (!user || isAuthLoading) return;
 
-    // ✅ API modular
     const db = getFirestore();
     const conversasCollectionRef = collection(db, 'conversas');
     const q = query(
@@ -103,89 +106,143 @@ const HistoryScreen: React.FC = () => {
   // PROCESSAR RECONHECIMENTO DE VOZ
   // ===================================================================
   useEffect(() => {
-    if (!recognizedText.trim() || !modalVisible) return;
+    if (!recognizedText.trim()) return;
 
     const fala = recognizedText.toLowerCase().trim();
-    console.log(`[Histórico] Step: ${step}, Fala: "${fala}", isListening: ${isListening}`);
+    console.log(`[Histórico] Step: ${step}, Fala: "${fala}"`);
 
-    // ✅ Passo 1: Detectar palavra "título"
-    if (step === 'aguardandoPalavraTitulo' && (fala.includes('título') || fala.includes('titulo'))) {
-      console.log("✅ Palavra 'título' detectada!");
-      setStep('aguardandoTitulo');
-      setRecognizedText('');
-      tituloProcessadoRef.current = false; // Reset flag
-      
-      // Limpa timeout anterior se existir
-      if (tituloTimeoutRef.current) {
-        clearTimeout(tituloTimeoutRef.current);
-        tituloTimeoutRef.current = null;
+    // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
+    if (modalVisible) {
+      // Passo 1: Detectar palavra "título"
+      if (step === 'aguardandoPalavraTitulo' && (fala.includes('título') || fala.includes('titulo'))) {
+        console.log("✅ Palavra 'título' detectada!");
+        setStep('aguardandoTitulo');
+        setRecognizedText('');
+        tituloProcessadoRef.current = false;
+        
+        if (tituloTimeoutRef.current) {
+          clearTimeout(tituloTimeoutRef.current);
+          tituloTimeoutRef.current = null;
+        }
+        
+        speak("Escutando o título. Fale e aguarde um momento.", () => {
+          startListening(true);
+        });
+        return;
       }
-      
-      speak("Escutando o título. Fale e aguarde um momento.", () => {
-        startListening(true); // Start listening for the full title
-      });
-      return;
+
+      // Passo 2: Acumular texto falado com debounce
+      if (step === 'aguardandoTitulo' && fala && !tituloProcessadoRef.current) {
+        console.log(`📝 Acumulando título: "${fala}"`);
+        
+        if (tituloTimeoutRef.current) {
+          clearTimeout(tituloTimeoutRef.current);
+        }
+        
+        tituloTimeoutRef.current = setTimeout(() => {
+          if (!tituloProcessadoRef.current && fala) {
+            console.log(`✅ Título final capturado: "${fala}"`);
+            tituloProcessadoRef.current = true;
+            
+            stopListening();
+            
+            speak(`Criando conversa com título: ${fala}`, () => {
+              criarConversaComTitulo(fala);
+            });
+          }
+        }, 2000);
+        
+        return;
+      }
     }
 
-    // ✅ Passo 2: Acumular texto falado com debounce
-    if (step === 'aguardandoTitulo' && fala && !tituloProcessadoRef.current) {
-      console.log(`📝 Acumulando título: "${fala}"`);
+    // ===== FLUXO DE EXCLUSÃO DE CONVERSA =====
+    if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
+      console.log(`🗑️ Processando resposta de exclusão: "${fala}"`);
       
       // Limpa timeout anterior
-      if (tituloTimeoutRef.current) {
-        clearTimeout(tituloTimeoutRef.current);
+      if (confirmacaoTimeoutRef.current) {
+        clearTimeout(confirmacaoTimeoutRef.current);
       }
-      
-      // ✅ Aguarda 2 segundos de silêncio antes de processar
-      tituloTimeoutRef.current = setTimeout(() => {
-        if (!tituloProcessadoRef.current && fala) {
-          console.log(`✅ Título final capturado: "${fala}"`);
-          tituloProcessadoRef.current = true;
-          
+
+      // Aguarda 1.5 segundos de silêncio antes de processar
+      confirmacaoTimeoutRef.current = setTimeout(() => {
+        const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero'];
+        const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
+        
+        const isConfirm = confirmWords.some(word => fala.includes(word));
+        const isDeny = denyWords.some(word => fala.includes(word));
+        
+        if (isConfirm) {
+          console.log('✅ Confirmação de exclusão recebida');
           stopListening();
-          
-          // Cria a conversa automaticamente com o título falado
-          speak(`Criando conversa com título: ${fala}`, () => {
-            criarConversaComTitulo(fala);
+          setRecognizedText('');
+          speak("Confirmado. Excluindo conversa.", () => {
+            deletarDocumentosDaConversa(conversaParaExcluir.id);
+            setConversaParaExcluir(null);
+            setStep('idle');
+          });
+        } else if (isDeny) {
+          console.log('❌ Exclusão cancelada pelo usuário');
+          stopListening();
+          setRecognizedText('');
+          speak("Cancelado.", () => {
+            setConversaParaExcluir(null);
+            setStep('idle');
+          });
+        } else {
+          console.log('⚠️ Resposta não reconhecida, perguntando novamente');
+          setRecognizedText('');
+          speak(`Não entendi. Você quer excluir a conversa ${conversaParaExcluir.titulo}? Diga sim ou não.`, () => {
+            startListening(true);
           });
         }
-      }, 2000); // ✅ Espera 2 segundos de pausa
-      
+      }, 1500);
+
       return;
     }
 
-  }, [recognizedText, step, modalVisible, isListening]);
+  }, [recognizedText, step, modalVisible, conversaParaExcluir]);
+
+  // ✅ Cleanup dos timeouts
+  useEffect(() => {
+    return () => {
+      if (tituloTimeoutRef.current) {
+        clearTimeout(tituloTimeoutRef.current);
+      }
+      if (confirmacaoTimeoutRef.current) {
+        clearTimeout(confirmacaoTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ===================================================================
-  // EXCLUIR CONVERSA
+  // EXCLUIR CONVERSA - COM VOZ
   // ===================================================================
   const excluirConversa = (conversationId: string, titulo: string) => {
     if (!user) return;
 
-    Alert.alert(
-      "Confirmar Exclusão",
-      `Tem certeza de que deseja excluir a conversa "${titulo}"? Esta ação não pode ser desfeita.`,
-      [
-        { 
-          text: "Cancelar", 
-          style: "cancel" 
-        },
-        { 
-          text: "Excluir", 
-          style: "destructive", 
-          onPress: () => deletarDocumentosDaConversa(conversationId) 
-        }
-      ]
-    );
+    console.log(`🗑️ Iniciando fluxo de exclusão por voz para: ${titulo}`);
+    
+    // Define a conversa a ser excluída e inicia o fluxo de voz
+    setConversaParaExcluir({ id: conversationId, titulo });
+    setStep('aguardandoConfirmacaoExclusao');
+    setRecognizedText('');
+    
+    // Fala a pergunta e inicia a escuta
+    setTimeout(() => {
+      speak(`Tem certeza que deseja excluir a conversa ${titulo}? Diga sim ou não.`, () => {
+        startListening(true);
+      });
+    }, 300);
   };
 
   const deletarDocumentosDaConversa = async (conversationId: string) => {
     if (!user) return;
 
-    console.log(`🗑️ Excluindo conversa ${conversationId}...`);
+    console.log(`🗑️ Executando exclusão da conversa ${conversationId}...`);
     
     try {
-      // ✅ API modular
       const db = getFirestore();
       const mensagensRef = collection(doc(collection(db, 'conversas'), conversationId), 'mensagens');
       const mensagensSnapshot = await getDocs(mensagensRef);
@@ -209,13 +266,15 @@ const HistoryScreen: React.FC = () => {
         historico: arrayRemove(conversationId)
       });
       
-      console.log('✅ Conversa excluída e removida do histórico.');
+      console.log('✅ Conversa excluída com sucesso.');
+      speak('Conversa excluída com sucesso.');
 
     } catch (error) {
       console.error("❌ Erro ao excluir conversa:", error);
       let errorMessage = "Erro desconhecido";
       if (error instanceof Error) errorMessage = error.message;
       Alert.alert('Erro', 'Não foi possível excluir a conversa: ' + errorMessage);
+      speak('Erro ao excluir conversa.');
     }
   };
 
@@ -236,7 +295,6 @@ const HistoryScreen: React.FC = () => {
     setIsSaving(true);
 
     try {
-      // ✅ API modular
       const db = getFirestore();
       const conversasCollectionRef = collection(db, 'conversas');
       
@@ -282,7 +340,7 @@ const HistoryScreen: React.FC = () => {
     setModalVisible(true);
     setIsSaving(false);
     setRecognizedText('');
-    tituloProcessadoRef.current = false; // Reset flag
+    tituloProcessadoRef.current = false;
     
     setTimeout(() => {
       speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
@@ -292,20 +350,45 @@ const HistoryScreen: React.FC = () => {
   };
 
   const fecharModal = () => {
+    stopSpeaking();
+    
     setModalVisible(false);
     setTituloInput('');
     setStep('idle');
     setIsSaving(false);
     setRecognizedText('');
-    tituloProcessadoRef.current = false; // Reset flag
+    tituloProcessadoRef.current = false;
     
-    // ✅ Limpa timeout se existir
     if (tituloTimeoutRef.current) {
       clearTimeout(tituloTimeoutRef.current);
       tituloTimeoutRef.current = null;
     }
     
     stopListening();
+    
+    setTimeout(() => {
+      startListening(false);
+    }, 500);
+  };
+
+  // Cancelar exclusão programaticamente
+  const cancelarExclusao = () => {
+    console.log('[Histórico] Cancelando exclusão manualmente');
+    stopSpeaking();
+    stopListening();
+    
+    if (confirmacaoTimeoutRef.current) {
+      clearTimeout(confirmacaoTimeoutRef.current);
+      confirmacaoTimeoutRef.current = null;
+    }
+    
+    setConversaParaExcluir(null);
+    setStep('idle');
+    setRecognizedText('');
+    
+    setTimeout(() => {
+      startListening(false);
+    }, 500);
   };
 
   // ===================================================================
@@ -502,6 +585,75 @@ const HistoryScreen: React.FC = () => {
       fontSize: getFontSize('medium'),
       fontWeight: '500',
     },
+    deleteOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: 'rgba(0,0,0,0.8)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+      zIndex: 1000,
+    },
+    deleteModal: {
+      backgroundColor: cores.fundo,
+      borderRadius: 20,
+      padding: 32,
+      width: '100%',
+      maxWidth: 500,
+      alignItems: 'center',
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 5,
+      elevation: 8,
+    },
+    deleteTitle: {
+      fontSize: getFontSize('large'),
+      fontWeight: 'bold',
+      marginBottom: 16,
+      textAlign: 'center',
+    },
+    deleteMessage: {
+      fontSize: getFontSize('medium'),
+      textAlign: 'center',
+      marginBottom: 8,
+      lineHeight: 24,
+    },
+    recognizedTextBox: {
+      padding: 12,
+      borderRadius: 8,
+      width: '100%',
+    },
+    recognizedTextLabel: {
+      fontSize: getFontSize('small'),
+      fontWeight: '600',
+      marginBottom: 4,
+    },
+    recognizedTextContent: {
+      fontSize: getFontSize('medium'),
+      fontStyle: 'italic',
+    },
+    deleteButtonsContainer: {
+      flexDirection: 'row',
+      marginTop: 20,
+      gap: 12,
+      width: '100%',
+    },
+    deleteActionButton: {
+      flex: 1,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: cores.texto,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    deleteActionText: {
+      fontSize: getFontSize('medium'),
+      fontWeight: '600',
+      textAlign: 'center',
+      color: '#000',
+    },
   });
 
   // ===================================================================
@@ -526,6 +678,7 @@ const HistoryScreen: React.FC = () => {
   }
 
   const aguardandoPalavraTitulo = step === 'aguardandoPalavraTitulo';
+  const aguardandoConfirmacao = step === 'aguardandoConfirmacaoExclusao';
 
   return (
     <View style={[styles.container, { flex: 1 }]}>
@@ -550,17 +703,96 @@ const HistoryScreen: React.FC = () => {
             </View>
             <TouchableOpacity 
               style={styles.deleteButton} 
-              onPress={(e) => {e.stopPropagation(); excluirConversa(item.id, item.titulo)}}
+              onPress={(e) => {
+                e.stopPropagation(); 
+                excluirConversa(item.id, item.titulo);
+              }}
             >
               <Ionicons 
                 name="trash-outline" 
                 size={getIconSize('medium')} 
-                color={cores.perigo || '#FF453A'} 
+                color={cores.perigo} 
               />
             </TouchableOpacity>
           </TouchableOpacity>
         )}
       />
+
+      {/* ✅ OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {conversaParaExcluir && aguardandoConfirmacao && (
+        <View style={styles.deleteOverlay}>
+          <View style={styles.deleteModal}>
+            <Ionicons 
+              name="warning" 
+              size={48} 
+              color="#FF453A" 
+              style={{ marginBottom: 16 }}
+            />
+            <Text style={[styles.deleteTitle, { color: cores.texto }]}>
+              Confirmar Exclusão
+            </Text>
+            <Text style={[styles.deleteMessage, { color: cores.texto }]}>
+              Tem certeza que deseja excluir a conversa "{conversaParaExcluir.titulo}"?
+            </Text>
+            
+            {isListening && (
+              <View style={[styles.listeningIndicator, { marginTop: 16 }]}>
+                <ActivityIndicator size="small" color={cores.texto} />
+                <Text style={[styles.listeningText, { color: cores.texto }]}>
+                  Escutando...
+                </Text>
+              </View>
+            )}
+
+            {recognizedText && (
+              <View style={[styles.recognizedTextBox, { backgroundColor: cores.barrasDeNavegacao, marginTop: 12 }]}>
+                <Text style={[styles.recognizedTextLabel, { color: cores.texto }]}>
+                  Você disse:
+                </Text>
+                <Text style={[styles.recognizedTextContent, { color: cores.texto }]}>
+                  "{recognizedText}"
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.deleteButtonsContainer}>
+              <TouchableOpacity 
+                style={[styles.deleteActionButton, { backgroundColor: cores.confirmar }]}
+                onPress={cancelarExclusao}
+              >
+                <Text style={[styles.deleteActionText, { color: '#000' }]}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.deleteActionButton, { backgroundColor: cores.perigo }]}
+                onPress={() => {
+                  console.log('[Histórico] Confirmação manual via botão');
+                  stopSpeaking();
+                  stopListening();
+                  
+                  if (confirmacaoTimeoutRef.current) {
+                    clearTimeout(confirmacaoTimeoutRef.current);
+                    confirmacaoTimeoutRef.current = null;
+                  }
+                  
+                  speak("Confirmado. Excluindo conversa.", () => {
+                    deletarDocumentosDaConversa(conversaParaExcluir.id);
+                    setConversaParaExcluir(null);
+                    setStep('idle');
+                    setRecognizedText('');
+                  });
+                }}
+              >
+                <Text style={[styles.deleteActionText, { color: '#fff' }]}>
+                  Confirmar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       <TouchableOpacity
         style={styles.createButton}
@@ -611,7 +843,6 @@ const HistoryScreen: React.FC = () => {
               </View>
             )}
 
-            {/* ✅ Mostrar texto sendo capturado */}
             {step === 'aguardandoTitulo' && recognizedText && (
               <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
                 <Text style={styles.listeningText}>
