@@ -44,7 +44,7 @@ const models: ModelData[] = [modelAlta, modelSVM, modelCustom];
 const classes = modelAlta.classes;
 const vocabSize = Object.keys(modelAlta.vectorizer.vocabulary).length;
 
-const LOW_CONFIDENCE_THRESHOLD = 0.25;
+const LOW_CONFIDENCE_THRESHOLD = 0.23;
 
 // === Pré-processamento ===
 function preprocessText(text: string): string {

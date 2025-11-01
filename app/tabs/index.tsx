@@ -38,6 +38,9 @@ const CameraScreen: React.FC = () => {
   const [isSending, setIsSending] = useState(false);
   const [waitingForQuestion, setWaitingForQuestion] = useState(false);
 
+  // 🔊 Referência para o intervalo de feedback
+ const feedbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const {
     pendingSpokenText,
     clearPending,
@@ -54,6 +57,48 @@ const CameraScreen: React.FC = () => {
     enabled: isFocused && waitingForQuestion,
     mode: 'local',
   });
+
+  // ===================================================================
+  // LIMPAR INTERVALO DE FEEDBACK AO DESMONTAR
+  // ===================================================================
+  useEffect(() => {
+    return () => {
+      if (feedbackIntervalRef.current) {
+        clearInterval(feedbackIntervalRef.current);
+        feedbackIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  // ===================================================================
+  // INICIAR FEEDBACK EM LOOP
+  // ===================================================================
+  const startProcessingFeedback = () => {
+    console.log("[Feedback] 🔊 Iniciando feedback em loop");
+    
+    // Fala imediatamente
+    speak("Processando");
+    
+    // Configura intervalo para repetir a cada 3 segundos
+    feedbackIntervalRef.current = setInterval(() => {
+      console.log("[Feedback] 🔊 Repetindo feedback");
+      speak("Processando");
+    }, 5000);
+  };
+
+  // ===================================================================
+  // PARAR FEEDBACK EM LOOP
+  // ===================================================================
+  const stopProcessingFeedback = () => {
+    if (feedbackIntervalRef.current) {
+      console.log("[Feedback] 🛑 Parando feedback em loop");
+      clearInterval(feedbackIntervalRef.current);
+      feedbackIntervalRef.current = null;
+      
+      // Para qualquer fala em andamento
+      stopListening();
+    }
+  };
 
   // ===================================================================
   // PROCESSAR PERGUNTA RECONHECIDA
@@ -93,6 +138,9 @@ const CameraScreen: React.FC = () => {
     stopListening();
 
     try {
+      // 🔊 INICIAR FEEDBACK EM LOOP
+      startProcessingFeedback();
+
       // ✅ USAR BASE64 DIRETO DA CÂMERA
       console.log('[Upload] 📸 Usando base64 da câmera...');
       
@@ -129,6 +177,9 @@ const CameraScreen: React.FC = () => {
       const result = await response.json();
       console.log('[Upload] 🎉 Resultado:', result);
       
+      // 🔊 PARAR FEEDBACK ASSIM QUE RECEBER A RESPOSTA
+      stopProcessingFeedback();
+      
       const description = result.description;
 
       if (!description) {
@@ -142,6 +193,9 @@ const CameraScreen: React.FC = () => {
       // =======================================================
       if (mode === 'chat' && conversaId) {
         console.log(`[Firestore] 💾 Salvando na conversa ${conversaId}`);
+
+        // 🔊 FEEDBACK: Informar que vai salvar
+        await speak("Resposta recebida. Salvando na conversa.");
 
         const filename = photo.uri.split('/').pop() || `photo-${Date.now()}.jpg`;
         const storagePath = `conversas/${conversaId}/${filename}`;
@@ -183,6 +237,9 @@ const CameraScreen: React.FC = () => {
       }
 
     } catch (error) {
+      // 🔊 PARAR FEEDBACK EM CASO DE ERRO
+      stopProcessingFeedback();
+      
       console.error("[Upload] ❌ Error completo:", error);
       
       let errorMessage = 'Ocorreu um erro desconhecido.';
@@ -195,6 +252,8 @@ const CameraScreen: React.FC = () => {
         }
       }
       
+      // 🔊 FEEDBACK DE ERRO
+      await speak(`Erro: ${errorMessage}`);
       Alert.alert("Erro no Upload", errorMessage);
     } finally {
       setCapturedPhoto(null);
