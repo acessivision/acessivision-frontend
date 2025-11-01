@@ -4,10 +4,11 @@ import { LayoutChangeEvent, View } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
 import { useTheme } from '../../components/ThemeContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as NavigationBar from 'expo-navigation-bar';
 
 import { toTitleCase } from '../../utils/toTitleCase';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { LayoutProvider, useLayout } from '../../components/LayoutContext';
 
 function LayoutWithVoiceUI() {
@@ -16,6 +17,17 @@ function LayoutWithVoiceUI() {
   const params = useGlobalSearchParams<{ titulo?: string }>();
   const { mudaTema, cores, getIconSize } = useTheme();
   const { setHeaderHeight } = useLayout();
+
+  useEffect(() => {
+    const esconderBarra = async () => {
+      try {
+        await NavigationBar.setVisibilityAsync('hidden');
+      } catch (error) {
+        console.warn('⚠️ Erro ao ajustar barra de navegação:', error);
+      }
+    };
+    esconderBarra();
+  }, []);
 
   const getTitle = () => {
     if (pathname === '/tabs/conversa' && params.titulo) {

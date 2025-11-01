@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useTheme } from "../../components/ThemeContext";
+import { useAuth } from "../../components/AuthContext";
 import { useIsFocused } from "@react-navigation/native";
 import * as Speech from "expo-speech";
 import {
@@ -18,15 +20,22 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 
+const API_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000`;
+
 export default function EditProfileScreen() {
   const router = useRouter();
   const { cores, temaAplicado, getIconSize, getFontSize } = useTheme();
+  const { user } = useAuth();
   const isFocused = useIsFocused();
 
   const [nome, setNome] = useState("João da Silva");
   const [email, setEmail] = useState("joaosilva@gmail.com");
   const [senha, setSenha] = useState("*******");
   const [showPassword, setShowPassword] = useState(false);
+  
+  // Estado do plano
+  const [currentPlan, setCurrentPlan] = useState<string>('free');
+  const [loadingPlan, setLoadingPlan] = useState(true);
 
   const [step, setStep] = useState<
     "intro" | "esperandoCampo" | "esperandoNovoValor"
@@ -34,6 +43,30 @@ export default function EditProfileScreen() {
   const [campoSelecionado, setCampoSelecionado] = useState<
     "nome" | "email" | "senha" | null
   >(null);
+
+  // Carregar plano do usuário
+  useEffect(() => {
+    if (user) {
+      loadCurrentPlan();
+    }
+  }, [user]);
+
+  const loadCurrentPlan = async () => {
+    if (!user) return;
+
+    try {
+      const response = await fetch(`${API_URL}/user/${user.uid}/plan`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setCurrentPlan(data.plano);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar plano:', error);
+    } finally {
+      setLoadingPlan(false);
+    }
+  };
 
   const handleGoBack = () => {
     router.back();
@@ -45,6 +78,11 @@ export default function EditProfileScreen() {
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
+  };
+
+  // Navegar para tela de upgrade
+  const handleUpgrade = () => {
+    router.push('../upgrade');
   };
 
   // ---- Funções de voz ----
@@ -63,7 +101,7 @@ export default function EditProfileScreen() {
 
   const ouvir = async () => {
     try {
-      if (!isFocused) return; // só ativa se tela estiver em foco
+      if (!isFocused) return;
       const { granted } =
         await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!granted) {
@@ -84,7 +122,6 @@ export default function EditProfileScreen() {
   };
 
   const processarComando = (fala: string) => {
-    // não deixar ativação global interferir
     if (fala.includes("escuta")) {
       console.log("[Editar Perfil] Ignorando palavra de ativação global");
       return;
@@ -134,11 +171,10 @@ export default function EditProfileScreen() {
     }
   };
 
-  // ---- Captura da fala ----
   useSpeechRecognitionEvent(
     "result",
     (event: ExpoSpeechRecognitionResultEvent) => {
-      if (!isFocused) return; // não processa se não está nesta tela
+      if (!isFocused) return;
       const fala = event.results?.[0]?.transcript?.toLowerCase() || "";
       if (fala.trim()) {
         console.log("[Reconhecimento Editar Perfil] Usuário disse:", fala);
@@ -147,7 +183,6 @@ export default function EditProfileScreen() {
     }
   );
 
-  // ---- Intro ----
   useEffect(() => {
     if (isFocused) {
       falar(
@@ -200,6 +235,68 @@ export default function EditProfileScreen() {
       paddingHorizontal: 16,
       paddingTop: 24,
     },
+    
+    // Card de Status do Plano
+    planCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      backgroundColor: temaAplicado === 'dark' ? '#2a2a2a' : '#f0f0f0',
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 24,
+      borderWidth: 1,
+      borderColor: temaAplicado === 'dark' ? '#444' : '#ddd',
+    },
+    planInfo: {
+      flex: 1,
+    },
+    planLabel: {
+      fontSize: 12,
+      color: temaAplicado === 'dark' ? '#aaa' : '#666',
+      marginBottom: 4,
+    },
+    planName: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: cores.texto,
+    },
+    planBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: temaAplicado === 'dark' ? '#4CAF50' : '#2196F3',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+    },
+    planBadgeText: {
+      color: '#fff',
+      fontSize: 12,
+      fontWeight: 'bold',
+      marginLeft: 4,
+    },
+    upgradeButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFD700',
+      borderRadius: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      marginBottom: 24,
+      elevation: 3,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+    },
+    upgradeButtonText: {
+      color: '#000',
+      fontSize: 16,
+      fontWeight: 'bold',
+      marginLeft: 8,
+    },
+    
     inputContainer: {
       marginBottom: 24,
     },
@@ -272,6 +369,51 @@ export default function EditProfileScreen() {
       </View>
 
       <View style={styles.content}>
+        {/* Card de Status do Plano */}
+        {loadingPlan ? (
+          <View style={styles.planCard}>
+            <ActivityIndicator size="small" color={cores.tint} />
+            <Text style={[styles.planLabel, { marginLeft: 12 }]}>
+              Carregando plano...
+            </Text>
+          </View>
+        ) : (
+          <>
+            <View style={styles.planCard}>
+              <View style={styles.planInfo}>
+                <Text style={styles.planLabel}>Plano Atual</Text>
+                <Text style={styles.planName}>
+                  {currentPlan === 'free' ? 'Gratuito' : 'Premium'}
+                </Text>
+              </View>
+              <View style={styles.planBadge}>
+                <MaterialCommunityIcons 
+                  name={currentPlan === 'premium' ? "star" : "account"} 
+                  size={16} 
+                  color={currentPlan === 'premium' ? "#FFD700" : "#fff"} 
+                />
+                <Text style={styles.planBadgeText}>
+                  {currentPlan === 'free' ? 'FREE' : 'PREMIUM'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Botão de Upgrade (só aparece se for free) */}
+            {currentPlan === 'free' && (
+              <TouchableOpacity 
+                style={styles.upgradeButton}
+                onPress={handleUpgrade}
+                accessibilityLabel="Fazer upgrade para plano premium"
+              >
+                <MaterialCommunityIcons name="star" size={20} color="#FFD700" />
+                <Text style={styles.upgradeButtonText}>
+                  Upgrade para Premium
+                </Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
         <View style={styles.inputContainer} accessibilityLabel="Nome">
           <Text style={styles.label}>Nome</Text>
           <TextInput
