@@ -145,13 +145,24 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
             return;
         case 'mudar_tema_claro':
             stopListening();
-            if (temaAplicado === 'dark') { setTheme('light'); speak("Tema claro!", restartListeningAfterSpeak); }
-            else { speak("O tema já está claro!", restartListeningAfterSpeak); }
+            if (temaAplicado === 'dark') { 
+              setTheme('light'); 
+              speak("Tema claro!", restartListeningAfterSpeak); 
+
+            }
+            else { 
+              speak("O tema já está claro!", restartListeningAfterSpeak); 
+            }
             return;
         case 'mudar_tema_escuro':
             stopListening();
-            if (temaAplicado === 'light') { setTheme('dark'); speak("Tema escuro!", restartListeningAfterSpeak); }
-            else { speak("O tema já está escuro!", restartListeningAfterSpeak); }
+            if (temaAplicado === 'light') { 
+              setTheme('dark'); 
+              speak("Tema escuro!", restartListeningAfterSpeak); 
+            }
+            else { 
+              speak("O tema já está escuro!", restartListeningAfterSpeak); 
+            }
             return;
         case 'tutorial':
             stopListening();

@@ -10,7 +10,7 @@ export function VoicePageAnnouncer() {
     let pageName = '';
 
     // Check for conversation with title first
-    if (pathname === '/tabs/conversa' && params.titulo) {
+    if (pathname === '/conversa' && params.titulo) {
       pageName = 'Conversa: ' + String(params.titulo);
     } else {
       // Fallback to regular page names
@@ -27,7 +27,7 @@ export function VoicePageAnnouncer() {
         case '/tabs/editarPerfil':
           pageName = 'Editar perfil';
           break;
-        case '/tabs/conversa': // Fallback
+        case '/conversa': // Fallback
           pageName = 'Conversa';
           break;
         case '/login':

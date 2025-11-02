@@ -39,7 +39,7 @@ const CameraScreen: React.FC = () => {
   const [waitingForQuestion, setWaitingForQuestion] = useState(false);
 
   // 🔊 Referência para o intervalo de feedback
- const feedbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const feedbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const {
     pendingSpokenText,
@@ -83,7 +83,7 @@ const CameraScreen: React.FC = () => {
     feedbackIntervalRef.current = setInterval(() => {
       console.log("[Feedback] 🔊 Repetindo feedback");
       speak("Processando");
-    }, 5000);
+    }, 3000);
   };
 
   // ===================================================================
@@ -191,6 +191,8 @@ const CameraScreen: React.FC = () => {
       // =======================================================
       // LÓGICA CONDICIONAL (MODO CHAT)
       // =======================================================
+      console.log(`[Upload] 🔍 Verificando modo - mode: "${mode}", conversaId: "${conversaId}"`);
+      
       if (mode === 'chat' && conversaId) {
         console.log(`[Firestore] 💾 Salvando na conversa ${conversaId}`);
 
@@ -201,9 +203,9 @@ const CameraScreen: React.FC = () => {
         const storagePath = `conversas/${conversaId}/${filename}`;
         
         console.log(`[Storage] ☁️ Fazendo upload para: ${storagePath}`);
-        const storageRef = storage().ref(storagePath);
-        await storageRef.putFile(photo.uri);
-        const downloadURL = await storageRef.getDownloadURL();
+        const reference = storage().ref(storagePath);
+        await reference.putFile(photo.uri);
+        const downloadURL = await reference.getDownloadURL();
         console.log(`[Storage] ✅ Foto salva em: ${downloadURL}`);
 
         await firestore()
@@ -216,22 +218,27 @@ const CameraScreen: React.FC = () => {
             imageUri: downloadURL,
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
+        
+        console.log('[Firestore] ✅ Mensagem do usuário salva');
 
         await firestore()
           .collection('conversas')
           .doc(conversaId)
           .collection('mensagens')
           .add({
-            sender: 'bot',
+            sender: 'api',
             text: description,
             imageUri: null,
             timestamp: firestore.FieldValue.serverTimestamp(),
           });
+        
+        console.log('[Firestore] ✅ Resposta da API salva');
     
         console.log("[Firestore] ✅ Salvamento concluído. Voltando para o chat...");
         router.back();
 
       } else {
+        // Modo simples: apenas fala a descrição
         console.log(`[Speech] 🔊 Falando a descrição: "${description}"`);
         await speak(description);
       }

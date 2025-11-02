@@ -318,6 +318,17 @@ const HistoryScreen: React.FC = () => {
 
       speak(`Conversa ${tituloFinal} criada com sucesso!`);
       fecharModal();
+      
+      // ✅ Navega automaticamente para a nova conversa
+      setTimeout(() => {
+        router.push({
+          pathname: '/conversa',
+          params: { 
+            conversaId: newConversationRef.id, 
+            titulo: tituloFinal 
+          }
+        });
+      }, 500);
 
     } catch (error) {
       console.error("❌ Erro ao criar conversa:", error);
@@ -688,7 +699,7 @@ const HistoryScreen: React.FC = () => {
         renderItem={({ item }) => (
           <TouchableOpacity 
             onPress={() => router.push({
-              pathname: '/tabs/conversa',
+              pathname: '/conversa',
               params: { conversaId: item.id, titulo: item.titulo }
             })}
             style={styles.item}

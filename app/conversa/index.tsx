@@ -17,10 +17,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../../components/ThemeContext';
 import { useSpeech } from '../../hooks/useSpeech';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useLayout } from '../../components/LayoutContext';
-
-// ✅ Imports modulares do Firebase v9+
-import { getFirestore, collection, doc, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, query } from '@react-native-firebase/firestore';
+import firestore from '@react-native-firebase/firestore';
 
 const SERVER_URL = 'https://acessivision.com.br/upload';
 
@@ -36,7 +33,6 @@ const ConversationScreen: React.FC = () => {
   const router = useRouter();
   const isScreenFocused = useIsFocused();
   const { conversaId, titulo } = useLocalSearchParams<{ conversaId: string, titulo: string }>();
-  const { headerHeight } = useLayout();
   const { cores, getIconSize } = useTheme();
   const flatListRef = useRef<FlatList>(null);
 
@@ -44,15 +40,11 @@ const ConversationScreen: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [activeImage, setActiveImage] = useState<string | null>(null);
-  
-  // ✅ Estado para controlar se o usuário quer usar o microfone
   const [micEnabled, setMicEnabled] = useState(false);
   
-  // ✅ Ref para debounce do reconhecimento
   const recognitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRecognizedTextRef = useRef<string>('');
 
-  // ✅ Usa o novo hook de voz
   const { 
     speak, 
     startListening, 
@@ -61,9 +53,25 @@ const ConversationScreen: React.FC = () => {
     recognizedText,
     setRecognizedText
   } = useSpeech({
-    enabled: isScreenFocused && micEnabled, // Só ativa quando usuário habilita
+    enabled: isScreenFocused && micEnabled,
     mode: 'local',
   });
+
+  // ✅ Refs para controle de fala
+  const lastSpokenMessageIdRef = useRef<string | null>(null);
+  const isFirstLoadRef = useRef<boolean>(true);
+  const shouldSpeakNextMessageRef = useRef<boolean>(false);
+
+  // ===================================================================
+  // VOLTAR PARA TELA ANTERIOR
+  // ===================================================================
+  const handleGoBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/tabs/historico');
+    }
+  };
 
   // ===================================================================
   // BUSCAR MENSAGENS DO FIRESTORE
@@ -73,29 +81,70 @@ const ConversationScreen: React.FC = () => {
 
     if (isScreenFocused) {
       console.log(`[Firestore] TELA EM FOCO: Iniciando listener para ${conversaId}`);
+      console.log(`[Conversa] 🔍 shouldSpeakNextMessage: ${shouldSpeakNextMessageRef.current}`);
 
-      const db = getFirestore();
-      const messagesCollectionRef = collection(db, 'conversas', conversaId, 'mensagens');
-      const q = query(messagesCollectionRef, orderBy('timestamp', 'asc'));
-      
-      const unsubscribe = onSnapshot(q,
-        (snapshot) => {
-          const msgs = snapshot.docs.map((docSnapshot) => ({
-            id: docSnapshot.id,
-            ...docSnapshot.data(),
-          })) as Message[];
-          
-          setMessages(msgs);
+      const unsubscribe = firestore()
+        .collection('conversas')
+        .doc(conversaId)
+        .collection('mensagens')
+        .orderBy('timestamp', 'asc')
+        .onSnapshot(
+          (snapshot) => {
+            const msgs = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            })) as Message[];
+            
+            console.log(`[Conversa] 📊 Total de mensagens: ${msgs.length}`);
+            
+            setMessages(msgs);
 
-          const lastUserImageMsg = [...msgs].reverse().find(m => m.sender === 'user' && m.imageUri);
-          if (lastUserImageMsg && lastUserImageMsg.imageUri) {
-            setActiveImage(lastUserImageMsg.imageUri); 
+            // ✅ Encontra última mensagem da API/bot
+            const lastApiMessage = [...msgs].reverse().find(m => m.sender === 'api');
+            
+            if (lastApiMessage) {
+              console.log(`[Conversa] 🔍 Última mensagem API: ${lastApiMessage.id}`);
+              console.log(`[Conversa] 🔍 Última falada: ${lastSpokenMessageIdRef.current}`);
+              console.log(`[Conversa] 🔍 É primeira carga? ${isFirstLoadRef.current}`);
+              console.log(`[Conversa] 🔍 Deve falar próxima? ${shouldSpeakNextMessageRef.current}`);
+              
+              // ✅ Condições para falar:
+              // 1. Se shouldSpeakNextMessage está true (voltou da câmera)
+              // 2. OU se não é primeira carga E mensagem é diferente da última falada
+              const shouldSpeak = 
+                shouldSpeakNextMessageRef.current || 
+                (!isFirstLoadRef.current && lastApiMessage.id !== lastSpokenMessageIdRef.current);
+
+              if (shouldSpeak) {
+                console.log('[Conversa] 🔊 PREPARANDO PARA FALAR:', lastApiMessage.text.substring(0, 50) + '...');
+                lastSpokenMessageIdRef.current = lastApiMessage.id;
+                shouldSpeakNextMessageRef.current = false; // Reset flag
+                
+                // Aguarda VoicePageAnnouncer terminar
+                setTimeout(() => {
+                  console.log('[Conversa] 🔊 FALANDO AGORA!');
+                  speak(lastApiMessage.text);
+                }, 2500);
+              } else if (isFirstLoadRef.current) {
+                // Na primeira carga, apenas marca como falada sem falar
+                lastSpokenMessageIdRef.current = lastApiMessage.id;
+                console.log('[Conversa] 📝 Primeira carga, marcando mensagem como já falada');
+              }
+            }
+
+            // ✅ Marca que primeira carga já aconteceu
+            isFirstLoadRef.current = false;
+
+            // Atualiza imagem ativa
+            const lastUserImageMsg = [...msgs].reverse().find(m => m.sender === 'user' && m.imageUri);
+            if (lastUserImageMsg && lastUserImageMsg.imageUri) {
+              setActiveImage(lastUserImageMsg.imageUri); 
+            }
+          },
+          (error) => {
+            console.error(`❌ Erro ao buscar mensagens:`, error);
           }
-        },
-        (error) => {
-          console.error(`❌ Erro ao buscar mensagens:`, error);
-        }
-      );
+        );
 
       return () => {
         console.log(`[Firestore] TELA PERDEU O FOCO: Parando listener para ${conversaId}`);
@@ -103,33 +152,37 @@ const ConversationScreen: React.FC = () => {
       };
 
     } else {
+      console.log('[Conversa] Tela perdeu foco');
+      
+      // ✅ Reseta estado visual mas mantém controle de fala
       setMessages([]);
       setActiveImage(null);
       setMicEnabled(false);
+      
+      // ✅ Marca que próxima mensagem deve ser falada (voltando da câmera)
+      shouldSpeakNextMessageRef.current = true;
+      isFirstLoadRef.current = false;
+      
+      console.log('[Conversa] 🔔 Flag ativada: próxima mensagem será falada');
     }
 
-  }, [conversaId, isScreenFocused]);
+  }, [conversaId, isScreenFocused, speak]);
 
   // ===================================================================
-  // PROCESSAR RESULTADO DO RECONHECIMENTO DE VOZ COM DEBOUNCE
+  // PROCESSAR RECONHECIMENTO DE VOZ COM DEBOUNCE
   // ===================================================================
   useEffect(() => {
-    // Só processa se tiver texto e microfone estiver habilitado
     if (!recognizedText.trim() || !micEnabled) return;
 
     const textoAtual = recognizedText.trim();
-    
-    // ✅ Atualiza o último texto reconhecido
     lastRecognizedTextRef.current = textoAtual;
 
     console.log("[Conversa] Texto sendo reconhecido:", textoAtual);
 
-    // ✅ Limpa timeout anterior
     if (recognitionTimeoutRef.current) {
       clearTimeout(recognitionTimeoutRef.current);
     }
 
-    // ✅ Aguarda 2 segundos de silêncio antes de processar
     recognitionTimeoutRef.current = setTimeout(() => {
       const textoFinal = lastRecognizedTextRef.current;
       
@@ -140,7 +193,6 @@ const ConversationScreen: React.FC = () => {
 
       console.log("[Conversa] ✅ Texto final capturado:", textoFinal);
 
-      // Verifica se tem imagem ativa
       if (!activeImage) {
         console.warn('[Conversa] Não há imagem ativa para enviar esta pergunta.');
         speak('Nenhuma imagem está ativa. Por favor, tire uma foto primeiro.');
@@ -149,18 +201,15 @@ const ConversationScreen: React.FC = () => {
         return;
       }
 
-      // Desativa o microfone e limpa o texto ANTES de enviar
       setMicEnabled(false);
       setRecognizedText('');
       lastRecognizedTextRef.current = '';
       
-      // Envia a mensagem
       enviarMensagem(textoFinal);
-    }, 2000); // ✅ 2 segundos de pausa para capturar frase completa
+    }, 2000);
 
   }, [recognizedText, micEnabled, activeImage]);
 
-  // ✅ Cleanup do timeout quando componente desmonta
   useEffect(() => {
     return () => {
       if (recognitionTimeoutRef.current) {
@@ -184,7 +233,6 @@ const ConversationScreen: React.FC = () => {
     setMicEnabled(novoEstado);
     
     if (novoEstado) {
-      // ✅ Limpa estados ao ativar
       setRecognizedText('');
       lastRecognizedTextRef.current = '';
       if (recognitionTimeoutRef.current) {
@@ -192,7 +240,6 @@ const ConversationScreen: React.FC = () => {
       }
       speak('Microfone ativado. Fale sua pergunta.');
     } else {
-      // ✅ Limpa timeout ao desativar
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
       }
@@ -205,7 +252,6 @@ const ConversationScreen: React.FC = () => {
   // NAVEGAR PARA TIRAR FOTO
   // ===================================================================
   const handlePickImage = () => {
-    // Desativa o microfone ao sair para tirar foto
     setMicEnabled(false);
     setRecognizedText('');
     lastRecognizedTextRef.current = '';
@@ -239,7 +285,6 @@ const ConversationScreen: React.FC = () => {
       return;
     }
 
-    // Limpa o input apenas se não veio do reconhecimento de voz
     if (textOverride === undefined) {
       setInputText('');
     }
@@ -247,41 +292,36 @@ const ConversationScreen: React.FC = () => {
     setIsSending(true);
 
     try {
-      const db = getFirestore();
-      const conversationDocRef = doc(db, 'conversas', conversaId);
-      const messagesCollectionRef = collection(conversationDocRef, 'mensagens');
+      const conversationDocRef = firestore()
+        .collection('conversas')
+        .doc(conversaId);
+      
+      const messagesCollectionRef = conversationDocRef.collection('mensagens');
 
-      // 1. Salva mensagem do usuário no Firestore
-      await addDoc(messagesCollectionRef, {
+      await messagesCollectionRef.add({
         sender: 'user',
         text: texto,
         imageUri: activeImage,
-        timestamp: serverTimestamp(),
+        timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
-      // 2. Atualiza data de alteração da conversa
-      await updateDoc(conversationDocRef, {
-        dataAlteracao: serverTimestamp(),
+      await conversationDocRef.update({
+        dataAlteracao: firestore.FieldValue.serverTimestamp(),
       });
     
-      // ✅ 3. Converte a imagem para base64
       console.log('[Upload] 🔄 Convertendo imagem para base64...');
       
-      // Se a imagem já é uma URL do Firebase Storage, precisamos fazer download
       let base64Image: string;
       
       if (activeImage.startsWith('http')) {
-        // É uma URL do Firebase Storage - fazer download
         console.log('[Upload] 📥 Baixando imagem do Firebase Storage...');
         const response = await fetch(activeImage);
         const blob = await response.blob();
         
-        // Converte blob para base64
         base64Image = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => {
             const base64 = reader.result as string;
-            // Remove o prefixo "data:image/...;base64,"
             const base64Only = base64.split(',')[1];
             resolve(base64Only);
           };
@@ -289,7 +329,6 @@ const ConversationScreen: React.FC = () => {
           reader.readAsDataURL(blob);
         });
       } else {
-        // É um arquivo local - ler diretamente
         console.log('[Upload] 📂 Lendo arquivo local...');
         const FileSystem = require('expo-file-system').default;
         base64Image = await FileSystem.readAsStringAsync(activeImage, {
@@ -299,7 +338,6 @@ const ConversationScreen: React.FC = () => {
 
       console.log(`[Upload] ✅ Base64 pronto (${base64Image.length} caracteres)`);
 
-      // ✅ 4. Envia como JSON (igual ao index.tsx)
       console.log('[Upload] 📤 Enviando requisição JSON para:', SERVER_URL);
       const response = await fetch(SERVER_URL, {
         method: 'POST',
@@ -333,16 +371,14 @@ const ConversationScreen: React.FC = () => {
 
       console.log('[Upload] ✅ Descrição recebida:', apiResponse);
 
-      // 5. Salva resposta da API no Firestore
-      await addDoc(messagesCollectionRef, {
+      await messagesCollectionRef.add({
         sender: 'api',
         text: apiResponse,
         imageUri: null,
-        timestamp: serverTimestamp(),
+        timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
-      // ✅ Fala a resposta da API
-      speak(apiResponse);
+      console.log('[Conversa] ✅ Resposta salva no Firestore, será falada pelo listener');
 
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
@@ -368,9 +404,26 @@ const ConversationScreen: React.FC = () => {
     <KeyboardAvoidingView 
       style={[styles.container, { backgroundColor: cores.fundo }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={headerHeight}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={[styles.container, { backgroundColor: cores.fundo }]}>
+        {/* Header com botão voltar */}
+        <TouchableOpacity 
+          onPress={handleGoBack}
+          style={[styles.header, { backgroundColor: cores.barrasDeNavegacao }]}
+          accessibilityLabel="Voltar para tela de histórico"
+          accessibilityRole="button"
+        >
+          <Ionicons 
+            name="arrow-back" 
+            size={getIconSize('medium')} 
+            color={cores.icone} 
+          />
+          <Text style={[styles.headerTitle, { color: cores.texto }]} numberOfLines={1}>
+            Voltar
+          </Text>
+        </TouchableOpacity>
+
         <FlatList
           ref={flatListRef}
           style={{ paddingHorizontal: 10 }}
@@ -411,7 +464,6 @@ const ConversationScreen: React.FC = () => {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* ✅ Indicador visual de reconhecimento de voz */}
         {micEnabled && recognizedText && (
           <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
             <ActivityIndicator size="small" color={cores.texto} />
@@ -441,7 +493,7 @@ const ConversationScreen: React.FC = () => {
             value={inputText}
             onChangeText={setInputText}
             multiline
-            editable={!micEnabled} // ✅ Desabilita input quando mic está ativo
+            editable={!micEnabled}
           />
 
           <TouchableOpacity 
@@ -452,13 +504,13 @@ const ConversationScreen: React.FC = () => {
             <Ionicons 
               name={micEnabled ? 'mic' : 'mic-outline'}
               size={getIconSize('medium')}
-              color={micEnabled ? '#FF453A' : cores.icone} // ✅ Vermelho quando ativo
+              color={micEnabled ? '#FF453A' : cores.icone}
             />
           </TouchableOpacity>
 
           <TouchableOpacity 
             onPress={() => enviarMensagem()}
-            disabled={isSending || micEnabled} // ✅ Desabilita send quando mic está ativo
+            disabled={isSending || micEnabled}
             style={styles.sendButton}
             accessibilityHint="Enviar mensagem"
           >
@@ -468,7 +520,7 @@ const ConversationScreen: React.FC = () => {
               <Ionicons 
                 name="send" 
                 size={getIconSize('medium')} 
-                color={micEnabled ? '#666' : cores.icone} // ✅ Cinza quando mic ativo
+                color={micEnabled ? '#666' : cores.icone}
               />
             )}
           </TouchableOpacity>
@@ -481,6 +533,28 @@ const ConversationScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  backButton: {
+    padding: 8,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginHorizontal: 16,
+  },
+  headerSpacer: {
+    width: 40, // Compensa o espaço do botão voltar para centralizar o título
   },
   messageBubble: {
     maxWidth: '80%',
@@ -525,6 +599,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     minHeight: 70,
+    marginBottom: 10,
+    marginLeft: 5,
   },
   imagePickerButton: { 
     width: 90,
