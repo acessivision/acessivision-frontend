@@ -5,35 +5,47 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../components/ThemeContext';
 import { VoiceCommandProvider } from '../components/VoiceCommandContext';
 import * as NavigationBar from 'expo-navigation-bar';
+import { StatusBar } from 'expo-status-bar';
 import { VoicePageAnnouncer } from '../utils/voicePageAnnouncer';
 import { AuthProvider } from '../components/AuthContext';
 import { Platform } from 'react-native';
 import React, { useEffect, useState } from 'react';
-import { SplashScreen, Slot } from 'expo-router';
-import SpeechManager from '../utils/speechManager'; // Ajuste o caminho
+import { SplashScreen } from 'expo-router';
+import SpeechManager from '../utils/speechManager';
 
 // Componente interno para acessar o contexto do tema
 function ThemedSystemBars() {
-  const { temaAplicado, cores } = useTheme(); // Get 'cores' as well
+  const { temaAplicado } = useTheme();
 
   useEffect(() => {
-    // Only run on Android
+    // Configuração apenas para Android
     if (Platform.OS === 'android') {
+      const setupFullscreen = async () => {
+        try {
+          // ✅ FULLSCREEN: Esconder a barra de navegação
+          await NavigationBar.setVisibilityAsync('hidden');
+          
+          // ✅ FULLSCREEN: Barra transparente
+          await NavigationBar.setBackgroundColorAsync('#00000000');
+          
+          // ✅ FULLSCREEN: Comportamento - aparece ao deslizar, desaparece automaticamente
+          await NavigationBar.setBehaviorAsync('overlay-swipe');
+          
+          // ✅ Estilo dos botões baseado no tema
+          await NavigationBar.setButtonStyleAsync(
+            temaAplicado === 'dark' ? 'light' : 'dark'
+          );
+          
+        } catch (error) {
+          console.error('[Layout] Erro ao configurar fullscreen:', error);
+        }
+      };
       
-      // REMOVE this line:
-      // NavigationBar.setBackgroundColorAsync(
-      //   temaAplicado === 'dark' ? '#151718' : '#fff' // Or use cores.barrasDeNavegacao
-      // );
-
-      // KEEP this line (test if it works as expected):
-      NavigationBar.setButtonStyleAsync(
-        temaAplicado === 'dark' ? 'light' : 'dark'
-      );
+      setupFullscreen();
     }
-  }, [temaAplicado, cores]); // Add cores if used for background elsewhere
+  }, [temaAplicado]);
 
-  // This component doesn't need to render anything visual
-  return null; 
+  return null;
 }
 
 export default function RootLayout() {
@@ -74,9 +86,20 @@ export default function RootLayout() {
       <VoiceCommandProvider>
         <ThemeProvider>
           <SafeAreaProvider>
+            {/* ✅ Status bar transparente e translúcida */}
+            <StatusBar 
+              style="auto" 
+              translucent 
+              backgroundColor="transparent" 
+            />
             <ThemedSystemBars />
             <VoicePageAnnouncer />
-            <Stack screenOptions={{ headerShown: false }} />
+            <Stack 
+              screenOptions={{ 
+                headerShown: false,
+                contentStyle: { backgroundColor: 'transparent' }
+              }} 
+            />
           </SafeAreaProvider>
         </ThemeProvider>
       </VoiceCommandProvider>
