@@ -1,72 +1,200 @@
-# Bem vindo ao Front-End do AcessiVision <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Waving%20Hand.png" alt="Waving Hand" width="50" height="50" />
+# AcessiVision Frontend 👋
 
-Clone o repositório:
-   ```bash
-   git clone https://github.com/acessivision/acessivision-frontend.git
-   ```
+> Aplicativo mobile desenvolvido com React Native e Expo para promover acessibilidade digital
 
-<br>
+## 📋 Índice
 
-> [!IMPORTANT]
-> Seu computador e seu dispositivo mobile devem estar conectados na mesma rede e, no computador, a rede deve estar configurada como privada para que o aplicativo funcione usando o Expo Go. Outra opção é usar a flag `--tunnel` ao iniciar o aplicativo, mas isso pode deixar o processo mais lento.
+- [Sobre o Projeto](#sobre-o-projeto)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação](#instalação)
+- [Configuração](#configuração)
+- [Executando o Projeto](#executando-o-projeto)
+- [Build de Desenvolvimento](#build-de-desenvolvimento)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Tecnologias Utilizadas](#tecnologias-utilizadas)
+- [Contribuindo](#contribuindo)
+- [Documentação Adicional](#documentação-adicional)
 
-<br>
+## 🎯 Sobre o Projeto
 
-Após certificar-se que seu dispositivo mobile e seu computador estão na mesma rede e que o Crie o arquivo ".env" na raiz do projeto e adicione a variável abaixo.
-   ```bash
-   EXPO_PUBLIC_IP=<ip_do_seu_computador>
-   ```
+O AcessiVision é um aplicativo mobile que visa proporcionar maior acessibilidade digital através de recursos inovadores. Este repositório contém o código-fonte do frontend desenvolvido com React Native e Expo.
 
-Instale as dependências
+## 📦 Pré-requisitos
 
-   ```bash
-   npm install
-   ```
+Antes de começar, certifique-se de ter instalado em sua máquina:
 
-Instale o EAS CLI (Expo Aplication Services Command Line Interface)
-   ```bash
-   npm install -g eas-cli
-   ```
+- [Node.js](https://nodejs.org/) (versão 18 ou superior)
+- [npm](https://www.npmjs.com/) ou [yarn](https://yarnpkg.com/)
+- [Git](https://git-scm.com/)
+- [Expo Go](https://expo.dev/client) instalado no seu dispositivo móvel (Android ou iOS)
 
-Faça login na sua conta do EAS Cloud
-   ```bash
-   eas login
-   ```
+### ⚠️ Requisitos de Rede
 
-> [!IMPORTANT]
-> Só precisa desse próximo passo caso você esteja iniciando um projeto do zero, caso estiver conectando a um projeto já existente, ignore.
+> **Importante:** Seu computador e dispositivo móvel devem estar conectados à **mesma rede Wi-Fi** para o desenvolvimento local. No Windows, certifique-se de que a rede está configurada como **"Rede Privada"**.
 >
->   ```bash
->   eas init
->   ```
+> **Alternativa:** Use a flag `--tunnel` ao iniciar o aplicativo, porém isso pode tornar a execução mais lenta:
+> ```bash
+> npx expo start --tunnel
+> ```
+>
+> **Nota:** O backend do projeto está hospedado em `acessivision.com.br`, então a conexão de rede local é necessária apenas para o hot-reload do Expo, não para comunicação com a API.
 
-Faça o prebuild para compilar o aplicativo
+## 🚀 Instalação
+
+### 1. Clone o repositório
+
+```bash
+git clone https://github.com/acessivision/acessivision-frontend.git
+cd acessivision-frontend
+```
+
+### 2. Instale as dependências
+
+```bash
+npm install
+```
+
+### 3. Instale o EAS CLI globalmente
+
+O EAS CLI (Expo Application Services Command Line Interface) é necessário para builds de desenvolvimento:
+
+```bash
+npm install -g eas-cli
+```
+
+### 4. Faça login no EAS
+
+```bash
+eas login
+```
+
+> **Nota:** Você precisará criar uma conta no [Expo](https://expo.dev/) caso ainda não tenha uma.
+
+## 🏗️ Build de Desenvolvimento
+
+### Primeira configuração (apenas para novos projetos)
+
+> **Atenção:** Pule esta etapa se você está clonando um projeto existente.
+
+```bash
+eas init
+```
+
+### Prebuild
+
+Compile os arquivos nativos necessários:
+
 ```bash
 npx expo prebuild
 ```
 
-Faça o build do aplicativo
+### Build para Android
+
 ```bash
 eas build --platform android --profile development
 ```
-E para iOS:
+
+### Build para iOS
+
 ```bash
 eas build --platform ios --profile development
 ```
 
-Leia o QR Code que aparecer no terminal, instale o aplicativo. Após isso
+Após o build ser concluído:
+1. Leia o QR Code exibido no terminal
+2. Instale o aplicativo de desenvolvimento no seu dispositivo
+3. Aguarde a instalação finalizar
 
-Inicie o app
+## ▶️ Executando o Projeto
 
-   ```bash
-    npx expo start
-   ```
+Após instalar o build de desenvolvimento no seu dispositivo, inicie o servidor de desenvolvimento:
 
-Dentro do app baixado, conecte no servidor usando o QR Code ou a url que aparecer no terminal.
+```bash
+npx expo start
+```
 
-## Documentação do Expo <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Telegram-Animated-Emojis/main/Objects/Open%20Book.webp" alt="Open Book" width="25" height="25" />
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/)
-- [Expo Dev Build](https://docs.expo.dev/build/setup/)
+### Conectando ao aplicativo
 
-## Bom desenvolvimento! <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Rocket.png" alt="Rocket" width="25" height="25" /><img src="https://user-images.githubusercontent.com/74038190/219923809-b86dc415-a0c2-4a38-bc88-ad6cf06395a8.gif" width="30">
+1. Abra o aplicativo de desenvolvimento instalado no seu dispositivo
+2. Escaneie o QR Code exibido no terminal, **ou**
+3. Digite manualmente a URL exibida no terminal
 
+O aplicativo será carregado e você poderá ver as alterações em tempo real durante o desenvolvimento.
+
+## 📁 Estrutura do Projeto
+
+```
+acessivision-frontend/
+├── app/                 # Rotas e telas do aplicativo
+├── assets/              # Imagens, fontes e outros recursos estáticos
+├── components/          # Componentes reutilizáveis
+├── constants/           # Constantes e configurações
+├── hooks/               # Custom hooks
+├── utils/               # Funções utilitárias
+├── app.json             # Configurações do Expo
+├── package.json         # Dependências do projeto
+└── README.md            # Este arquivo
+```
+
+## 🛠️ Tecnologias Utilizadas
+
+- [React Native](https://reactnative.dev/)
+- [Expo](https://expo.dev/)
+- [TypeScript](https://www.typescriptlang.org/)
+- [Expo Router](https://docs.expo.dev/router/introduction/)
+- [EAS Build](https://docs.expo.dev/build/introduction/)
+
+## 🤝 Contribuindo
+
+Contribuições são sempre bem-vindas! Para contribuir:
+
+1. Faça um fork do projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/MinhaFeature`)
+3. Commit suas mudanças (`git commit -m 'Adiciona MinhaFeature'`)
+4. Push para a branch (`git push origin feature/MinhaFeature`)
+5. Abra um Pull Request
+
+### Padrões de Código
+
+- Siga as convenções de código do projeto
+- Escreva commits descritivos
+- Documente novas funcionalidades
+
+## 📚 Documentação Adicional
+
+- [Tutorial Expo](https://docs.expo.dev/tutorial/introduction/) - Aprenda os fundamentos do Expo
+- [Expo Dev Build](https://docs.expo.dev/build/setup/) - Guia completo sobre builds de desenvolvimento
+- [React Native Docs](https://reactnative.dev/docs/getting-started) - Documentação oficial do React Native
+- [Expo Router](https://docs.expo.dev/router/introduction/) - Sistema de roteamento file-based
+
+## 🐛 Problemas Comuns
+
+### O aplicativo não conecta ao servidor de desenvolvimento
+
+- Verifique se ambos os dispositivos estão na mesma rede Wi-Fi
+- Tente usar a flag `--tunnel`: `npx expo start --tunnel`
+- Reinicie o servidor: pressione `r` no terminal onde o Expo está rodando
+
+### Erro de conexão com a API
+
+- Verifique se o backend está online em `https://acessivision.com.br`
+- Verifique sua conexão com a internet
+
+### Erro no build
+
+- Limpe o cache: `npx expo start -c`
+- Reinstale as dependências: `rm -rf node_modules && npm install`
+- Verifique se o EAS CLI está atualizado: `npm install -g eas-cli@latest`
+
+### Erro de permissões no iOS
+
+- Certifique-se de que possui um certificado de desenvolvedor Apple válido
+- Verifique as configurações de provisioning profile no EAS
+
+## 📄 Licença
+
+Este projeto está sob a licença [inserir licença]. Veja o arquivo `LICENSE` para mais detalhes.
+
+## 👥 Time
+
+Desenvolvido com ❤️ pela equipe AcessiVision
