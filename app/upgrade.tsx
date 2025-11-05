@@ -21,13 +21,33 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 
 const API_URL = `http://${process.env.EXPO_PUBLIC_IP}:3000`;
 
-interface Plan {
-  id: string;
-  nome: string;
-  preco: number;
-  recursos: string[];
-  ativo: boolean;
-}
+// ✅ Planos hardcoded (não vem mais do backend)
+const PLANS = [
+  {
+    id: 'free',
+    nome: 'Gratuito',
+    preco: 0,
+    recursos: [
+      'Até 10 conversões por dia',
+      'Qualidade padrão de áudio',
+      'Histórico de 7 dias'
+    ],
+    ativo: true
+  },
+  {
+    id: 'premium',
+    nome: 'Premium',
+    preco: 20.00,
+    recursos: [
+      'Conversões ilimitadas',
+      'Qualidade HD de áudio',
+      'Histórico completo',
+      'Prioridade no processamento',
+      'Sem anúncios'
+    ],
+    ativo: true
+  }
+];
 
 interface BillingResponse {
   success: boolean;
@@ -46,13 +66,11 @@ interface BillingResponse {
 export default function UpgradeScreen() {
   const { user, isLoading: authLoading } = useAuth();
   const { cores, temaAplicado, getIconSize, getFontSize } = useTheme();
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [currentPlan, setCurrentPlan] = useState<string>('free');
+  const [isPremium, setIsPremium] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processingPayment, setProcessingPayment] = useState(false);
   const [showPixModal, setShowPixModal] = useState(false);
   const [pixData, setPixData] = useState<{ qrCode: string; qrCodeText: string } | null>(null);
-  const [billingId, setBillingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -63,40 +81,33 @@ export default function UpgradeScreen() {
         });
         router.replace('/login');
       } else {
-        loadPlans();
         loadCurrentPlan();
       }
     }
   }, [user, authLoading]);
 
-  const loadPlans = async () => {
-    try {
-      const response = await fetch(`${API_URL}/plans`);
-      const data = await response.json();
-      
-      if (data.success) {
-        setPlans(data.plans);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar planos:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os planos');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // ✅ Usar nova rota
   const loadCurrentPlan = async () => {
     if (!user) return;
 
     try {
-      const response = await fetch(`${API_URL}/user/${user.uid}/plan`);
+      const response = await fetch(`${API_URL}/user/verify-premium`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ uid: user.uid })
+      });
+      
       const data = await response.json();
       
       if (data.success) {
-        setCurrentPlan(data.plano);
+        setIsPremium(data.isPremium);
       }
     } catch (error) {
       console.error('Erro ao carregar plano atual:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -112,7 +123,7 @@ export default function UpgradeScreen() {
       return;
     }
 
-    if (currentPlan === 'premium') {
+    if (isPremium) {
       Alert.alert('Atenção', 'Você já é um assinante Premium');
       return;
     }
@@ -120,22 +131,20 @@ export default function UpgradeScreen() {
     setProcessingPayment(true);
 
     try {
+      // ✅ Remover planId
       const response = await fetch(`${API_URL}/billing/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          uid: user.uid,
-          planId: planId
+          uid: user.uid
         })
       });
 
       const data: BillingResponse = await response.json();
 
       if (data.success && data.billing) {
-        setBillingId(data.billing.id);
-        
         if (data.billing.pix.qrCode && data.billing.pix.qrCodeText) {
           setPixData({
             qrCode: data.billing.pix.qrCode,
@@ -148,8 +157,8 @@ export default function UpgradeScreen() {
             rate: 0.9
           });
 
-          // Verificar status do pagamento a cada 5 segundos
-          startPaymentStatusCheck(data.billing.id);
+          // ✅ Verificar status verificando isPremium
+          startPaymentStatusCheck();
         } else {
           Alert.alert('Erro', 'Não foi possível gerar o QR Code PIX');
         }
@@ -164,15 +173,24 @@ export default function UpgradeScreen() {
     }
   };
 
-  const startPaymentStatusCheck = (billingId: string) => {
+  // ✅ Verificar isPremium ao invés de billing status
+  const startPaymentStatusCheck = () => {
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`${API_URL}/billing/${billingId}/status`);
+        const response = await fetch(`${API_URL}/user/verify-premium`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ uid: user?.uid })
+        });
+        
         const data = await response.json();
 
-        if (data.success && data.billing.status === 'paid') {
+        if (data.success && data.isPremium) {
           clearInterval(interval);
           setShowPixModal(false);
+          setIsPremium(true);
           
           Speech.speak('Pagamento confirmado! Bem-vindo ao Premium!', {
             language: 'pt-BR',
@@ -186,7 +204,6 @@ export default function UpgradeScreen() {
               {
                 text: 'OK',
                 onPress: () => {
-                  loadCurrentPlan();
                   router.back();
                 }
               }
@@ -247,85 +264,89 @@ export default function UpgradeScreen() {
           <Text style={[styles.title, { color: cores.texto }]}>Escolha seu Plano</Text>
           <Text style={[styles.subtitle, { color: temaAplicado === 'dark' ? '#aaa' : '#666' }]}>
             Plano atual: <Text style={[styles.currentPlanText, { color: cores.tint }]}>
-              {currentPlan === 'free' ? 'Gratuito' : 'Premium'}
+              {isPremium ? 'Premium' : 'Gratuito'}
             </Text>
           </Text>
 
           <View style={styles.plansContainer}>
-            {plans.map((plan) => (
-              <View
-                key={plan.id}
-                style={[
-                  styles.planCard,
-                  { 
-                    backgroundColor: cores.fundo,
-                    borderColor: currentPlan === plan.id 
-                      ? cores.tint 
-                      : (temaAplicado === 'dark' ? '#444' : '#ddd')
-                  },
-                  currentPlan === plan.id && styles.planCardActive
-                ]}
-              >
-                <View style={styles.planHeader}>
-                  <Text style={[styles.planName, { color: cores.texto }]}>{plan.nome}</Text>
-                  {currentPlan === plan.id && (
-                    <View style={[styles.activeBadge, { backgroundColor: cores.tint }]}>
-                      <Text style={styles.activeBadgeText}>Atual</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.priceContainer}>
-                  <Text style={[styles.priceSymbol, { color: cores.texto }]}>R$</Text>
-                  <Text style={[styles.priceValue, { color: cores.texto }]}>
-                    {plan.preco.toFixed(2).replace('.', ',')}
-                  </Text>
-                  <Text style={[styles.pricePeriod, { color: temaAplicado === 'dark' ? '#aaa' : '#666' }]}>
-                    /mês
-                  </Text>
-                </View>
-
-                <View style={styles.featuresContainer}>
-                  {plan.recursos.map((recurso, index) => (
-                    <View key={index} style={styles.featureItem}>
-                      <MaterialCommunityIcons
-                        name="check-circle"
-                        size={20}
-                        color="#4CAF50"
-                        style={styles.featureIcon}
-                      />
-                      <Text style={[styles.featureText, { color: cores.texto }]}>{recurso}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <TouchableOpacity
+            {PLANS.map((plan) => {
+              const isCurrentPlan = (plan.id === 'premium' && isPremium) || (plan.id === 'free' && !isPremium);
+              
+              return (
+                <View
+                  key={plan.id}
                   style={[
-                    styles.upgradeButton,
-                    { backgroundColor: plan.id === 'premium' ? '#FFD700' : cores.tint },
-                    currentPlan === plan.id && styles.upgradeButtonDisabled,
+                    styles.planCard,
+                    { 
+                      backgroundColor: cores.fundo,
+                      borderColor: isCurrentPlan 
+                        ? cores.tint 
+                        : (temaAplicado === 'dark' ? '#444' : '#ddd')
+                    },
+                    isCurrentPlan && styles.planCardActive
                   ]}
-                  onPress={() => handleUpgrade(plan.id)}
-                  disabled={currentPlan === plan.id || processingPayment}
-                  accessibilityLabel={`Botão para ${plan.id === 'free' ? 'selecionar plano gratuito' : 'assinar plano premium'}`}
                 >
-                  {processingPayment && plan.id === 'premium' ? (
-                    <ActivityIndicator color="#000" />
-                  ) : (
-                    <Text style={[
-                      styles.upgradeButtonText,
-                      { color: plan.id === 'premium' ? '#000' : '#fff' }
-                    ]}>
-                      {currentPlan === plan.id
-                        ? 'Plano Atual'
-                        : plan.id === 'free'
-                        ? 'Selecionar'
-                        : 'Assinar Premium'}
+                  <View style={styles.planHeader}>
+                    <Text style={[styles.planName, { color: cores.texto }]}>{plan.nome}</Text>
+                    {isCurrentPlan && (
+                      <View style={[styles.activeBadge, { backgroundColor: cores.tint }]}>
+                        <Text style={styles.activeBadgeText}>Atual</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.priceContainer}>
+                    <Text style={[styles.priceSymbol, { color: cores.texto }]}>R$</Text>
+                    <Text style={[styles.priceValue, { color: cores.texto }]}>
+                      {plan.preco.toFixed(2).replace('.', ',')}
                     </Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            ))}
+                    <Text style={[styles.pricePeriod, { color: temaAplicado === 'dark' ? '#aaa' : '#666' }]}>
+                      /mês
+                    </Text>
+                  </View>
+
+                  <View style={styles.featuresContainer}>
+                    {plan.recursos.map((recurso, index) => (
+                      <View key={index} style={styles.featureItem}>
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={20}
+                          color="#4CAF50"
+                          style={styles.featureIcon}
+                        />
+                        <Text style={[styles.featureText, { color: cores.texto }]}>{recurso}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.upgradeButton,
+                      { backgroundColor: plan.id === 'premium' ? '#FFD700' : cores.tint },
+                      isCurrentPlan && styles.upgradeButtonDisabled,
+                    ]}
+                    onPress={() => handleUpgrade(plan.id)}
+                    disabled={isCurrentPlan || processingPayment}
+                    accessibilityLabel={`Botão para ${plan.id === 'free' ? 'selecionar plano gratuito' : 'assinar plano premium'}`}
+                  >
+                    {processingPayment && plan.id === 'premium' ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <Text style={[
+                        styles.upgradeButtonText,
+                        { color: plan.id === 'premium' ? '#000' : '#fff' }
+                      ]}>
+                        {isCurrentPlan
+                          ? 'Plano Atual'
+                          : plan.id === 'free'
+                          ? 'Selecionar'
+                          : 'Assinar Premium'}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
           </View>
         </View>
       </ScrollView>

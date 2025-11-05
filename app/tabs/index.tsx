@@ -24,9 +24,7 @@ interface Photo {
   base64?: string;
 }
 
-const SERVER_URL = 'https://acessivision.com.br/upload';
-
-const CameraScreen: React.FC = () => {
+const SERVER_URL = 'https://acessivision.com.br/upload';const CameraScreen: React.FC = () => {
   const router = useRouter();
   const { cores, temaAplicado } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();

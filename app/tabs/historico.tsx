@@ -70,6 +70,8 @@ const HistoryScreen: React.FC = () => {
   // ===================================================================
   useEffect(() => {
     if (!user || isAuthLoading) return;
+    console.log('👤 UID do usuário logado:', user.uid);
+    console.log('📧 Email do usuário:', user.email);
 
     const db = getFirestore();
     const conversasCollectionRef = collection(db, 'conversas');

@@ -21,8 +21,8 @@ export default function ConfigScreen() {
     router.push('/login');
   };
 
-  const handleEditProfile = () => {
-    router.push('/tabs/editarPerfil');
+  const handleChangePlan = () => {
+    router.push('/upgrade');
   };
 
   const handleDeleteAccount = () => {
@@ -163,15 +163,15 @@ export default function ConfigScreen() {
               <Text style={styles.optionText}>Fazer Login</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.option} onPress={handleEditProfile}>
+            <TouchableOpacity style={styles.option} onPress={handleChangePlan}>
               <View style={styles.optionIcon}>
                 <Ionicons
-                  name="person-outline"
+                  name="card-outline"
                   size={getIconSize('small')}
                   color={cores.icone}
                 />
               </View>
-              <Text style={styles.optionText}>Editar Perfil</Text>
+              <Text style={styles.optionText}>Mudar Plano</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>
