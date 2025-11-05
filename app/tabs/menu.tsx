@@ -57,14 +57,6 @@ export default function ConfigScreen() {
     );
   };
 
-  const handleAbout = () => {
-    Alert.alert('Sobre', 'Informações sobre o aplicativo');
-  };
-
-  const handleFreeSpace = () => {
-    Alert.alert('Liberar Espaço', 'Limpando cache e arquivos temporários...');
-  };
-
   const styles = useMemo(
     () =>
       StyleSheet.create({
@@ -199,25 +191,6 @@ export default function ConfigScreen() {
                 />
               </View>
               <Text style={styles.optionText}>Sair</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Sobre</Text>
-          <View style={styles.optionContainer}>
-            <TouchableOpacity
-              style={[styles.option, styles.lastOption]}
-              onPress={handleAbout}
-            >
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={getIconSize('small')}
-                  color={cores.icone}
-                />
-              </View>
-              <Text style={styles.optionText}>Sobre</Text>
             </TouchableOpacity>
           </View>
         </View>
