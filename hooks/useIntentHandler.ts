@@ -8,7 +8,8 @@ export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirm
 interface UseIntentHandlerProps {
   speak: (text: string, onDone?: () => void) => void;
   temaAplicado: string;
-  setTheme: (theme: 'light' | 'dark') => void;
+  // ✅ MODIFICAÇÃO AQUI:
+  mudaTema?: () => void; 
   startListening: () => void;
   stopListening: () => void;
   setVoiceState: Dispatch<SetStateAction<VoiceState>>;
@@ -32,7 +33,8 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const { 
     speak, 
     temaAplicado, 
-    setTheme, 
+    // ✅ MODIFICAÇÃO AQUI:
+    mudaTema,
     startListening, 
     stopListening, 
     setVoiceState, 
@@ -110,7 +112,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     lastExecutedIntentRef.current = { intent, timestamp: now };
     console.log(`[Intent] Executing: ${intent}`);
 
-    // ✅ Extrai conversaId se estiver na tela de conversa
     let currentConversaId: string | undefined;
     if (pathname.startsWith('/conversa')) {
       const match = pathname.match(/conversaId=([^&]+)/);
@@ -119,7 +120,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       }
     }
 
-    // ✅ ATIVAR MICROFONE (só funciona na conversa)
+    // ATIVAR MICROFONE
     if (intent === 'ativar_microfone') {
       stopListening();
       
@@ -139,7 +140,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // ✅ TIRAR FOTO
+    // TIRAR FOTO
     if (intent === 'tirar_foto') {
       stopListening();
       
@@ -147,17 +148,14 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       setRecognizedText('');
       isBusyRef.current = false;
       
-      // Se está na tela de conversa, chama callback especial
       if (pathname.startsWith('/conversa') && onTakePhoto) {
         console.log('[Intent] 📸 Tirando foto na conversa com pergunta');
         onTakePhoto(originalText);
       } 
-      // Se está na câmera, mas NÃO veio de conversa, executa normalmente
       else if (pathname === '/tabs' || pathname === '/tabs/') {
         if (setPendingSpokenText) setPendingSpokenText(originalText);
         console.log('[Intent] Already on camera, executing photo action');
       } 
-      // Se está em outra tela qualquer, navega para câmera
       else {
         if (setPendingSpokenText) setPendingSpokenText(originalText);
         const navigatedFoto = checkAndNavigate('/tabs', "Indo para a câmera.");
@@ -170,9 +168,8 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // ✅ ABRIR CÂMERA (sem tirar foto)
+    // ABRIR CÂMERA
     if (intent === 'abrir_camera') {
-      // Se está na tela de conversa, abre câmera mas não tira foto
       if (pathname.startsWith('/conversa') && onOpenCamera) {
         console.log('[Intent] 📷 Abrindo câmera na conversa (sem tirar foto)');
         stopListening();
@@ -186,7 +183,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // ✅ OUTROS INTENTS
+    // OUTROS INTENTS
     switch (intent) {
       case 'ir_para_historico':
         const navigatedHistorico = checkAndNavigate('/tabs/historico', "Você já está no histórico.");
@@ -209,26 +206,42 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         stopListening();
         speak("Encerrando a sessão...", restartListeningAfterSpeak);
         return;
+
+      // ✅ MODIFICAÇÃO AQUI: Lógica de tema usa 'mudaTema()'
       case 'mudar_tema_claro':
         stopListening();
+        console.log(`[Theme] Current theme: ${temaAplicado}, requested: claro`);
+        
+        // Se está ESCURO, muda para CLARO
         if (temaAplicado === 'dark') { 
-          setTheme('light'); 
-          speak("Tema claro!", restartListeningAfterSpeak); 
+          console.log('[Theme] Changing from dark to light');
+          if (mudaTema) mudaTema(); // ✅ Usa a função do botão
+          speak("Tema claro ativado!", restartListeningAfterSpeak); 
         }
+        // Se JÁ está claro, avisa
         else { 
+          console.log('[Theme] Already in light theme');
           speak("O tema já está claro!", restartListeningAfterSpeak); 
         }
         return;
+
       case 'mudar_tema_escuro':
         stopListening();
+        console.log(`[Theme] Current theme: ${temaAplicado}, requested: escuro`);
+        
+        // Se está CLARO, muda para ESCURO
         if (temaAplicado === 'light') { 
-          setTheme('dark'); 
-          speak("Tema escuro!", restartListeningAfterSpeak); 
+          console.log('[Theme] Changing from light to dark');
+          if (mudaTema) mudaTema(); // ✅ Usa a função do botão
+          speak("Tema escuro ativado!", restartListeningAfterSpeak); 
         }
+        // Se JÁ está escuro, avisa
         else { 
+          console.log('[Theme] Already in dark theme');
           speak("O tema já está escuro!", restartListeningAfterSpeak); 
         }
         return;
+
       case 'tutorial':
         stopListening();
         speak("Mostrando o tutorial...", restartListeningAfterSpeak);
@@ -258,7 +271,10 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         speak("Comando não reconhecido.", restartListeningAfterSpeak);
         return;
     }
-  }, [ temaAplicado, setTheme, startListening, stopListening, setVoiceState, setRecognizedText,
+  }, [ temaAplicado, 
+       // ✅ MODIFICAÇÃO AQUI:
+       mudaTema, 
+       startListening, stopListening, setVoiceState, setRecognizedText,
        router, pathname, speak, checkAndNavigate, restartListeningAfterSpeak, isBusyRef,
        onActivateMic, onTakePhoto, onOpenCamera ]);
 
@@ -295,14 +311,12 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     
     if (!trimmedText) return;
     
-    // ✅ CORREÇÃO 1: Verifica duplicatas ANTES de tudo
     if (trimmedText === lastProcessedCommandRef.current && (now - lastProcessedTimeRef.current < 2000)) {
       return console.log('[Voice] Blocked near-duplicate:', trimmedText);
     }
 
     const lowerText = trimmedText.toLowerCase();
     
-    // ✅ CORREÇÃO 2: Define padrões de wake word e stop
     const wakePatterns = [
       /^escuta\b/,
       /\bescuta\b/,
@@ -326,13 +340,11 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     const isWakeWord = wakePatterns.some(pattern => pattern.test(lowerText));
     const isStopCommand = stopPatterns.some(pattern => pattern.test(lowerText));
     
-    // ✅ CORREÇÃO 3: Wake word e Stop SEMPRE processados, independente do estado busy
     if (isWakeWord) {
       console.log('[Voice] ✅ Wake word detected:', trimmedText);
       lastProcessedCommandRef.current = trimmedText;
       lastProcessedTimeRef.current = now;
       
-      // Se estava em listening_command, trata como reset/cancelamento
       if (voiceState === "listening_command") {
         console.log('[Voice] ⚠️ Wake word in listening_command - resetting to waiting_wake');
         stopCurrentAudio();
@@ -347,7 +359,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
       }
       
-      // Comportamento normal para waiting_wake
       if (voiceState === "waiting_wake") {
         stopCurrentAudio();
         stopListening();
@@ -369,7 +380,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       stopListening();
       isBusyRef.current = false;
       
-      // Reset para waiting_wake
       setTimeout(() => {
         setVoiceState("waiting_wake");
         setRecognizedText("");
@@ -378,19 +388,16 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
     
-    // ✅ CORREÇÃO 4: Agora verifica busy DEPOIS de processar wake/stop
     if (isBusyRef.current) {
       return console.log('[Voice] Busy, skipping command:', trimmedText);
     }
 
-    // ✅ Marca como processado e busy
     lastProcessedCommandRef.current = trimmedText;
     lastProcessedTimeRef.current = now;
     isBusyRef.current = true;
 
     try {
       if (voiceState === "waiting_wake") {
-        // Se chegou aqui e não é wake/stop, ignora
         console.log('[Voice] Ignoring non-command speech:', trimmedText);
         isBusyRef.current = false;
       } 

@@ -1,5 +1,3 @@
-// app/_layout
-
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../components/ThemeContext';
@@ -83,8 +81,9 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <VoiceCommandProvider>
-        <ThemeProvider>
+      {/* ✅ CORREÇÃO: ThemeProvider deve envolver VoiceCommandProvider */}
+      <ThemeProvider>
+        <VoiceCommandProvider>
           <SafeAreaProvider>
             {/* ✅ Status bar transparente e translúcida */}
             <StatusBar 
@@ -92,7 +91,8 @@ export default function RootLayout() {
               translucent 
               backgroundColor="transparent" 
             />
-            <ThemedSystemBars />
+            {/* ThemedSystemBars agora está corretamente dentro do ThemeProvider */}
+            <ThemedSystemBars /> 
             <VoicePageAnnouncer />
             <Stack 
               screenOptions={{ 
@@ -101,8 +101,8 @@ export default function RootLayout() {
               }} 
             />
           </SafeAreaProvider>
-        </ThemeProvider>
-      </VoiceCommandProvider>
+        </VoiceCommandProvider>
+      </ThemeProvider>
     </AuthProvider>
   );
 }

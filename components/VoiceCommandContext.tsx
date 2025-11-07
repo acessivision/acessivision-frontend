@@ -36,7 +36,8 @@ interface NavigationContext {
 const VoiceCommandContext = createContext<VoiceContextProps | undefined>(undefined);
 
 export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { temaAplicado, setTheme } = useTheme();
+  // ✅ MODIFICAÇÃO AQUI: Trocado 'setTheme' por 'mudaTema'
+  const { temaAplicado, mudaTema } = useTheme();
 
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
   const [pendingContext, setPendingContext] = useState<NavigationContext | null>(null);
@@ -78,7 +79,8 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { executeIntent, getIntentDisplayName, processCommand, isBusyRef } = useIntentHandler({
     speak,
     temaAplicado,
-    setTheme,
+    // ✅ MODIFICAÇÃO AQUI: Passando 'mudaTema'
+    mudaTema: mudaTema, 
     startListening,
     stopListening,
     setVoiceState,
