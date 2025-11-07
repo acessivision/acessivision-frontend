@@ -1,13 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
-  ActivityIndicator,
-  Alert,
+  Alert, 
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Image,
   findNodeHandle,
   AccessibilityInfo
@@ -17,13 +14,23 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../components/ThemeContext';
 import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../components/AuthContext';
+import { useIsFocused } from '@react-navigation/native';
+import { useSpeech } from '../hooks/useSpeech';
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
   const router = useRouter();
   const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
-  const [loading, setLoading] = useState(false);
-  const { loginWithGoogle } = useAuth();
+  const [loading, setLoading] = useState(false); // ✅ Usaremos este estado
+  const { loginWithGoogle, user, isLoading: isAuthLoading } = useAuth();
+
+  const isFocused = useIsFocused();
+  const { speak } = useSpeech({
+    enabled: isFocused,
+    mode: 'local',
+  });
+  
+  const spokenRef = useRef(false);
 
   useEffect(() => {
     const setInitialFocus = async () => {
@@ -42,6 +49,26 @@ export default function LoginScreen() {
     setInitialFocus();
   }, []);
 
+  // ===================================================================
+  // ✅ useEffect MODIFICADO
+  // ===================================================================
+  useEffect(() => {
+    // ✅ Adicionada a verificação "!loading"
+    // Só fala se o usuário já estava logado ANTES de entrar na tela,
+    // e não durante o processo de login.
+    if (user && isFocused && !spokenRef.current && !loading) {
+      const message = `Você já está logado como: ${user.email || 'usuário'}.`;
+      console.log('[LoginScreen] Falando (vinda de visita, não de login):', message);
+      speak(message);
+      spokenRef.current = true;
+    }
+
+    if (!isFocused) {
+      spokenRef.current = false;
+    }
+  }, [user, isFocused, speak, loading]); // ✅ Adicionado 'loading' às dependências
+  // ===================================================================
+
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -51,22 +78,24 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true);
+    setLoading(true); // ✅ 'loading' fica true
     
     try {
       const result = await loginWithGoogle();
 
       if (result.success) {
-        Alert.alert('Sucesso', 'Login realizado com sucesso!');
+        // O useEffect não vai disparar a fala "já logado" porque 'loading' está true
+        await speak('Login realizado com sucesso!');
         router.replace('/tabs');
       } else {
-        Alert.alert('Erro', result.message || 'Falha ao autenticar com o Google.');
+        const errorMessage = result.message || 'Falha ao autenticar com o Google.';
+        await speak(`Erro. ${errorMessage}`);
       }
     } catch (error) {
       console.error("Erro no login com Google:", error);
-      Alert.alert('Erro', 'Ocorreu um erro inesperado.');
+      await speak('Erro. Ocorreu um erro inesperado.');
     } finally {
-      setLoading(false);
+      setLoading(false); // ✅ 'loading' fica false
     }
   };
 
@@ -136,6 +165,10 @@ export default function LoginScreen() {
       justifyContent: 'center',
       marginBottom: 40,
     },
+    disabledButton: {
+      opacity: 0.6,
+      backgroundColor: '#eee',
+    },
     googleIcon: {
       fontSize: 20,
       fontWeight: 'bold',
@@ -148,6 +181,8 @@ export default function LoginScreen() {
       color: '#000',
     },
   });
+
+  const isButtonDisabled = loading || isAuthLoading || !!user;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -184,12 +219,15 @@ export default function LoginScreen() {
           <Text style={styles.subtitle}>Entre no AcessiVision e desfrute de todas as funcionalidades!</Text>
 
           <TouchableOpacity 
-            style={styles.googleButton} 
+            style={[styles.googleButton, isButtonDisabled && styles.disabledButton]}
             onPress={handleGoogleLogin}
-            disabled={loading}
+            disabled={isButtonDisabled}
           >
             <Image source={require('../assets/images/icone-google.png')} />
-            <Text style={styles.googleButtonText}> Entrar com Google</Text>
+            <Text style={styles.googleButtonText}>
+              {/* O texto do botão continua o mesmo, o que está correto */}
+              {isButtonDisabled ? 'Você já está logado' : ' Entrar com Google'}
+            </Text>
           </TouchableOpacity>
         </View>
     </SafeAreaView>

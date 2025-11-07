@@ -216,6 +216,12 @@ const HistoryScreen: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (isScreenFocused && !user && !isAuthLoading) {
+      speak("Faça login para acessar o histórico");
+    }
+  }, [isScreenFocused, user, isAuthLoading, speak]);
+
   // ===================================================================
   // EXCLUIR CONVERSA - COM VOZ
   // ===================================================================
