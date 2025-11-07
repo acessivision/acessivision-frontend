@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -16,10 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { useTheme } from '../../components/ThemeContext';
 import { useSpeech } from '../../hooks/useSpeech';
+import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import firestore from '@react-native-firebase/firestore';
 
-const SERVER_URL = 'https://acessivision.com.br/upload';
+const SERVER_URL = 'https://www.acessivision.com.br/upload';
 
 interface Message {
   id: string;
@@ -32,7 +33,15 @@ interface Message {
 const ConversationScreen: React.FC = () => {
   const router = useRouter();
   const isScreenFocused = useIsFocused();
-  const { conversaId, titulo } = useLocalSearchParams<{ conversaId: string, titulo: string }>();
+  
+  // ✅ ADICIONA speakLastMessage aos parâmetros
+  const params = useLocalSearchParams<{ 
+    conversaId: string, 
+    titulo: string,
+    speakLastMessage?: string 
+  }>();
+  
+  const { conversaId, titulo, speakLastMessage } = params;
   const { cores, getIconSize } = useTheme();
   const flatListRef = useRef<FlatList>(null);
 
@@ -44,6 +53,7 @@ const ConversationScreen: React.FC = () => {
   
   const recognitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRecognizedTextRef = useRef<string>('');
+  const lastMessageCountRef = useRef<number>(0);
 
   const { 
     speak, 
@@ -57,10 +67,90 @@ const ConversationScreen: React.FC = () => {
     mode: 'local',
   });
 
-  // ✅ Refs para controle de fala
+  const { 
+    registerConversationCallbacks, 
+    unregisterConversationCallbacks,
+    setPendingContext 
+  } = useVoiceCommands();
+
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const isFirstLoadRef = useRef<boolean>(true);
   const shouldSpeakNextMessageRef = useRef<boolean>(false);
+
+  // ===================================================================
+  // ✅ NOVO: ATIVAR FLAG QUANDO RECEBER PARÂMETRO speakLastMessage
+  // ===================================================================
+  useEffect(() => {
+    if (speakLastMessage === 'true' && isScreenFocused) {
+      console.log('[Conversa] 🚩 Parâmetro speakLastMessage recebido - ATIVANDO flag');
+      shouldSpeakNextMessageRef.current = true;
+      
+      // ✅ Limpa o parâmetro da URL para evitar re-ativações
+      router.setParams({ speakLastMessage: undefined });
+    }
+  }, [speakLastMessage, isScreenFocused]);
+
+  // ===================================================================
+  // REGISTRAR CALLBACKS QUANDO TELA ESTÁ EM FOCO
+  // ===================================================================
+  useEffect(() => {
+    if (isScreenFocused && conversaId) {
+      console.log('[Conversa] 🎤 Registrando callbacks de voz');
+      
+      setPendingContext({
+        mode: 'chat',
+        conversaId: conversaId
+      });
+
+      const callbacks = {
+        onActivateMic: () => {
+          console.log('[Conversa] ✅ Callback onActivateMic chamado');
+          toggleMicrophone();
+        },
+        onTakePhoto: (question: string) => {
+          console.log('[Conversa] 📸 Callback onTakePhoto chamado com:', question);
+          handleTakePhotoFromVoice(question);
+        },
+        onOpenCamera: () => {
+          console.log('[Conversa] 📷 Callback onOpenCamera chamado');
+          handlePickImage();
+        }
+      };
+
+      registerConversationCallbacks(callbacks);
+
+      return () => {
+        console.log('[Conversa] 🎤 Removendo callbacks de voz');
+        unregisterConversationCallbacks();
+        setPendingContext(null);
+      };
+    }
+  }, [isScreenFocused, conversaId]);
+
+  // ===================================================================
+  // TIRAR FOTO POR COMANDO DE VOZ
+  // ===================================================================
+  const handleTakePhotoFromVoice = useCallback((question: string) => {
+    console.log('[Conversa] 📸 Navegando para câmera com auto-foto');
+    setMicEnabled(false);
+    setRecognizedText('');
+    lastRecognizedTextRef.current = '';
+    
+    if (recognitionTimeoutRef.current) {
+      clearTimeout(recognitionTimeoutRef.current);
+    }
+    
+    router.replace({
+      pathname: '/tabs',
+      params: {
+        mode: 'chat',
+        conversaId: conversaId,
+        autoTakePhoto: 'true',
+        question: question,
+        timestamp: Date.now().toString()
+      }
+    });
+  }, [conversaId, router]);
 
   // ===================================================================
   // VOLTAR PARA TELA ANTERIOR
@@ -74,97 +164,106 @@ const ConversationScreen: React.FC = () => {
   };
 
   // ===================================================================
-  // BUSCAR MENSAGENS DO FIRESTORE
+  // CONTROLAR ESTADO QUANDO PERDE/GANHA FOCO
   // ===================================================================
   useEffect(() => {
-    if (!conversaId) return;
-
-    if (isScreenFocused) {
-      console.log(`[Firestore] TELA EM FOCO: Iniciando listener para ${conversaId}`);
-      console.log(`[Conversa] 🔍 shouldSpeakNextMessage: ${shouldSpeakNextMessageRef.current}`);
-
-      const unsubscribe = firestore()
-        .collection('conversas')
-        .doc(conversaId)
-        .collection('mensagens')
-        .orderBy('timestamp', 'asc')
-        .onSnapshot(
-          (snapshot) => {
-            const msgs = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            })) as Message[];
-            
-            console.log(`[Conversa] 📊 Total de mensagens: ${msgs.length}`);
-            
-            setMessages(msgs);
-
-            // ✅ Encontra última mensagem da API/bot
-            const lastApiMessage = [...msgs].reverse().find(m => m.sender === 'api');
-            
-            if (lastApiMessage) {
-              console.log(`[Conversa] 🔍 Última mensagem API: ${lastApiMessage.id}`);
-              console.log(`[Conversa] 🔍 Última falada: ${lastSpokenMessageIdRef.current}`);
-              console.log(`[Conversa] 🔍 É primeira carga? ${isFirstLoadRef.current}`);
-              console.log(`[Conversa] 🔍 Deve falar próxima? ${shouldSpeakNextMessageRef.current}`);
-              
-              // ✅ Condições para falar:
-              // 1. Se shouldSpeakNextMessage está true (voltou da câmera)
-              // 2. OU se não é primeira carga E mensagem é diferente da última falada
-              const shouldSpeak = 
-                shouldSpeakNextMessageRef.current || 
-                (!isFirstLoadRef.current && lastApiMessage.id !== lastSpokenMessageIdRef.current);
-
-              if (shouldSpeak) {
-                console.log('[Conversa] 🔊 PREPARANDO PARA FALAR:', lastApiMessage.text.substring(0, 50) + '...');
-                lastSpokenMessageIdRef.current = lastApiMessage.id;
-                shouldSpeakNextMessageRef.current = false; // Reset flag
-                
-                // Aguarda VoicePageAnnouncer terminar
-                setTimeout(() => {
-                  console.log('[Conversa] 🔊 FALANDO AGORA!');
-                  speak(lastApiMessage.text);
-                }, 2500);
-              } else if (isFirstLoadRef.current) {
-                // Na primeira carga, apenas marca como falada sem falar
-                lastSpokenMessageIdRef.current = lastApiMessage.id;
-                console.log('[Conversa] 📝 Primeira carga, marcando mensagem como já falada');
-              }
-            }
-
-            // ✅ Marca que primeira carga já aconteceu
-            isFirstLoadRef.current = false;
-
-            // Atualiza imagem ativa
-            const lastUserImageMsg = [...msgs].reverse().find(m => m.sender === 'user' && m.imageUri);
-            if (lastUserImageMsg && lastUserImageMsg.imageUri) {
-              setActiveImage(lastUserImageMsg.imageUri); 
-            }
-          },
-          (error) => {
-            console.error(`❌ Erro ao buscar mensagens:`, error);
-          }
-        );
-
-      return () => {
-        console.log(`[Firestore] TELA PERDEU O FOCO: Parando listener para ${conversaId}`);
-        unsubscribe();
-      };
-
-    } else {
-      console.log('[Conversa] Tela perdeu foco');
-      
-      // ✅ Reseta estado visual mas mantém controle de fala
+    if (!isScreenFocused) {
+      console.log('[Conversa] 🔴 Tela perdeu foco');
       setMessages([]);
       setActiveImage(null);
       setMicEnabled(false);
-      
-      // ✅ Marca que próxima mensagem deve ser falada (voltando da câmera)
-      shouldSpeakNextMessageRef.current = true;
-      isFirstLoadRef.current = false;
-      
-      console.log('[Conversa] 🔔 Flag ativada: próxima mensagem será falada');
+    } else {
+      console.log('[Conversa] 🟢 Tela ganhou foco');
+      console.log(`[Conversa] 🔍 shouldSpeakNextMessage: ${shouldSpeakNextMessageRef.current}`);
+      console.log(`[Conversa] 🔍 isFirstLoad: ${isFirstLoadRef.current}`);
+      console.log(`[Conversa] 🔍 lastSpokenMessageId: ${lastSpokenMessageIdRef.current}`);
+      console.log(`[Conversa] 🔍 lastMessageCount: ${lastMessageCountRef.current}`);
     }
+  }, [isScreenFocused]);
+
+  // ===================================================================
+  // BUSCAR MENSAGENS DO FIRESTORE
+  // ===================================================================
+  useEffect(() => {
+    if (!conversaId || !isScreenFocused) return;
+
+    console.log(`[Firestore] 🎧 Iniciando listener para ${conversaId}`);
+
+    const unsubscribe = firestore()
+      .collection('conversas')
+      .doc(conversaId)
+      .collection('mensagens')
+      .orderBy('timestamp', 'asc')
+      .onSnapshot(
+        (snapshot) => {
+          const msgs = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as Message[];
+          
+          console.log(`[Conversa] 📊 Total de mensagens: ${msgs.length}`);
+          console.log(`[Conversa] 📊 Mensagens anteriores: ${lastMessageCountRef.current}`);
+          
+          const hasNewMessages = msgs.length > lastMessageCountRef.current && lastMessageCountRef.current > 0;
+          
+          setMessages(msgs);
+
+          const lastApiMessage = [...msgs].reverse().find(m => m.sender === 'api');
+          
+          if (lastApiMessage) {
+            console.log('═══════════════════════════════════════════════');
+            console.log(`[Conversa] 🔍 ANÁLISE DE FALA`);
+            console.log(`[Conversa] 📨 Message ID: ${lastApiMessage.id}`);
+            console.log(`[Conversa] 🗣️ Last Spoken ID: ${lastSpokenMessageIdRef.current}`);
+            console.log(`[Conversa] 🆕 isNewMessage: ${lastApiMessage.id !== lastSpokenMessageIdRef.current}`);
+            console.log(`[Conversa] 🚩 shouldSpeakFlag: ${shouldSpeakNextMessageRef.current}`);
+            console.log(`[Conversa] 1️⃣ isFirstLoad: ${isFirstLoadRef.current}`);
+            console.log(`[Conversa] 📈 hasNewMessages: ${hasNewMessages}`);
+            
+            const isNewMessage = lastApiMessage.id !== lastSpokenMessageIdRef.current;
+            
+            // ✅ Só fala se a FLAG está ativa E é mensagem nova
+            const shouldSpeak = shouldSpeakNextMessageRef.current && isNewMessage;
+
+            console.log(`[Conversa] 🎯 Decisão final: ${shouldSpeak ? '✅ FALAR' : '❌ NÃO FALAR'}`);
+            console.log('═══════════════════════════════════════════════');
+
+            if (shouldSpeak) {
+              console.log('[Conversa] 🔊 PREPARANDO PARA FALAR:', lastApiMessage.text.substring(0, 50) + '...');
+              lastSpokenMessageIdRef.current = lastApiMessage.id;
+              shouldSpeakNextMessageRef.current = false;
+              
+              setTimeout(() => {
+                console.log('[Conversa] 🔊 FALANDO AGORA!');
+                speak(lastApiMessage.text);
+              }, 3500);
+            } else {
+              if (isFirstLoadRef.current || lastSpokenMessageIdRef.current === null) {
+                lastSpokenMessageIdRef.current = lastApiMessage.id;
+                console.log('[Conversa] 📝 Primeira carga, marcando como já falada (SEM FALAR)');
+              } else {
+                console.log('[Conversa] ⏭️ Mensagem já foi falada anteriormente, ignorando');
+              }
+            }
+          }
+
+          lastMessageCountRef.current = msgs.length;
+          isFirstLoadRef.current = false;
+
+          const lastUserImageMsg = [...msgs].reverse().find(m => m.sender === 'user' && m.imageUri);
+          if (lastUserImageMsg && lastUserImageMsg.imageUri) {
+            setActiveImage(lastUserImageMsg.imageUri); 
+          }
+        },
+        (error) => {
+          console.error(`❌ Erro ao buscar mensagens:`, error);
+        }
+      );
+
+    return () => {
+      console.log(`[Firestore] 🔇 Parando listener para ${conversaId}`);
+      unsubscribe();
+    };
 
   }, [conversaId, isScreenFocused, speak]);
 
@@ -245,6 +344,7 @@ const ConversationScreen: React.FC = () => {
       }
       setRecognizedText('');
       lastRecognizedTextRef.current = '';
+      speak('Microfone desativado.');
     }
   };
 
@@ -252,6 +352,8 @@ const ConversationScreen: React.FC = () => {
   // NAVEGAR PARA TIRAR FOTO
   // ===================================================================
   const handlePickImage = () => {
+    console.log('[Conversa] 📷 Navegando para câmera manualmente');
+    
     setMicEnabled(false);
     setRecognizedText('');
     lastRecognizedTextRef.current = '';
@@ -264,7 +366,8 @@ const ConversationScreen: React.FC = () => {
       pathname: '/tabs',
       params: {
         mode: 'chat',
-        conversaId: conversaId
+        conversaId: conversaId,
+        timestamp: Date.now().toString()
       }
     });
   };
@@ -371,6 +474,10 @@ const ConversationScreen: React.FC = () => {
 
       console.log('[Upload] ✅ Descrição recebida:', apiResponse);
 
+      // ✅ ATIVA FLAG para falar a resposta
+      shouldSpeakNextMessageRef.current = true;
+      console.log('[Conversa] 🚩 Flag ativada após enviar mensagem - resposta será falada');
+
       await messagesCollectionRef.add({
         sender: 'api',
         text: apiResponse,
@@ -407,11 +514,10 @@ const ConversationScreen: React.FC = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={[styles.container, { backgroundColor: cores.fundo }]}>
-        {/* Header com botão voltar */}
         <TouchableOpacity 
           onPress={handleGoBack}
           style={[styles.header, { backgroundColor: cores.barrasDeNavegacao }]}
-          accessibilityLabel="Voltar para tela de histórico"
+          accessibilityLabel="Voltar para tela anterior"
           accessibilityRole="button"
         >
           <Ionicons 
@@ -537,24 +643,16 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  backButton: {
-    padding: 8,
+    gap: 12,
   },
   headerTitle: {
-    flex: 1,
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    textAlign: 'center',
-    marginHorizontal: 16,
-  },
-  headerSpacer: {
-    width: 40, // Compensa o espaço do botão voltar para centralizar o título
   },
   messageBubble: {
     maxWidth: '80%',

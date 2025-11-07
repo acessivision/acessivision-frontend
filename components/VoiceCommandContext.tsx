@@ -12,10 +12,25 @@ interface VoiceContextProps {
   recognizedText: string;
   voiceState: VoiceState;
   pendingSpokenText: string | null;
+  pendingContext: NavigationContext | null;
   clearPending: () => void;
+  setPendingContext: (context: NavigationContext | null) => void;
   registerAudioPlayer: (player: any) => void;
   unregisterAudioPlayer: () => void;
   stopListening: () => void;
+  registerConversationCallbacks: (callbacks: ConversationCallbacks) => void;
+  unregisterConversationCallbacks: () => void;
+}
+
+interface ConversationCallbacks {
+  onActivateMic?: () => void;
+  onTakePhoto?: (question: string) => void;
+  onOpenCamera?: () => void;
+}
+
+interface NavigationContext {
+  mode?: string;
+  conversaId?: string;
 }
 
 const VoiceCommandContext = createContext<VoiceContextProps | undefined>(undefined);
@@ -24,18 +39,18 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { temaAplicado, setTheme } = useTheme();
 
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
+  const [pendingContext, setPendingContext] = useState<NavigationContext | null>(null);
   const [pendingIntent, setPendingIntent] = useState<string>('');
   const [pendingOriginalText, setPendingOriginalText] = useState<string>('');
   
   const [voiceState, setVoiceState] = useState<VoiceState>('waiting_wake');
 
-  // ✅ Track if listener is already registered to prevent duplicates
+  const conversationCallbacksRef = useRef<ConversationCallbacks>({});
+
   const listenerRegisteredRef = useRef(false);
 
-  // Setup de áudio e TTS
   const { speak, stopCurrentAudio, registerAudioPlayer, unregisterAudioPlayer } = useAudioSetup();
   
-  // ✅ Usa o novo hook de voz para comandos globais
   const {
     isListening,
     recognizedText,
@@ -50,7 +65,16 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   });
 
-  // Handler de intents
+  const registerConversationCallbacks = useCallback((callbacks: ConversationCallbacks) => {
+    console.log('[VoiceContext] Registering conversation callbacks');
+    conversationCallbacksRef.current = callbacks;
+  }, []);
+
+  const unregisterConversationCallbacks = useCallback(() => {
+    console.log('[VoiceContext] Unregistering conversation callbacks');
+    conversationCallbacksRef.current = {};
+  }, []);
+
   const { executeIntent, getIntentDisplayName, processCommand, isBusyRef } = useIntentHandler({
     speak,
     temaAplicado,
@@ -59,11 +83,12 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     stopListening,
     setVoiceState,
     setRecognizedText,
+    onActivateMic: () => conversationCallbacksRef.current.onActivateMic?.(),
+    onTakePhoto: (q: string) => conversationCallbacksRef.current.onTakePhoto?.(q),
+    onOpenCamera: () => conversationCallbacksRef.current.onOpenCamera?.(),
+    setPendingContext,
   });
 
-  // ===================================================================
-  // HANDLER DE CONFIRMAÇÃO
-  // ===================================================================
   const handleConfirmationResponse = useCallback((spokenText: string) => {
     const normalizedText = spokenText.toLowerCase().trim();
     
@@ -105,18 +130,17 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [pendingIntent, pendingOriginalText, executeIntent, stopListening, startListening, speak, getIntentDisplayName, isBusyRef, setRecognizedText]);
 
-  const clearPending = useCallback(() => setPendingSpokenText(null), []);
+  const clearPending = useCallback(() => {
+    setPendingSpokenText(null);
+    setPendingContext(null);
+  }, []);
 
-  // ===================================================================
-  // REFS PARA MANTER ESTADO ATUALIZADO NO LISTENER
-  // ===================================================================
   const voiceStateRef = useRef(voiceState);
   const handleConfirmationResponseRef = useRef(handleConfirmationResponse);
   const processCommandRef = useRef(processCommand);
   const stopListeningRef = useRef(stopListening);
   const stopCurrentAudioRef = useRef(stopCurrentAudio);
 
-  // Atualiza as refs sempre que as dependências mudarem
   useEffect(() => {
     voiceStateRef.current = voiceState;
   }, [voiceState]);
@@ -137,11 +161,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     stopCurrentAudioRef.current = stopCurrentAudio;
   }, [stopCurrentAudio]);
 
-  // ===================================================================
-  // REGISTRAR LISTENER NO SPEECHMANAGER - ONLY ONCE
-  // ===================================================================
   useEffect(() => {
-    // ✅ Prevent duplicate registration
     if (listenerRegisteredRef.current) {
       console.log('[VoiceContext] Listener already registered, skipping');
       return;
@@ -159,7 +179,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       setRecognizedText(trimmedText); 
 
-      // ✅ Use .current to get the latest state value
       const currentState = voiceStateRef.current;
       console.log(`[VoiceContext] Processing FINAL: "${trimmedText}", State: ${currentState}`);
 
@@ -188,32 +207,38 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     listenerRegisteredRef.current = true;
     console.log('[VoiceContext] Global listener REGISTERED (once)');
 
-    // ✅ Cleanup only on component unmount
     return () => {
       SpeechManager.removeListener(listener);
       listenerRegisteredRef.current = false;
       console.log('[VoiceContext] Global listener UNREGISTERED');
     };
-  }, []); // ✅ Empty dependency array - register ONCE
+  }, []);
 
   const value = useMemo(() => ({
     isListening,
     recognizedText,
     voiceState,
     pendingSpokenText,
+    pendingContext,
     clearPending,
+    setPendingContext,
     registerAudioPlayer,
     unregisterAudioPlayer,
     stopListening,
+    registerConversationCallbacks,
+    unregisterConversationCallbacks,
   }), [
     isListening,
     recognizedText,
     voiceState,
     pendingSpokenText,
+    pendingContext,
     registerAudioPlayer,
     unregisterAudioPlayer,
     clearPending,
     stopListening,
+    registerConversationCallbacks,
+    unregisterConversationCallbacks,
   ]);
 
   return (

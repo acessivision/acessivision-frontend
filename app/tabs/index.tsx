@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { useTheme } from "../../components/ThemeContext";
@@ -32,19 +33,46 @@ const CameraScreen: React.FC = () => {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const isFocused = useIsFocused();
-  const { conversaId, mode } = useLocalSearchParams<{ conversaId?: string, mode?: string }>();
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  
+  const params = useLocalSearchParams();
+  
+  const conversaIdFromUrl = typeof params.conversaId === 'string' ? params.conversaId : undefined;
+  const modeFromUrl = typeof params.mode === 'string' ? params.mode : undefined;
+  const autoTakePhoto = params.autoTakePhoto === 'true';
+  const question = typeof params.question === 'string' ? params.question : undefined;
+  
+  const {
+    pendingSpokenText,
+    pendingContext,
+    clearPending,
+  } = useVoiceCommands();
+
+  const mode = modeFromUrl || pendingContext?.mode;
+  const conversaId = conversaIdFromUrl || pendingContext?.conversaId;
+  
+  useEffect(() => {
+    console.log('[Camera] 📋 Parâmetros recebidos:');
+    console.log('[Camera]   - URL conversaId:', conversaIdFromUrl);
+    console.log('[Camera]   - URL mode:', modeFromUrl);
+    console.log('[Camera]   - Context conversaId:', pendingContext?.conversaId);
+    console.log('[Camera]   - Context mode:', pendingContext?.mode);
+    console.log('[Camera]   - FINAL conversaId:', conversaId);
+    console.log('[Camera]   - FINAL mode:', mode);
+    console.log('[Camera]   - autoTakePhoto:', autoTakePhoto);
+    console.log('[Camera]   - question:', question);
+  }, [conversaIdFromUrl, modeFromUrl, pendingContext, conversaId, mode, autoTakePhoto, question]);
   
   const [capturedPhoto, setCapturedPhoto] = useState<Photo | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [waitingForQuestion, setWaitingForQuestion] = useState(false);
-
-  // 🔊 Referência para o intervalo de feedback
+  
+  const hasProcessedAutoPhotoRef = useRef(false);
   const feedbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const {
-    pendingSpokenText,
-    clearPending,
-  } = useVoiceCommands();
+  
+  // ✅ NOVO: Refs para debounce da pergunta
+  const lastRecognizedTextRef = useRef<string>('');
+  const questionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { 
     speak, 
@@ -59,7 +87,38 @@ const CameraScreen: React.FC = () => {
   });
 
   // ===================================================================
-  // LIMPAR INTERVALO DE FEEDBACK AO DESMONTAR
+  // AUTO TIRAR FOTO (quando vem com autoTakePhoto=true)
+  // ===================================================================
+  useEffect(() => {
+    if (isFocused && autoTakePhoto && question && !isSending && !hasProcessedAutoPhotoRef.current && isCameraReady) {
+      console.log('[Camera] 🎯 Auto-tirando foto com pergunta:', question);
+      
+      hasProcessedAutoPhotoRef.current = true;
+      
+      router.replace({
+        pathname: '/tabs',
+        params: {
+          mode: mode,
+          conversaId: conversaId,
+          timestamp: Date.now().toString()
+        }
+      });
+      
+      setTimeout(() => {
+        takePictureForVoiceCommand(question);
+      }, 1000);
+    }
+  }, [isFocused, autoTakePhoto, question, isSending, isCameraReady]);
+
+  useEffect(() => {
+    if (!isFocused) {
+      hasProcessedAutoPhotoRef.current = false;
+      setIsCameraReady(false);
+    }
+  }, [isFocused]);
+
+  // ===================================================================
+  // LIMPAR INTERVALOS E TIMEOUTS AO DESMONTAR
   // ===================================================================
   useEffect(() => {
     return () => {
@@ -67,61 +126,76 @@ const CameraScreen: React.FC = () => {
         clearInterval(feedbackIntervalRef.current);
         feedbackIntervalRef.current = null;
       }
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+        questionTimeoutRef.current = null;
+      }
     };
   }, []);
 
   // ===================================================================
-  // INICIAR FEEDBACK EM LOOP
+  // FEEDBACK EM LOOP
   // ===================================================================
   const startProcessingFeedback = () => {
     console.log("[Feedback] 🔊 Iniciando feedback em loop");
-    
-    // Fala imediatamente
     speak("Processando");
     
-    // Configura intervalo para repetir a cada 3 segundos
     feedbackIntervalRef.current = setInterval(() => {
       console.log("[Feedback] 🔊 Repetindo feedback");
       speak("Processando");
     }, 3000);
   };
 
-  // ===================================================================
-  // PARAR FEEDBACK EM LOOP
-  // ===================================================================
   const stopProcessingFeedback = () => {
     if (feedbackIntervalRef.current) {
       console.log("[Feedback] 🛑 Parando feedback em loop");
       clearInterval(feedbackIntervalRef.current);
       feedbackIntervalRef.current = null;
-      
-      // Para qualquer fala em andamento
       stopListening();
     }
   };
 
   // ===================================================================
-  // PROCESSAR PERGUNTA RECONHECIDA
+  // ✅ PROCESSAR PERGUNTA RECONHECIDA COM DEBOUNCE (CORRIGIDO)
   // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim() || !waitingForQuestion || !capturedPhoto) return;
 
-    console.log("[Camera] Pergunta reconhecida:", recognizedText);
+    const textoAtual = recognizedText.trim();
+    lastRecognizedTextRef.current = textoAtual;
 
-    if (!recognizedText.trim()) {
-      console.warn('[Camera] Resultado da fala estava vazio.');
-      setRecognizedText('');
-      return;
+    console.log("[Camera] Texto sendo reconhecido:", textoAtual);
+
+    // ✅ Limpa timeout anterior
+    if (questionTimeoutRef.current) {
+      clearTimeout(questionTimeoutRef.current);
     }
 
-    setWaitingForQuestion(false);
-    handleUploadAndProcess(capturedPhoto, recognizedText);
-    setRecognizedText('');
+    // ✅ Aguarda 2 segundos de silêncio antes de processar
+    questionTimeoutRef.current = setTimeout(() => {
+      const textoFinal = lastRecognizedTextRef.current;
+      
+      if (!textoFinal) {
+        console.warn('[Camera] Resultado da fala estava vazio.');
+        setRecognizedText('');
+        lastRecognizedTextRef.current = '';
+        return;
+      }
+
+      console.log("[Camera] ✅ Pergunta final capturada:", textoFinal);
+      
+      // ✅ Para de escutar e processa
+      setWaitingForQuestion(false);
+      handleUploadAndProcess(capturedPhoto, textoFinal);
+      setRecognizedText('');
+      lastRecognizedTextRef.current = '';
+
+    }, 2000); // 2 segundos de silêncio
 
   }, [recognizedText, waitingForQuestion, capturedPhoto]);
 
   // ===================================================================
-  // UPLOAD E PROCESSAMENTO - USANDO BASE64
+  // UPLOAD E PROCESSAMENTO
   // ===================================================================
   const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
     if (isSending) {
@@ -138,10 +212,8 @@ const CameraScreen: React.FC = () => {
     stopListening();
 
     try {
-      // 🔊 INICIAR FEEDBACK EM LOOP
       startProcessingFeedback();
 
-      // ✅ USAR BASE64 DIRETO DA CÂMERA
       console.log('[Upload] 📸 Usando base64 da câmera...');
       
       if (!photo.base64) {
@@ -151,7 +223,6 @@ const CameraScreen: React.FC = () => {
       const base64 = photo.base64;
       console.log(`[Upload] ✅ Base64 pronto (${base64.length} caracteres)`);
 
-      // ✅ ENVIAR COMO JSON
       console.log('[Upload] 📤 Enviando requisição JSON para:', SERVER_URL);
       const response = await fetch(SERVER_URL, {
         method: 'POST',
@@ -177,7 +248,6 @@ const CameraScreen: React.FC = () => {
       const result = await response.json();
       console.log('[Upload] 🎉 Resultado:', result);
       
-      // 🔊 PARAR FEEDBACK ASSIM QUE RECEBER A RESPOSTA
       stopProcessingFeedback();
       
       const description = result.description;
@@ -188,15 +258,11 @@ const CameraScreen: React.FC = () => {
 
       console.log('[Upload] ✅ Descrição recebida:', description);
 
-      // =======================================================
-      // LÓGICA CONDICIONAL (MODO CHAT)
-      // =======================================================
       console.log(`[Upload] 🔍 Verificando modo - mode: "${mode}", conversaId: "${conversaId}"`);
       
       if (mode === 'chat' && conversaId) {
         console.log(`[Firestore] 💾 Salvando na conversa ${conversaId}`);
 
-        // 🔊 FEEDBACK: Informar que vai salvar
         await speak("Resposta recebida. Salvando na conversa.");
 
         const filename = photo.uri.split('/').pop() || `photo-${Date.now()}.jpg`;
@@ -233,18 +299,47 @@ const CameraScreen: React.FC = () => {
           });
         
         console.log('[Firestore] ✅ Resposta da API salva');
+
+        await firestore()
+          .collection('conversas')
+          .doc(conversaId)
+          .update({
+            dataAlteracao: firestore.FieldValue.serverTimestamp(),
+          });
     
         console.log("[Firestore] ✅ Salvamento concluído. Voltando para o chat...");
-        router.back();
+        
+        console.log('[Navigation] 🧹 Limpando pending antes de voltar');
+        clearPending();
+        
+        hasProcessedAutoPhotoRef.current = false;
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        const conversaDoc = await firestore()
+          .collection('conversas')
+          .doc(conversaId)
+          .get();
+        
+        const tituloConversa = conversaDoc.exists ? conversaDoc.data()?.titulo : 'Conversa';
+        
+        console.log(`[Navigation] 🔙 Navegando de volta para conversa: ${conversaId} (${tituloConversa})`);
+        router.replace({
+          pathname: '/conversa',
+          params: {
+            conversaId: conversaId,
+            titulo: tituloConversa,
+            speakLastMessage: 'true',
+            timestamp: Date.now().toString()
+          }
+        });
 
       } else {
-        // Modo simples: apenas fala a descrição
         console.log(`[Speech] 🔊 Falando a descrição: "${description}"`);
         await speak(description);
       }
 
     } catch (error) {
-      // 🔊 PARAR FEEDBACK EM CASO DE ERRO
       stopProcessingFeedback();
       
       console.error("[Upload] ❌ Error completo:", error);
@@ -259,13 +354,13 @@ const CameraScreen: React.FC = () => {
         }
       }
       
-      // 🔊 FEEDBACK DE ERRO
       await speak(`Erro: ${errorMessage}`);
       Alert.alert("Erro no Upload", errorMessage);
     } finally {
       setCapturedPhoto(null);
       setWaitingForQuestion(false);
       setIsSending(false);
+      hasProcessedAutoPhotoRef.current = false;
 
       console.log("[Upload] 🔄 Re-habilitando listener global.");
       SpeechManager.enable();
@@ -276,20 +371,45 @@ const CameraScreen: React.FC = () => {
   // TIRAR FOTO (COMANDO DE VOZ GLOBAL)
   // ===================================================================
   const takePictureForVoiceCommand = async (spokenText: string): Promise<void> => {
-    if (!cameraRef.current) {
-      Alert.alert("Erro", "Câmera não está pronta.");
+    if (isSending) {
+      console.log('[Camera] ⚠️ Já está enviando, ignorando comando duplicado');
       return;
+    }
+    
+    if (!cameraRef.current) {
+      console.error('[Camera] ❌ Câmera não está pronta');
+      Alert.alert("Erro", "Câmera não está pronta.");
+      hasProcessedAutoPhotoRef.current = false;
+      return;
+    }
+
+    if (!isCameraReady) {
+      console.log('[Camera] ⏳ Aguardando câmera ficar pronta...');
+      const maxWait = 3000;
+      const startTime = Date.now();
+      
+      while (!isCameraReady && (Date.now() - startTime) < maxWait) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      if (!isCameraReady) {
+        console.error('[Camera] ❌ Timeout aguardando câmera');
+        Alert.alert("Erro", "A câmera demorou muito para inicializar.");
+        hasProcessedAutoPhotoRef.current = false;
+        return;
+      }
     }
 
     try {
       console.log("[Camera] 📸 Taking picture for voice command...");
       const photo = await cameraRef.current.takePictureAsync({ 
         quality: 0.5,
-        base64: true // ✅ Captura base64 direto da câmera
+        base64: true
       });
 
       if (!photo) {
         Alert.alert("Erro", "Não foi possível capturar a foto.");
+        hasProcessedAutoPhotoRef.current = false;
         return;
       }
 
@@ -298,6 +418,7 @@ const CameraScreen: React.FC = () => {
     } catch (error) {
       console.error("[Camera] ❌ Error in takePictureForVoiceCommand:", error);
       Alert.alert("Erro", error instanceof Error ? error.message : "Erro ao capturar foto");
+      hasProcessedAutoPhotoRef.current = false;
     }
   };
 
@@ -312,9 +433,11 @@ const CameraScreen: React.FC = () => {
 
     try {
       console.log("[Camera] 📸 Taking picture for button...");
+      console.log('[Camera] 📋 Contexto: mode =', mode, ', conversaId =', conversaId);
+      
       const photo = await cameraRef.current.takePictureAsync({ 
         quality: 0.5,
-        base64: true // ✅ Captura base64 direto da câmera
+        base64: true
       });
       
       if (!photo) {
@@ -322,11 +445,22 @@ const CameraScreen: React.FC = () => {
         return;
       }
 
+      // ✅ Limpa estados antes de começar
       setRecognizedText('');
+      lastRecognizedTextRef.current = '';
+      if (questionTimeoutRef.current) {
+        clearTimeout(questionTimeoutRef.current);
+      }
+
       setCapturedPhoto(photo);
       setWaitingForQuestion(true);
 
-      await speak("O que você deseja saber sobre a foto?");
+      if (mode === 'chat' && conversaId) {
+        await speak("Foto capturada. O que você deseja saber?");
+      } else {
+        await speak("O que você deseja saber sobre a foto?");
+      }
+      
       startListening(true);
 
     } catch (error) {
@@ -343,10 +477,15 @@ const CameraScreen: React.FC = () => {
   useEffect(() => {
     if (isFocused && pendingSpokenText) {
       console.log(`[Camera] 🎤 Executando ação de voz pendente: "${pendingSpokenText}"`);
+      console.log(`[Camera] 📋 Contexto atual - mode: "${mode}", conversaId: "${conversaId}"`);
+      
       takePictureForVoiceCommand(pendingSpokenText);
-      clearPending();
+      
+      if (mode !== 'chat') {
+        clearPending();
+      }
     }
-  }, [isFocused, pendingSpokenText]);
+  }, [isFocused, pendingSpokenText, mode]);
 
   // ===================================================================
   // RENDER
@@ -355,31 +494,48 @@ const CameraScreen: React.FC = () => {
 
   if (!permission.granted) {
     return (
-      <View
-        style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}
-      >
+      <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
         <Text style={[styles.message, { color: cores.texto }]}>
           Precisamos da sua permissão para usar a câmera
         </Text>
-        <Button
-          onPress={requestPermission}
-          title="Conceder Permissão da Câmera"
-        />
+        <Button onPress={requestPermission} title="Conceder Permissão da Câmera" />
       </View>
     );
   }
 
   return (
-    <View
-      style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}
-    >
+    <View style={[styles.container, { backgroundColor: cores.barrasDeNavegacao }]}>
       <StatusBar
         backgroundColor={cores.barrasDeNavegacao}
         barStyle={temaAplicado === "dark" ? "light-content" : "dark-content"}
       />
       {isFocused && (
         <>
-          <CameraView style={StyleSheet.absoluteFill} ref={cameraRef} />
+          <CameraView 
+            style={StyleSheet.absoluteFill} 
+            ref={cameraRef} 
+            onCameraReady={() => {
+              console.log('[Camera] ✅ Camera is ready!');
+              setIsCameraReady(true);
+            }}
+          />
+
+          {/* ✅ INDICADOR DE ESCUTA */}
+          {waitingForQuestion && isListening && (
+            <View style={styles.listeningOverlay}>
+              <View style={[styles.listeningContainer, { backgroundColor: cores.fundo }]}>
+                <ActivityIndicator size="large" color={cores.texto} />
+                <Text style={[styles.listeningText, { color: cores.texto }]}>
+                  Escutando sua pergunta...
+                </Text>
+                {recognizedText && (
+                  <Text style={[styles.recognizedText, { color: cores.texto }]}>
+                    "{recognizedText}"
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity
@@ -410,7 +566,7 @@ const CameraScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { 
-    flex: 1, 
+    flex: 1,
     justifyContent: "center" 
   },
   message: {
@@ -430,6 +586,35 @@ const styles = StyleSheet.create({
   iconeCamera: { 
     width: 100, 
     height: 100 
+  },
+  listeningOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  listeningContainer: {
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 280,
+  },
+  listeningText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  recognizedText: {
+    marginTop: 12,
+    fontSize: 16,
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
 });
 
