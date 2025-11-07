@@ -518,6 +518,7 @@ const CameraScreen: React.FC = () => {
               console.log('[Camera] ✅ Camera is ready!');
               setIsCameraReady(true);
             }}
+            flash='auto'
           />
 
           {/* ✅ INDICADOR DE ESCUTA */}
