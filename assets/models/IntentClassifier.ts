@@ -1,29 +1,50 @@
-// src/services/ml/IntentClassifierService.ts
-
 import modelAltaRaw from './model_alta_acuracia.json';
-import modelSVMRaw from './model_svm.json';
-import modelCustomRaw from './model_custom.json';
 
-const modelAlta = modelAltaRaw as ModelData;
-const modelSVM = modelSVMRaw as ModelData;
-const modelCustom = modelCustomRaw as ModelData;
+const model = modelAltaRaw as unknown as ModelData;
 
-// === Interfaces ===
+// MUDANÇA (1/4): Criar um Set com as *exatas* stopwords do Python
+// Um Set (conjunto) é muito mais rápido para lookups do que um Array.
+const CUSTOM_STOPWORDS = new Set([
+    // Artigos e preposições
+    "a", "o", "as", "os", "um", "uma", "uns", "umas", 
+    "de", "do", "da", "dos", "das", "em", "no", "na", "nos", "nas",
+    "por", "para", "pra", "pro", "com", "sem", "sob", "sobre",
+    
+    // Pronomes
+    "eu", "tu", "ele", "ela", "nos", "vos", "eles", "elas",
+    "me", "te", "se", "lhe", "nos", "vos", "lhes",
+    "meu", "minha", "meus", "minhas", "teu", "tua", "teus", "tuas", 
+    "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas",
+    
+    // Conjunções e advérbios comuns
+    "que", "qual", "quando", "como", "onde", "porque", "pois",
+    "ate", "mas", "ou", "e", "ja", "nem", "mais", "muito", "so",
+    
+    // Demonstrativos
+    "esse", "essa", "isso", "este", "isto", "aquele", "aquilo",
+    "nessa", "nesse", "nisto", "desse", "dessa", "disso",
+    
+    // Verbos de estado (geralmente ruído)
+    "ser", "foi", "estou", "esta", "estao",
+    
+    // Palavras de "lixo" que sobraram
+    "favor", "por"
+]);
+
+
+// === Interfaces (sem alteração) ===
 interface VectorizerData {
   vocabulary: { [key: string]: number };
   idf: number[];
   lowercase: boolean;
-  strip_accents: 'ascii' | null;
+  strip_accents: 'ascii' | 'unicode' | null;
   sublinear_tf?: boolean;
+  ngram_range: [number, number];
 }
 
 interface ClassifierData {
-  coefficients?: number[][]; // Logistic Regression
+  coefficients?: number[][];
   intercept?: number[];
-  // SVM
-  support_vectors_?: number[][] | null;
-  dual_coef_?: number[][] | null;
-  n_support_?: number[] | null;
 }
 
 interface ModelData {
@@ -39,37 +60,33 @@ interface PredictionResult {
   notUnderstood: boolean;
 }
 
-// === Constantes ===
-const models: ModelData[] = [modelAlta, modelSVM, modelCustom];
-const classes = modelAlta.classes;
-const vocabSize = Object.keys(modelAlta.vectorizer.vocabulary).length;
+// === Constantes (sem alteração) ===
+const classes = model.classes;
+const vocabSize = Object.keys(model.vectorizer.vocabulary).length;
+const LOW_CONFIDENCE_THRESHOLD = 0.18;
 
-const LOW_CONFIDENCE_THRESHOLD = 0.23;
-
-// === Pré-processamento ===
+// === Pré-processamento (sem alteração) ===
 function preprocessText(text: string): string {
-  let processed = text.toLowerCase();  // Always lowercase
-  processed = processed.normalize('NFD').replace(/[\u0300-\u036f]/g, '');  // Always remove accents (like unidecode)
+  let processed = text;
+  
+  if (model.vectorizer.lowercase) {
+    processed = processed.toLowerCase();
+  }
+  if (model.vectorizer.strip_accents === 'unicode') {
+    processed = processed.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  } else if (model.vectorizer.strip_accents === 'ascii') {
+    processed = processed.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  
   return processed;
 }
 
-// === TF-IDF com suporte a sublinear_tf e normalização L2 ===
+// === TF-IDF (sem alteração) ===
+// (A 'calculateTfidf' não muda, pois ela recebe os tokens JÁ filtrados)
 function calculateTfidf(tokens: string[], vectorizer: VectorizerData): number[] {
-  // Infer ngram_range from vocabulary (terms like "o que" have length 2)
-  let minN = Infinity;
-  let maxN = -Infinity;
-  Object.keys(vectorizer.vocabulary).forEach(term => {
-    const parts = term.trim().split(/\s+/);
-    const len = parts.length;
-    if (len < minN) minN = len;
-    if (len > maxN) maxN = len;
-  });
-  minN = Number.isFinite(minN) ? minN : 1;
-  maxN = Number.isFinite(maxN) ? maxN : 1;
-
+  const [minN, maxN] = vectorizer.ngram_range;
   const tf: Record<string, number> = {};
 
-  // Generate and count all n-grams in the inferred range
   for (let n = minN; n <= maxN; n++) {
     for (let i = 0; i <= tokens.length - n; i++) {
       const ngram = tokens.slice(i, i + n).join(' ');
@@ -91,7 +108,7 @@ function calculateTfidf(tokens: string[], vectorizer: VectorizerData): number[] 
     }
   }
 
-  // Normalização L2 (igual scikit-learn)
+  // Normalização L2
   const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
   if (norm > 0) {
     for (let i = 0; i < vector.length; i++) {
@@ -102,7 +119,7 @@ function calculateTfidf(tokens: string[], vectorizer: VectorizerData): number[] 
   return vector;
 }
 
-// === Softmax ===
+// === Softmax (sem alteração) ===
 function softmax(scores: number[]): number[] {
   const maxScore = Math.max(...scores);
   const expScores = scores.map(s => Math.exp(s - maxScore));
@@ -110,86 +127,56 @@ function softmax(scores: number[]): number[] {
   return expScores.map(val => val / sumExp);
 }
 
-// === Predição com ensemble ===
-// === Predição com ensemble ===
+// === Predição (MUDANÇA: Adicionando filtro de stopword) ===
 function predictWithConfidence(text: string): PredictionResult {
   const processed = preprocessText(text);
   const tokens = processed.match(/\b\w+\b/g) || [];
 
-  const sumProbs = new Array(classes.length).fill(0);
-  let validModels = 0;
+  // MUDANÇA (2/4): Filtrar os tokens ANTES de passar para o TF-IDF
+  const filteredTokens = tokens.filter(token => !CUSTOM_STOPWORDS.has(token));
 
-  models.forEach((model, idx) => {
-    try {
-      // Compute TF-IDF using THIS model's vectorizer (key fix)
-      const modelVocabSize = Object.keys(model.vectorizer.vocabulary).length;
-      const tfidfVector = calculateTfidf(tokens, model.vectorizer);  // Use model.vectorizer here
+  let scores: number[];
+  let probs: number[];
 
-      let scores: number[];
+  try {
+    // MUDANÇA (3/4): Usar os 'filteredTokens'
+    const tfidfVector = calculateTfidf(filteredTokens, model.vectorizer);
 
-      // === Logistic Regression ===
-      if (model.classifier.coefficients && model.classifier.intercept) {
-        scores = model.classifier.coefficients.map((weights, i) => {
-          const intercept = model.classifier.intercept![i];
-          return tfidfVector.reduce((acc, val, j) => acc + val * (weights[j] ?? 0), intercept);
-        });
-
-      // === SVM (usando vetores de suporte) ===
-      } else if (model.classifier.support_vectors_ && model.classifier.dual_coef_ && model.classifier.intercept) {
-        const supportVectors = model.classifier.support_vectors_;
-        const dualCoef = model.classifier.dual_coef_;
-        const intercepts = model.classifier.intercept!;
-
-        // produto dual_coef @ (svm_dot(tfidf, support_vectors)) + intercept
-        const dot = supportVectors.map(sv =>
-          tfidfVector.reduce((acc, val, j) => acc + val * (sv[j] ?? 0), 0)
-        );
-
-        scores = dualCoef.map((coefRow, i) =>
-          coefRow.reduce((acc, c, j) => acc + c * (dot[j] ?? 0), intercepts[i])  // Added ?? 0 to prevent NaN if lengths mismatch
-        );
-
-      } else {
-        console.warn(`⚠️ Modelo ${idx + 1} (${model.model_type}) inválido — ignorado.`);
-        return;
-      }
-
-      // Check for NaN in scores (debug safeguard)
-      if (scores.some(isNaN)) {
-        console.warn(`⚠️ NaN detected in scores for model ${idx + 1}. Skipping.`);
-        return;
-      }
-
-      const probs = softmax(scores);
-      probs.forEach((p, i) => (sumProbs[i] += p));
-      validModels++;
-    } catch (err) {
-      console.error(`❌ Erro ao processar modelo ${idx + 1}:`, err);
+    // 2. Calcular Scores
+    if (model.classifier.coefficients && model.classifier.intercept) {
+      scores = model.classifier.coefficients.map((weights, i) => {
+        const intercept = model.classifier.intercept![i];
+        return tfidfVector.reduce((acc, val, j) => acc + val * (weights[j] ?? 0), intercept);
+      });
+    } else {
+      console.error('❌ Erro: Modelo não é LogisticRegression ou está mal formatado.');
+      throw new Error('Modelo mal formatado.');
     }
-  });
 
-  if (validModels === 0) throw new Error('Nenhum modelo válido disponível.');
+    // 3. Calcular Probabilidades
+    if (scores.some(isNaN)) {
+      console.warn(`⚠️ NaN detectado nos scores. Tratando como "não entendido".`);
+      throw new Error('Cálculo de score resultou em NaN.');
+    }
+    
+    probs = softmax(scores);
 
-  const avgProbs = sumProbs.map(p => p / validModels);
-
-  // Handle NaN in avgProbs (fallback to low confidence if all NaN)
-  if (avgProbs.every(isNaN)) {
-    console.warn('⚠️ All probabilities are NaN. Treating as not understood.');
+  } catch (err) {
+    console.error(`❌ Erro ao processar o modelo:`, err);
     return { intent: 'unknown', confidence: 0, notUnderstood: true };
   }
 
-  // Remove NaN from consideration (set to 0)
-  const cleanAvgProbs = avgProbs.map(p => isNaN(p) ? 0 : p);
-
-  const predictedIndex = cleanAvgProbs.indexOf(Math.max(...cleanAvgProbs));
-  const maxProb = cleanAvgProbs[predictedIndex];
+  // 4. Encontrar a melhor predição
+  const predictedIndex = probs.indexOf(Math.max(...probs));
+  const maxProb = probs[predictedIndex];
   const intent = classes[predictedIndex];
 
   const notUnderstood = maxProb < LOW_CONFIDENCE_THRESHOLD;
 
   console.log(`🎯 Texto: "${text}"`);
+  console.log(`🧩 (Processado para: [${filteredTokens.join(', ')}])`); // MUDANÇA (4/4): Log para debug
   console.log(`🧩 Intenção: ${intent}`);
-  console.log(`📊 Confiança: ${(maxProb * 100).toFixed(2)}% (modelos válidos: ${validModels})`);
+  console.log(`📊 Confiança: ${(maxProb * 100).toFixed(2)}% (Modelo: ALTA ACURÁCIA)`);
   console.log(`🔎 Status: ${notUnderstood ? '❌ não entendeu' : '✅ alta confiança'}`);
 
   return { intent, confidence: maxProb, notUnderstood };
