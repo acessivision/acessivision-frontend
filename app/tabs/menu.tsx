@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
@@ -14,7 +15,7 @@ import { useRouter } from 'expo-router';
 
 export default function ConfigScreen() {
   const router = useRouter();
-  const { theme, cores, getFontSize, getIconSize } = useTheme();
+  const { theme, cores, getFontSize, getIconSize, temaAplicado } = useTheme();
   const { logout } = useAuth();
 
   const handleFazerLogin = () => {
@@ -67,7 +68,7 @@ export default function ConfigScreen() {
         header: {
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between', // MUDANÇA: adiciona espaço entre elementos
+          justifyContent: 'space-between',
           paddingHorizontal: 16,
           paddingVertical: 16,
           backgroundColor: cores.fundo,
@@ -84,7 +85,6 @@ export default function ConfigScreen() {
           fontWeight: 'bold',
           color: cores.texto,
         },
-        // NOVO: estilo para o botão de login no header
         loginIconButton: {
           padding: 8,
         },
@@ -133,6 +133,22 @@ export default function ConfigScreen() {
         },
         deleteText: {
           color: cores.perigo,
+        },
+        logoContainer: {
+          alignItems: 'center',
+          marginTop: 40,
+          marginBottom: 24,
+        },
+        logo: {
+          width: 160,
+          height: 110,
+          marginBottom: 10,
+        },
+        title: {
+          fontSize: 36,
+          fontWeight: 'bold',
+          textAlign: 'center',
+          color: cores.texto,
         },
       }),
     [theme, cores, getFontSize, getIconSize]
@@ -193,6 +209,18 @@ export default function ConfigScreen() {
               <Text style={styles.optionText}>Sair</Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        <View style={styles.logoContainer}>
+          <Image
+            source={
+              temaAplicado === "dark"
+                ? require("../../assets/images/logo-escuro.png")
+                : require("../../assets/images/logo-claro.png")
+            }
+            style={styles.logo}
+          />
+          <Text style={styles.title}>AcessiVision</Text>
         </View>
       </ScrollView>
     </View>
