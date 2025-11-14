@@ -20,6 +20,7 @@ interface VoiceContextProps {
   stopListening: () => void;
   registerConversationCallbacks: (callbacks: ConversationCallbacks) => void;
   unregisterConversationCallbacks: () => void;
+  registerHeaderFocus: (focusFn: () => void) => void;
 }
 
 interface ConversationCallbacks {
@@ -36,9 +37,8 @@ interface NavigationContext {
 const VoiceCommandContext = createContext<VoiceContextProps | undefined>(undefined);
 
 export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // ✅ MODIFICAÇÃO AQUI: Trocado 'setTheme' por 'mudaTema'
   const { temaAplicado, mudaTema } = useTheme();
-
+  const headerFocusCallbackRef = useRef<(() => void) | null>(null);
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
   const [pendingContext, setPendingContext] = useState<NavigationContext | null>(null);
   const [pendingIntent, setPendingIntent] = useState<string>('');
@@ -76,10 +76,14 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     conversationCallbacksRef.current = {};
   }, []);
 
+  const registerHeaderFocus = useCallback((focusFn: () => void) => {
+    console.log('[VoiceContext] Registrando função de foco do Header');
+    headerFocusCallbackRef.current = focusFn;
+  }, []);
+
   const { executeIntent, getIntentDisplayName, processCommand, isBusyRef } = useIntentHandler({
     speak,
     temaAplicado,
-    // ✅ MODIFICAÇÃO AQUI: Passando 'mudaTema'
     mudaTema: mudaTema, 
     startListening,
     stopListening,
@@ -229,6 +233,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     stopListening,
     registerConversationCallbacks,
     unregisterConversationCallbacks,
+    registerHeaderFocus,
   }), [
     isListening,
     recognizedText,
@@ -241,6 +246,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     stopListening,
     registerConversationCallbacks,
     unregisterConversationCallbacks,
+    registerHeaderFocus,
   ]);
 
   return (

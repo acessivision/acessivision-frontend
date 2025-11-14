@@ -9,6 +9,8 @@ import {
   Alert,
   Modal,
   TextInput,
+  AccessibilityInfo,
+  findNodeHandle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
@@ -50,6 +52,8 @@ const HistoryScreen: React.FC = () => {
   const tituloProcessadoRef = useRef(false);
   const tituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmacaoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const deleteModalTitleRef = useRef(null);
 
   // ✅ Usa o novo hook de voz
   const { 
@@ -217,6 +221,25 @@ const HistoryScreen: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Se o overlay de exclusão apareceu...
+    if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
+      
+      // ...espere um instante para a renderização...
+      const timeoutId = setTimeout(() => {
+        if (deleteModalTitleRef.current) {
+          const reactTag = findNodeHandle(deleteModalTitleRef.current);
+          if (reactTag) {
+            // ...e force o foco do TalkBack para o título do overlay.
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+          }
+        }
+      }, 200); // 200ms de delay
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [conversaParaExcluir, step]);
+
+  useEffect(() => {
     if (isScreenFocused && !user && !isAuthLoading) {
       speak("Faça login para acessar o histórico");
     }
@@ -287,8 +310,14 @@ const HistoryScreen: React.FC = () => {
   // ===================================================================
   // CRIAR CONVERSA NO FIRESTORE
   // ===================================================================
+  const isNavigatingToConversaRef = useRef(false);
   const criarConversaComTitulo = async (titulo: string) => {
     if (!user) return;
+
+    if (isNavigatingToConversaRef.current) {
+      console.log('[Historico] ⚠️ Já está criando/navegando, ignorando');
+      return;
+    }
     
     const tituloFinal = titulo.trim();
     
@@ -696,48 +725,94 @@ const HistoryScreen: React.FC = () => {
 
   const aguardandoPalavraTitulo = step === 'aguardandoPalavraTitulo';
   const aguardandoConfirmacao = step === 'aguardandoConfirmacaoExclusao';
+  const isModalActive = modalVisible || (!!conversaParaExcluir && aguardandoConfirmacao);
 
   return (
+    // Container principal
     <View style={[styles.container, { flex: 1 }]}>
-      <FlatList
-        data={conversations}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <TouchableOpacity 
-            onPress={() => router.push({
-              pathname: '/conversa',
-              params: { conversaId: item.id, titulo: item.titulo }
-            })}
-            style={styles.item}
-          >
-            <View style={styles.itemContent}>
-              <Text style={styles.itemText}>
-                {String(toTitleCase(item.titulo || 'Sem título'))}
-              </Text>
-              <Text style={styles.itemDateText}>
-                Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}
-              </Text>
-            </View>
+      
+      {/* 1. Wrapper para o conteúdo principal da tela */}
+      <View 
+        style={{ flex: 1 }}
+        // ✅ TRUQUE DA GAIOLA: Esconde este <View> e tudo dentro dele
+        //    do TalkBack se um modal estiver ativo.
+        importantForAccessibility={isModalActive ? 'no-hide-descendants' : 'auto'}
+      >
+        <FlatList
+          data={conversations}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
             <TouchableOpacity 
-              style={styles.deleteButton} 
-              onPress={(e) => {
-                e.stopPropagation(); 
-                excluirConversa(item.id, item.titulo);
+              onPress={() => router.push({
+                pathname: '/conversa',
+                params: { conversaId: item.id, titulo: item.titulo }
+              })}
+              style={styles.item}
+              accessibilityLabel={`Conversa: ${toTitleCase(item.titulo || 'Sem título')}. Alterado em: ${item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando'}.`}
+              accessibilityActions={[
+                { name: 'activate', label: 'Abrir Conversa' }, 
+                { name: 'delete', label: 'Excluir Conversa' }
+              ]}
+              onAccessibilityAction={(event) => {
+                const actionName = event.nativeEvent.actionName;
+
+                if (actionName === 'activate') {
+                  router.push({
+                    pathname: '/conversa',
+                    params: { conversaId: item.id, titulo: item.titulo }
+                  });
+                } else if (actionName === 'delete') {
+                  excluirConversa(item.id, item.titulo);
+                }
               }}
             >
-              <Ionicons 
-                name="trash-outline" 
-                size={getIconSize('medium')} 
-                color={cores.perigo} 
-              />
+              <View style={styles.itemContent}>
+                <Text style={styles.itemText}>
+                  {String(toTitleCase(item.titulo || 'Sem título'))}
+                </Text>
+                <Text style={styles.itemDateText}>
+                  Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.deleteButton} 
+                onPress={(e) => {
+                  e.stopPropagation(); 
+                  excluirConversa(item.id, item.titulo);
+                }}
+                // ✅ Esconde o botão de lixo duplicado do TalkBack
+                accessible={false} 
+              >
+                <Ionicons 
+                  name="trash-outline" 
+                  size={getIconSize('medium')} 
+                  color={cores.perigo}
+                />
+              </TouchableOpacity>
             </TouchableOpacity>
-          </TouchableOpacity>
-        )}
-      />
+          )}
+        />
+
+        <TouchableOpacity
+          style={styles.createButton}
+          onPress={abrirModal}
+          accessibilityRole='button'
+          accessibilityLabel="Criar nova conversa"
+        >
+          <Text style={styles.createButtonText}>
+            Criar Nova Conversa
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {/* ✅ OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {conversaParaExcluir && aguardandoConfirmacao && (
-        <View style={styles.deleteOverlay}>
+        <View 
+          style={styles.deleteOverlay}
+          // ✅ TRUQUE DA GAIOLA: Diz ao TalkBack que ESTE é o
+          //    único item importante na tela agora.
+          importantForAccessibility="yes"
+        >
           <View style={styles.deleteModal}>
             <Ionicons 
               name="warning" 
@@ -745,18 +820,25 @@ const HistoryScreen: React.FC = () => {
               color="#FF453A" 
               style={{ marginBottom: 16 }}
             />
-            <Text style={[styles.deleteTitle, { color: cores.texto }]}>
+            <Text 
+              // ✅ ADICIONA A REF AQUI
+              ref={deleteModalTitleRef}
+              style={[styles.deleteTitle, { color: cores.texto }]}
+              accessibilityRole="header" // Ajuda o TalkBack
+            >
               Confirmar Exclusão
             </Text>
             <Text style={[styles.deleteMessage, { color: cores.texto }]}>
               Tem certeza que deseja excluir a conversa "{conversaParaExcluir.titulo}"?
             </Text>
             
+            {/* ... resto do seu overlay (indicadores, botões) ... */}
+            
             {isListening && (
-              <View style={[styles.listeningIndicator, { marginTop: 16 }]}>
+              <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
-                <Text style={[styles.listeningText, { color: cores.texto }]}>
-                  Escutando...
+                <Text style={styles.listeningText}>
+                  {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo título...'}
                 </Text>
               </View>
             )}
@@ -811,16 +893,7 @@ const HistoryScreen: React.FC = () => {
         </View>
       )}
 
-      <TouchableOpacity
-        style={styles.createButton}
-        onPress={abrirModal}
-        accessibilityLabel="Criar nova conversa"
-      >
-        <Text style={styles.createButtonText}>
-          Criar Nova Conversa
-        </Text>
-      </TouchableOpacity>
-
+      {/* 3. Modal de Criação (já se gerencia sozinho, mas fica fora) */}
       <Modal
         visible={modalVisible}
         transparent={true}

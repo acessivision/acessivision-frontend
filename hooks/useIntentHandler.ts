@@ -1,14 +1,19 @@
-import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
-import { useRouter, usePathname } from 'expo-router';
-import { IntentClassifierService } from '../assets/models/IntentClassifier';
+// ===================================================================
+// CORREÇÃO: useIntentHandler.ts - Navegação coordenada com TalkBack
+// ===================================================================
 
-type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/tabs/editarPerfil' | '/login' | '/conversa';
+import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
+import { useRouter, usePathname, Href } from 'expo-router';
+import { AccessibilityInfo } from 'react-native';
+import { IntentClassifierService } from '../assets/models/IntentClassifier';
+import SpeechManager from '../utils/speechManager';
+
+type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/login' | '/conversa';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
 
 interface UseIntentHandlerProps {
   speak: (text: string, onDone?: () => void) => void;
   temaAplicado: string;
-  // ✅ MODIFICAÇÃO AQUI:
   mudaTema?: () => void; 
   startListening: () => void;
   stopListening: () => void;
@@ -23,7 +28,6 @@ interface UseIntentHandlerProps {
 const tutoriais: Record<string, string> = {
   '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
   '/tabs/menu': 'Aqui você pode ver as páginas do aplicativo e ações',
-  '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações pessoais.',
   '/login': 'Diga entrar com google para usar seu gmail salvo no celular.',
   '/tabs': 'Para enviar uma foto, diga "Escute" e faça uma pergunta.',
   '/conversa': 'Nesta tela você pode conversar sobre fotos. Diga "ativar microfone" para fazer perguntas por voz.',
@@ -33,7 +37,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const { 
     speak, 
     temaAplicado, 
-    // ✅ MODIFICAÇÃO AQUI:
     mudaTema,
     startListening, 
     stopListening, 
@@ -42,7 +45,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     onActivateMic,
     onTakePhoto,
     onOpenCamera,
-    setPendingContext
+    setPendingContext,
   } = props;
   
   const router = useRouter();
@@ -54,53 +57,88 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const lastNavigationRef = useRef<{ route: string; timestamp: number } | null>(null);
   const lastExecutedIntentRef = useRef<{ intent: string; timestamp: number } | null>(null);
 
-  const restartListeningAfterSpeak = useCallback(() => {
-    console.log("[Intent] Ação/Fala concluída, aguardando pequeno delay para reiniciar listener...");
+  // ✅ NOVO: Verifica se TalkBack está ativo
+  const checkTalkBackActive = useCallback(async () => {
+    try {
+      return await AccessibilityInfo.isScreenReaderEnabled();
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // ✅ MODIFICADO: Reinicia listener com delay adaptativo
+  const restartListeningAfterSpeak = useCallback(async () => {
+    console.log("[Intent] Ação/Fala concluída, verificando TalkBack...");
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
     setRecognizedText("");
+    
+    const isTalkBackActive = await checkTalkBackActive();
+    const delay = isTalkBackActive ? 1500 : 800; // ✅ Reduzido: 1.5s com TalkBack
+    
+    console.log(`[Intent] TalkBack: ${isTalkBackActive ? 'ATIVO' : 'INATIVO'}, delay: ${delay}ms`);
+    
     setTimeout(() => {
       console.log("[Intent] Reiniciando listener agora.");
       startListening();
-    }, 300);
-  }, [startListening, setVoiceState, setRecognizedText, isBusyRef]);
+    }, delay);
+  }, [startListening, setVoiceState, setRecognizedText, isBusyRef, checkTalkBackActive]);
     
-  const checkAndNavigate = useCallback((targetPath: AppPath, alreadyMessage: string) => {
+  // ✅ MODIFICADO: Navegação coordenada com TalkBack
+  const checkAndNavigate = useCallback(async (targetPath: AppPath, alreadyMessage: string) => {
     const now = Date.now();
+    
     if (lastNavigationRef.current?.route === targetPath && now - lastNavigationRef.current.timestamp < 5000) {
       console.log(`[Voice] Skipping duplicate navigation to ${targetPath}`);
       stopListening();
       speak(alreadyMessage, restartListeningAfterSpeak);
       return false;
     }
-    if (pathname === targetPath || pathname === `${targetPath}/` || pathname.startsWith(targetPath)) {
+    
+    if (pathname === targetPath || pathname === `${targetPath}/`) {
       stopListening();
       speak(alreadyMessage, restartListeningAfterSpeak);
       return false;
     }
+    
+    console.log(`[Voice] 🚀 Iniciando navegação para ${targetPath}`);
+    
+    // ✅ 1. Para TUDO antes de navegar
+    console.log('[Voice] 🔇 Desabilitando reconhecimento COMPLETAMENTE');
+    SpeechManager.disable();
     stopListening();
-    let nomeTela = targetPath.split('/').pop() || 'tela inicial';
-    if (nomeTela === 'historico') {
-      nomeTela = 'histórico';
-    } else if (nomeTela === 'menu') {
-      nomeTela = 'mehnu'
-    } else if (nomeTela === 'tabs') {
-      nomeTela = 'câmera'
+    
+    // ✅ 2. Verifica se TalkBack está ativo
+    const isTalkBackActive = await checkTalkBackActive();
+    console.log(`[Voice] TalkBack status: ${isTalkBackActive ? 'ATIVO' : 'INATIVO'}`);
+    
+    // ✅ 3. Navega
+    router.push(targetPath as Href);
+    lastNavigationRef.current = { route: targetPath, timestamp: now };
+    
+    // ✅ 4. Aguarda navegação + renderização
+    await new Promise(resolve => setTimeout(resolve, 800));
+    
+    // ✅ 5. Aguarda TalkBack anunciar (se ativo)
+    if (isTalkBackActive) {
+      console.log('[Voice] ⏳ Aguardando TalkBack anunciar título...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ 3 segundos (reduzido de 5s)
+    } else {
+      console.log('[Voice] ⏭️ TalkBack inativo, delay reduzido');
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    speak(`Indo para ${nomeTela || 'tela inicial'}...`, () => {
-      console.log(`[Voice] Navigation speak finished. Navigating to ${targetPath}...`);
-      router.push(targetPath);
-      lastNavigationRef.current = { route: targetPath, timestamp: now };
-      setTimeout(() => {
-          console.log(`[Navigation] Attempting listener restart after navigating to ${targetPath}`);
-          isBusyRef.current = false; 
-          restartListeningAfterSpeak(); 
-      }, 300);
-    });
+    
+    // ✅ 6. Reativa reconhecimento
+    console.log('[Voice] ✅ Reativando reconhecimento');
+    isBusyRef.current = false;
+    setVoiceState("waiting_wake");
+    setRecognizedText("");
+    SpeechManager.enable();
+    
     return true;
-  }, [pathname, router, speak, stopListening, restartListeningAfterSpeak, isBusyRef]);
+  }, [pathname, router, speak, stopListening, restartListeningAfterSpeak, isBusyRef, setVoiceState, setRecognizedText, checkTalkBackActive]);
 
-  const executeIntent = useCallback((intent: string, originalText: string, setPendingSpokenText?: (text: string) => void, clearPending?: () => void) => {
+  const executeIntent = useCallback(async (intent: string, originalText: string, setPendingSpokenText?: (text: string) => void, clearPending?: () => void) => {
     const now = Date.now();
     
     if (lastExecutedIntentRef.current?.intent === intent && now - lastExecutedIntentRef.current.timestamp < 5000) {
@@ -158,11 +196,11 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       } 
       else {
         if (setPendingSpokenText) setPendingSpokenText(originalText);
-        const navigatedFoto = checkAndNavigate('/tabs', "Indo para a câmera.");
-        if (!navigatedFoto) { 
+        const navigated = await checkAndNavigate('/tabs', "Indo para a câmera.");
+        if (!navigated) { 
           setTimeout(() => {
             startListening();
-          }, 300);
+          }, 1500);
         }
       }
       return;
@@ -178,28 +216,22 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       }
       
       if (clearPending) clearPending();
-      const navigatedCamera = checkAndNavigate('/tabs', "Você já está na câmera.");
-      if (!navigatedCamera) { restartListeningAfterSpeak(); }
+      await checkAndNavigate('/tabs', "Você já está na câmera.");
       return;
     }
 
-    // OUTROS INTENTS
+    // OUTROS INTENTS COM NAVEGAÇÃO
     switch (intent) {
       case 'ir_para_historico':
-        const navigatedHistorico = checkAndNavigate('/tabs/historico', "Você já está no histórico.");
-        if (!navigatedHistorico) { restartListeningAfterSpeak(); }
+        await checkAndNavigate('/tabs/historico', "Você já está no histórico.");
         break;
+        
       case 'abrir_menu':
-        const navigatedMenu = checkAndNavigate('/tabs/menu', "Você já está no menu.");
-        if (!navigatedMenu) { restartListeningAfterSpeak(); }
+        await checkAndNavigate('/tabs/menu', "Você já está no menu.");
         break;
-      case 'ir_para_editar_perfil':
-        const navigatedPerfil = checkAndNavigate('/tabs/editarPerfil', "Você já está editando o perfil.");
-        if (!navigatedPerfil) { restartListeningAfterSpeak(); }
-        break;
+        
       case 'ir_para_login':
-        const navigatedLogin = checkAndNavigate('/login', "Você já está na tela de login.");
-        if (!navigatedLogin) { restartListeningAfterSpeak(); }
+        await checkAndNavigate('/login', "Você já está na tela de login.");
         break;
 
       case 'fazer_logout':
@@ -207,18 +239,15 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         speak("Encerrando a sessão...", restartListeningAfterSpeak);
         return;
 
-      // ✅ MODIFICAÇÃO AQUI: Lógica de tema usa 'mudaTema()'
       case 'mudar_tema_claro':
         stopListening();
         console.log(`[Theme] Current theme: ${temaAplicado}, requested: claro`);
         
-        // Se está ESCURO, muda para CLARO
         if (temaAplicado === 'dark') { 
           console.log('[Theme] Changing from dark to light');
-          if (mudaTema) mudaTema(); // ✅ Usa a função do botão
+          if (mudaTema) mudaTema();
           speak("Tema claro ativado!", restartListeningAfterSpeak); 
         }
-        // Se JÁ está claro, avisa
         else { 
           console.log('[Theme] Already in light theme');
           speak("O tema já está claro!", restartListeningAfterSpeak); 
@@ -229,13 +258,11 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         stopListening();
         console.log(`[Theme] Current theme: ${temaAplicado}, requested: escuro`);
         
-        // Se está CLARO, muda para ESCURO
         if (temaAplicado === 'light') { 
           console.log('[Theme] Changing from light to dark');
-          if (mudaTema) mudaTema(); // ✅ Usa a função do botão
+          if (mudaTema) mudaTema();
           speak("Tema escuro ativado!", restartListeningAfterSpeak); 
         }
-        // Se JÁ está escuro, avisa
         else { 
           console.log('[Theme] Already in dark theme');
           speak("O tema já está escuro!", restartListeningAfterSpeak); 
@@ -246,11 +273,13 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         stopListening();
         speak("Mostrando o tutorial...", restartListeningAfterSpeak);
         return;
+        
       case 'explicar_tela':
         const texto = tutoriais[pathname] || tutoriais['/conversa'] || 'Este é o aplicativo...';
         stopListening();
         speak(texto, restartListeningAfterSpeak);
         return;
+        
       case 'excluir_conta':
         stopListening();
         speak("Iniciando exclusão de conta...", restartListeningAfterSpeak);
@@ -258,9 +287,9 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
 
       case 'cadastro':
         stopListening();
-        router.push('/login');
-        isBusyRef.current = false;
+        await checkAndNavigate('/login', "Você já está na tela de login.");
         break;
+        
       case 'cancelar_assinatura':
         stopListening();
         speak('Cancelamento de assinatura ainda não implementado', restartListeningAfterSpeak);
@@ -271,12 +300,23 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         speak("Comando não reconhecido.", restartListeningAfterSpeak);
         return;
     }
-  }, [ temaAplicado, 
-       // ✅ MODIFICAÇÃO AQUI:
-       mudaTema, 
-       startListening, stopListening, setVoiceState, setRecognizedText,
-       router, pathname, speak, checkAndNavigate, restartListeningAfterSpeak, isBusyRef,
-       onActivateMic, onTakePhoto, onOpenCamera ]);
+  }, [ 
+    temaAplicado, 
+    mudaTema, 
+    startListening, 
+    stopListening, 
+    setVoiceState, 
+    setRecognizedText,
+    router, 
+    pathname, 
+    speak, 
+    checkAndNavigate, 
+    restartListeningAfterSpeak, 
+    isBusyRef,
+    onActivateMic, 
+    onTakePhoto, 
+    onOpenCamera 
+  ]);
 
   const getIntentDisplayName = useCallback((intent: string): string => {
     const intentNames: { [key: string]: string } = {
@@ -285,7 +325,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       'ativar_microfone': 'ativar o microfone',
       'ir_para_historico': 'ir para o histórico',
       'abrir_menu': 'abre o menu',
-      'ir_para_editar_perfil': 'editar seu perfil',
       'ir_para_login': 'ir para a tela de login',
       'fazer_logout': 'sair da sua conta',
       'mudar_tema_claro': 'mudar para o tema claro',

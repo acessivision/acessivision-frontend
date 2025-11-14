@@ -4,12 +4,13 @@ import { ThemeProvider, useTheme } from '../components/ThemeContext';
 import { VoiceCommandProvider } from '../components/VoiceCommandContext';
 import * as NavigationBar from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
-import { VoicePageAnnouncer } from '../utils/voicePageAnnouncer';
+// import { VoicePageAnnouncer } from '../utils/voicePageAnnouncer';
 import { AuthProvider } from '../components/AuthContext';
 import { Platform } from 'react-native';
 import React, { useEffect, useState } from 'react';
 import { SplashScreen } from 'expo-router';
 import SpeechManager from '../utils/speechManager';
+// import { ShakeHandler } from '../components/ShakeHandler';
 
 // Componente interno para acessar o contexto do tema
 function ThemedSystemBars() {
@@ -83,6 +84,7 @@ export default function RootLayout() {
     <AuthProvider>
       {/* ✅ CORREÇÃO: ThemeProvider deve envolver VoiceCommandProvider */}
       <ThemeProvider>
+        {/* <ShakeHandler /> */}
         <VoiceCommandProvider>
           <SafeAreaProvider>
             {/* ✅ Status bar transparente e translúcida */}
@@ -93,7 +95,7 @@ export default function RootLayout() {
             />
             {/* ThemedSystemBars agora está corretamente dentro do ThemeProvider */}
             <ThemedSystemBars /> 
-            <VoicePageAnnouncer />
+            {/* <VoicePageAnnouncer /> */}
             <Stack 
               screenOptions={{ 
                 headerShown: false,

@@ -1,3 +1,7 @@
+// ===================================================================
+// CORREÇÃO FINAL: CustomHeader.tsx - Timing ajustado para TalkBack
+// ===================================================================
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
@@ -5,8 +9,10 @@ import {
   TouchableOpacity, 
   StyleSheet, 
   Modal,
-  Alert, // Mantido para o caso de precisar, mas não usado no handleLogout
   ActivityIndicator,
+  findNodeHandle,
+  AccessibilityInfo,
+  InteractionManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -15,31 +21,39 @@ import { useTheme } from '../components/ThemeContext';
 import { usePathname } from 'expo-router';
 import { LayoutChangeEvent } from 'react-native';
 import { useAuth } from '../components/AuthContext';
-import { useSpeech } from '../hooks/useSpeech'; // Importa o hook de voz
+import { useSpeech } from '../hooks/useSpeech';
+import { useIsFocused } from '@react-navigation/native';
+import { useTalkBackState } from '../hooks/useTalkBackState';
+import SpeechManager from '../utils/speechManager';
 
 interface CustomHeaderProps {
   title: string;
   mudaTema?: () => void;
   abreLogin?: () => void;
   onLayout?: (event: LayoutChangeEvent) => void;
+  onHideOtherElementsChange?: (hide: boolean) => void;
 }
 
-// Define os passos do fluxo de voz
 type LogoutStepType = 'idle' | 'aguardandoConfirmacaoLogout';
 
 export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
   const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
   const pathname = usePathname();
+  const isFocused = useIsFocused();
   const { user, logout } = useAuth(); 
+  const tituloRef = useRef(null);
 
-  // --- Estados do Modal e Voz ---
+  const { isActive: isTalkBackActive, isSpeaking: isTalkBackSpeaking, markAsSpeaking } = useTalkBackState();
+
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [step, setStep] = useState<LogoutStepType>('idle');
-  const logoutTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logoutTimeoutRef = useRef<any>(null);
+  const lastPathnameRef = useRef(pathname);
+  const focusTimeoutRef = useRef<any>(null);
+  const hasAnnouncedRef = useRef(false);
+  const [shouldHideOtherElements, setShouldHideOtherElements] = useState(false);
 
-  // Inicializa o useSpeech
-  // Ele só será ativado (enabled) quando o modal de logout estiver visível
   const { 
     speak, 
     startListening, 
@@ -53,37 +67,109 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
     mode: 'local',
   });
 
-  // 🔥 Mapeia tutoriais por rota
+  useEffect(() => {
+    SpeechManager.setTalkBackSpeakingCallback((isSpeaking) => {
+      if (isSpeaking) {
+        const estimatedDuration = 3000;
+        markAsSpeaking(estimatedDuration);
+      }
+    });
+    
+    return () => {
+      SpeechManager.setTalkBackSpeakingCallback(() => {});
+    };
+  }, [markAsSpeaking]);
+
+  // ✅ Monitora mudança de rota e gerencia foco
+  useEffect(() => {
+    if (pathname !== lastPathnameRef.current) {
+      console.log(`[CustomHeader] 🔄 Rota mudou: ${lastPathnameRef.current} → ${pathname}`);
+      lastPathnameRef.current = pathname;
+      hasAnnouncedRef.current = false;
+      
+      // Limpa timeout anterior se existir
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+        focusTimeoutRef.current = null;
+      }
+      
+      if (isTalkBackActive && isFocused) {
+        // ✅ 1. Esconde outros elementos IMEDIATAMENTE
+        setShouldHideOtherElements(true);
+        console.log('[CustomHeader] 🚫 Escondendo outros elementos do TalkBack');
+        
+        // ✅ 2. Aguarda 500ms e força o foco no título
+        setTimeout(() => {
+          if (tituloRef.current) {
+            const reactTag = findNodeHandle(tituloRef.current);
+            if (reactTag) {
+              console.log('[CustomHeader] 🎯 Forçando foco no título');
+              AccessibilityInfo.setAccessibilityFocus(reactTag);
+              
+              const textLength = title.length;
+              const estimatedDuration = Math.max(2500, textLength * 60);
+              markAsSpeaking(estimatedDuration);
+              
+              // ✅ 3. Mostra outros elementos novamente após o anúncio
+              focusTimeoutRef.current = setTimeout(() => {
+                console.log('[CustomHeader] ✅ Mostrando outros elementos novamente');
+                setShouldHideOtherElements(false);
+                hasAnnouncedRef.current = true;
+              }, estimatedDuration);
+            }
+          }
+        }, 500);
+      }
+    }
+  }, [pathname, isTalkBackActive, isFocused, title, markAsSpeaking]);
+
+  const toggleMicrofone = () => {
+    if (isTalkBackSpeaking) {
+      AccessibilityInfo.announceForAccessibility("Aguarde o anúncio terminar.");
+      return;
+    }
+
+    if (isListening) {
+      stopListening();
+      speak("Microfone desativado.");
+    } else {
+      startListening();
+      speak("Microfone ativado.");
+    }
+  };
+
   const tutoriais: Record<string, string> = {
     '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
-    '/tabs/menu': 'Aqui você pode ajustar as preferências do aplicativo, como tema e voz.',
-    '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações pessoais.',
-    '/login': 'Diga entrar com google para usar seu gmail salvo no celular ou diga email para preencher o campo de email e depois senha para preencher o campo de senha. Quando estiverem preenchidos diga entrar.',
-    '/tabs': 'Para enviar uma foto, diga "Escuta" e faça uma pergunta. Ou clique no botão Tirar Foto e faça uma pergunta',
+    '/tabs/menu': 'Aqui você pode ajustar as preferências do aplicativo.',
+    '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações.',
+    '/login': 'Diga entrar com google para usar seu gmail.',
+    '/tabs': 'Para enviar uma foto, diga "Escuta" e faça uma pergunta.',
   };
 
   const handleAbrirTutorial = () => {
-    const texto = tutoriais[pathname] || 'Este é o aplicativo. Use os botões ou comandos de voz para navegar.';
-    import('expo-speech').then(Speech => {
-      Speech.speak(texto, { language: 'pt-BR' });
-    });
+    const texto = tutoriais[pathname] || 'Este é o aplicativo.';
+    
+    const estimatedDuration = Math.max(3000, texto.length * 60);
+    markAsSpeaking(estimatedDuration);
+    
+    if (isTalkBackActive) {
+      AccessibilityInfo.announceForAccessibility(texto);
+    } else {
+      import('expo-speech').then(Speech => {
+        Speech.speak(texto, { language: 'pt-BR' });
+      });
+    }
   };
 
-  // ===================================================================
-  // PROCESSAR RECONHECIMENTO DE VOZ (LOGOUT)
-  // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim() || step !== 'aguardandoConfirmacaoLogout') return;
 
     const fala = recognizedText.toLowerCase().trim();
-    console.log(`[Header] Step: ${step}, Fala: "${fala}"`);
 
-    // Limpa timeout anterior
     if (logoutTimeoutRef.current) {
       clearTimeout(logoutTimeoutRef.current);
     }
 
-    // Aguarda 1.5 segundos de silêncio
     logoutTimeoutRef.current = setTimeout(() => {
       const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero', 'sair'];
       const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
@@ -92,49 +178,43 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
       const isDeny = denyWords.some(word => fala.includes(word));
       
       if (isConfirm) {
-        console.log('✅ Confirmação de Logout recebida');
         stopListening();
         setRecognizedText('');
         speak("Confirmado. Saindo da conta.", () => {
-          handleLogout(); // Chama a função de logout
+          handleLogout();
         });
       } else if (isDeny) {
-        console.log('❌ Logout cancelado pelo usuário');
         stopListening();
         setRecognizedText('');
         speak("Cancelado.", () => {
           fecharModalLogout();
         });
       } else {
-        console.log('⚠️ Resposta não reconhecida, perguntando novamente');
         setRecognizedText('');
         speak(`Não entendi. Você quer sair da conta? Diga sim ou não.`, () => {
           startListening(true);
         });
       }
-    }, 1500); // 1.5s de silêncio
+    }, 1500);
 
   }, [recognizedText, step, logoutModalVisible]);
 
-  // Cleanup do timeout
   useEffect(() => {
     return () => {
       if (logoutTimeoutRef.current) {
         clearTimeout(logoutTimeoutRef.current);
       }
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
     };
   }, []);
-
-  // ===================================================================
-  // FUNÇÕES DE CONTROLE DO MODAL E LOGOUT
-  // ===================================================================
 
   const abrirModalLogout = () => {
     setStep('aguardandoConfirmacaoLogout');
     setRecognizedText('');
     setLogoutModalVisible(true);
     
-    // Atraso para o modal abrir antes de falar
     setTimeout(() => {
       speak("Você tem certeza que deseja sair da sua conta? Diga sim ou não.", () => {
         startListening(true);
@@ -158,7 +238,7 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
 
   const handleLoginIconPress = () => {
     if (user) {
-      abrirModalLogout(); // Chama a função de abrir o modal com voz
+      abrirModalLogout();
     } else {
       if (abreLogin) {
         abreLogin();
@@ -166,24 +246,18 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
     }
   };
   
-  // ✅ ========================================================
-  // ✅ handleLogout MODIFICADO para usar speak()
-  // ✅ ========================================================
   const handleLogout = async () => {
     try {
       await logout();
-      await speak('Sucesso. Você saiu da sua conta.'); // ✅ Modificado
+      await speak('Sucesso. Você saiu da sua conta.');
     } catch (error) {
-      await speak('Erro. Não foi possível sair da conta.'); // ✅ Modificado
+      await speak('Erro. Não foi possível sair da conta.');
     } finally {
-      fecharModalLogout(); // Fecha e limpa tudo, independente de sucesso ou falha
+      fecharModalLogout();
     }
   };
-  // ✅ ========================================================
 
-  // Função para o botão "Sair" (confirmação manual)
   const handleLogoutManual = () => {
-    console.log('[Header] Confirmação manual via botão');
     stopSpeaking();
     stopListening();
     
@@ -197,9 +271,6 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
     });
   };
 
-  // ===================================================================
-  // ESTILOS
-  // ===================================================================
   const styles = StyleSheet.create({
     header: {
       flexDirection: 'row',
@@ -235,8 +306,6 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
       justifyContent: 'center',
       alignItems: 'center',
     },
-    
-    // --- Estilos do Modal de Logout ---
     modalOverlay: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.7)',
@@ -255,7 +324,7 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
       shadowOpacity: 0.3,
       shadowRadius: 5,
       elevation: 8,
-      alignItems: 'center', // Centralizar conteúdo
+      alignItems: 'center',
     },
     modalTitle: {
       fontSize: getFontSize('large'),
@@ -274,7 +343,7 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
     modalActions: {
       flexDirection: 'row',
       gap: 12,
-      width: '100%', // Fazer botões ocuparem espaço
+      width: '100%',
     },
     cancelButton: {
       flex: 1,
@@ -283,10 +352,10 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
       borderWidth: 1,
       borderColor: cores.texto,
       alignItems: 'center',
-      backgroundColor: cores.confirmar, // Cor de cancelar
+      backgroundColor: cores.confirmar,
     },
     cancelButtonText: {
-      color: '#000', // Texto preto para fundo claro
+      color: '#000',
       fontSize: getFontSize('medium'),
       fontWeight: '600',
     },
@@ -303,8 +372,6 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
       fontSize: getFontSize('medium'),
       fontWeight: '600',
     },
-
-    // --- Estilos de Voz ---
     listeningIndicator: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -339,13 +406,14 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
     },
   });
 
-  // ===================================================================
-  // RENDER
-  // ===================================================================
   return (
     <View style={styles.header} accessible={false} onLayout={onLayout}>
-      {/* --- Botão de Tema --- */}
-      <View style={[styles.sideContainer, { justifyContent: 'flex-start' }]} accessible={false}>
+      <View 
+        style={[styles.sideContainer, { justifyContent: 'flex-start' }]} 
+        accessible={false}
+        accessibilityElementsHidden={shouldHideOtherElements}
+        importantForAccessibility={shouldHideOtherElements ? 'no-hide-descendants' : 'auto'}
+      >
         <TouchableOpacity
           onPress={mudaTema}
           style={styles.iconButton}
@@ -359,16 +427,31 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
             color={cores.icone}
           />
         </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={toggleMicrofone}
+          style={styles.iconButton}
+          accessibilityLabel={isListening ? "Desativar Microfone" : "Ativar Microfone"}
+          accessibilityRole="button"
+          disabled={isTalkBackSpeaking}
+        >
+          <Ionicons 
+            name={isListening ? "mic" : "mic-off"}
+            size={getIconSize('medium')} 
+            color={isTalkBackSpeaking ? '#666' : (isListening ? cores.texto : cores.icone)}
+            style={{ opacity: isTalkBackSpeaking ? 0.5 : 1 }}
+          />
+        </TouchableOpacity>
       </View>
 
-      {/* --- Título e Botão de Tutorial --- */}
       <View style={styles.titleContainer}>
         <View style={styles.iconButton} />
         <Text
+          ref={tituloRef}
           style={styles.title}
           accessible={true}
           accessibilityRole="header"
-          accessibilityLabel={`Página: ${title}`}
+          importantForAccessibility="yes"
         >
           {title}
         </Text>
@@ -378,15 +461,25 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
           accessibilityLabel="Tutorial"
           accessibilityHint="Abre o tutorial de ajuda para esta tela"
           accessibilityRole="button"
+          accessibilityElementsHidden={shouldHideOtherElements}
+          importantForAccessibility={shouldHideOtherElements ? 'no-hide-descendants' : 'auto'}
         >
-          <MaterialCommunityIcons name="help-circle-outline" color={cores.icone} size={getIconSize('large')} />
+          <MaterialCommunityIcons 
+            name="help-circle-outline" 
+            color={cores.icone} 
+            size={getIconSize('large')} 
+          />
         </TouchableOpacity>
       </View>
       
-      {/* --- Botão de Login/Conta --- */}
-      <View style={[styles.sideContainer, { justifyContent: 'flex-end' }]} accessible={false}>
+      <View 
+        style={[styles.sideContainer, { justifyContent: 'flex-end' }]} 
+        accessible={false}
+        accessibilityElementsHidden={shouldHideOtherElements}
+        importantForAccessibility={shouldHideOtherElements ? 'no-hide-descendants' : 'auto'}
+      >
         <TouchableOpacity
-          onPress={handleLoginIconPress} // Função atualizada
+          onPress={handleLoginIconPress}
           style={styles.iconButton}
           accessibilityLabel={user ? 'Opções da Conta' : 'Login'}
           accessibilityHint={user ? 'Toque para sair da sua conta' : 'Toque para fazer login'}
@@ -400,19 +493,17 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
         </TouchableOpacity>
       </View>
       
-      {/* --- MODAL DE LOGOUT COM VOZ --- */}
       <Modal
         visible={logoutModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={fecharModalLogout} // Função atualizada
-        statusBarTranslucent={true}
+        onRequestClose={fecharModalLogout}
       >
         <View style={styles.modalOverlay}>
           <TouchableOpacity 
             style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}
             activeOpacity={1} 
-            onPress={fecharModalLogout} // Função atualizada
+            onPress={fecharModalLogout}
           />
           <View style={styles.modalContent}>
             <Ionicons 
@@ -426,7 +517,6 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
               Você tem certeza que deseja sair?
             </Text>
 
-            {/* --- Indicador de Voz --- */}
             {isListening && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
@@ -436,7 +526,6 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
               </View>
             )}
 
-            {/* --- Texto Reconhecido --- */}
             {recognizedText && (
               <View style={styles.recognizedTextBox}>
                 <Text style={styles.recognizedTextLabel}>
@@ -451,14 +540,14 @@ export default function CustomHeader({ title, mudaTema, abreLogin, onLayout }: C
             <View style={styles.modalActions}>
               <TouchableOpacity 
                 style={styles.cancelButton}
-                onPress={fecharModalLogout} // Função atualizada
+                onPress={fecharModalLogout}
               >
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
                 style={styles.logoutButton}
-                onPress={handleLogoutManual} // Função de confirmação manual
+                onPress={handleLogoutManual}
               >
                 <Text style={styles.logoutButtonText}>Sair</Text>
               </TouchableOpacity>

@@ -95,14 +95,14 @@ const CameraScreen: React.FC = () => {
       
       hasProcessedAutoPhotoRef.current = true;
       
-      router.replace({
-        pathname: '/tabs',
-        params: {
-          mode: mode,
-          conversaId: conversaId,
-          timestamp: Date.now().toString()
-        }
-      });
+      // router.replace({
+      //   pathname: '/tabs',
+      //   params: {
+      //     mode: mode,
+      //     conversaId: conversaId,
+      //     timestamp: Date.now().toString()
+      //   }
+      // });
       
       setTimeout(() => {
         takePictureForVoiceCommand(question);
@@ -197,11 +197,19 @@ const CameraScreen: React.FC = () => {
   // ===================================================================
   // UPLOAD E PROCESSAMENTO
   // ===================================================================
+  const isNavigatingRef = useRef(false);
+
   const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
-    if (isSending) {
-      console.log("[Upload] Ignorado, upload já em progresso.");
-      return;
-    }
+  if (isSending) {
+    console.log("[Upload] Ignorado, upload já em progresso.");
+    return;
+  }
+
+  // ✅ GUARD: Previne navegação duplicada
+  if (isNavigatingRef.current) {
+    console.log("[Upload] ⚠️ Navegação já em progresso, ignorando");
+    return;
+  }
 
     console.log(`[Upload] 🚀 Iniciando upload com BASE64`);
     console.log('[Upload] Modo:', mode, 'Conversa:', conversaId);
@@ -366,6 +374,14 @@ const CameraScreen: React.FC = () => {
       SpeechManager.enable();
     }
   };
+
+  useEffect(() => {
+    if (!isFocused) {
+      hasProcessedAutoPhotoRef.current = false;
+      setIsCameraReady(false);
+      isNavigatingRef.current = false; // ✅ Reset quando sai da tela
+    }
+  }, [isFocused]);
 
   // ===================================================================
   // TIRAR FOTO (COMANDO DE VOZ GLOBAL)

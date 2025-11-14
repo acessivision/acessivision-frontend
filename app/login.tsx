@@ -1,3 +1,5 @@
+// app/login.tsx - CORREÇÃO COMPLETA
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -7,7 +9,8 @@ import {
   StyleSheet,
   Image,
   findNodeHandle,
-  AccessibilityInfo
+  AccessibilityInfo,
+  InteractionManager
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,7 +24,7 @@ export default function LoginScreen() {
   const titleRef = useRef(null);
   const router = useRouter();
   const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
-  const [loading, setLoading] = useState(false); // ✅ Usaremos este estado
+  const [loading, setLoading] = useState(false);
   const { loginWithGoogle, user, isLoading: isAuthLoading } = useAuth();
 
   const isFocused = useIsFocused();
@@ -31,31 +34,72 @@ export default function LoginScreen() {
   });
   
   const spokenRef = useRef(false);
+  const hasSetInitialFocusRef = useRef(false);
 
+  // ===================================================================
+  // ✅ CORREÇÃO: useEffect para foco inicial do TalkBack
+  // ===================================================================
   useEffect(() => {
+    if (!isFocused) {
+      hasSetInitialFocusRef.current = false;
+      return;
+    }
+
+    if (hasSetInitialFocusRef.current) return;
+
     const setInitialFocus = async () => {
       try {
+        console.log('[Login] 🎯 Iniciando configuração de foco...');
+        
+        // ✅ Aguarda as interações terminarem
+        await new Promise(resolve => {
+          InteractionManager.runAfterInteractions(() => {
+            resolve(undefined);
+          });
+        });
+
+        // ✅ Aguarda um delay para a UI estabilizar
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        // ✅ Verifica se TalkBack está ativo
         const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        console.log('[Login] 📱 TalkBack ativo:', isScreenReaderEnabled);
+        
         if (isScreenReaderEnabled && titleRef.current) {
           const reactTag = findNodeHandle(titleRef.current);
+          console.log('[Login] 🏷️ ReactTag obtido:', reactTag);
+          
           if (reactTag) {
+            console.log('[Login] ✅ Definindo foco no título "AcessiVision"');
+            
+            // ✅ Define o foco PRIMEIRO
             AccessibilityInfo.setAccessibilityFocus(reactTag);
+            
+            // ✅ Depois anuncia (para garantir que o TalkBack fale)
+            setTimeout(() => {
+              AccessibilityInfo.announceForAccessibility("Página: Login");
+            }, 150);
+            
+            hasSetInitialFocusRef.current = true;
+            console.log('[Login] 🎉 Foco configurado com sucesso!');
+          } else {
+            console.warn('[Login] ⚠️ ReactTag é null, não foi possível definir foco');
           }
+        } else {
+          console.log('[Login] ℹ️ TalkBack não está ativo ou ref não está disponível');
         }
       } catch (error) {
-        console.error('Error setting initial focus:', error);
+        console.error('[Login] ❌ Erro ao definir foco:', error);
       }
     };
+
     setInitialFocus();
-  }, []);
+  }, [isFocused]);
 
   // ===================================================================
-  // ✅ useEffect MODIFICADO
+  // useEffect para falar quando usuário já está logado
   // ===================================================================
   useEffect(() => {
-    // ✅ Adicionada a verificação "!loading"
-    // Só fala se o usuário já estava logado ANTES de entrar na tela,
-    // e não durante o processo de login.
     if (user && isFocused && !spokenRef.current && !loading) {
       const message = `Você já está logado como: ${user.email || 'usuário'}.`;
       console.log('[LoginScreen] Falando (vinda de visita, não de login):', message);
@@ -66,9 +110,11 @@ export default function LoginScreen() {
     if (!isFocused) {
       spokenRef.current = false;
     }
-  }, [user, isFocused, speak, loading]); // ✅ Adicionado 'loading' às dependências
-  // ===================================================================
+  }, [user, isFocused, speak, loading]);
 
+  // ===================================================================
+  // Funções de navegação e login
+  // ===================================================================
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -78,13 +124,12 @@ export default function LoginScreen() {
   };
 
   const handleGoogleLogin = async () => {
-    setLoading(true); // ✅ 'loading' fica true
+    setLoading(true);
     
     try {
       const result = await loginWithGoogle();
 
       if (result.success) {
-        // O useEffect não vai disparar a fala "já logado" porque 'loading' está true
         await speak('Login realizado com sucesso!');
         router.replace('/tabs');
       } else {
@@ -95,10 +140,13 @@ export default function LoginScreen() {
       console.error("Erro no login com Google:", error);
       await speak('Erro. Ocorreu um erro inesperado.');
     } finally {
-      setLoading(false); // ✅ 'loading' fica false
+      setLoading(false);
     }
   };
 
+  // ===================================================================
+  // Estilos
+  // ===================================================================
   const styles = StyleSheet.create({
     header: {
       flexDirection: "row",
@@ -123,9 +171,6 @@ export default function LoginScreen() {
     container: {
       flex: 1,
       backgroundColor: cores.barrasDeNavegacao,
-    },
-    keyboardView: {
-      flex: 1,
     },
     content: {
       flexGrow: 1,
@@ -169,12 +214,6 @@ export default function LoginScreen() {
       opacity: 0.6,
       backgroundColor: '#eee',
     },
-    googleIcon: {
-      fontSize: 20,
-      fontWeight: 'bold',
-      color: '#4285f4',
-      marginRight: 12,
-    },
     googleButtonText: {
       fontSize: 16,
       fontWeight: '500',
@@ -184,52 +223,71 @@ export default function LoginScreen() {
 
   const isButtonDisabled = loading || isAuthLoading || !!user;
 
+  // ===================================================================
+  // Render
+  // ===================================================================
   return (
     <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={handleGoBack}
-            accessibilityRole='button'
-            accessibilityLabel='Voltar'
-          >
-            <View style={styles.backIcon}>
-              <Ionicons 
-                name="arrow-back" 
-                size={getIconSize('medium')} 
-                color={cores.icone} 
-              />
-            </View>
-            <Text style={styles.headerTitle}>Voltar</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <Image
-                source={
-                    temaAplicado === "dark"
-                    ? require("../assets/images/logo-escuro.png")
-                    : require("../assets/images/logo-claro.png")
-                }
-                style={styles.logo}
-                />
-              <Text style={styles.title}>AcessiVision</Text>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={handleGoBack}
+          accessibilityRole='button'
+          accessibilityLabel='Voltar para página anterior'
+          accessibilityHint='Retorna para a tela anterior'
+        >
+          <View style={styles.backIcon}>
+            <Ionicons 
+              name="arrow-back" 
+              size={getIconSize('medium')} 
+              color={cores.icone} 
+            />
           </View>
+          <Text style={styles.headerTitle}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
 
-          <Text style={styles.subtitle}>Entre no AcessiVision e desfrute de todas as funcionalidades!</Text>
-
-          <TouchableOpacity 
-            style={[styles.googleButton, isButtonDisabled && styles.disabledButton]}
-            onPress={handleGoogleLogin}
-            disabled={isButtonDisabled}
+      <View style={styles.content}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={
+              temaAplicado === "dark"
+                ? require("../assets/images/logo-escuro.png")
+                : require("../assets/images/logo-claro.png")
+            }
+            style={styles.logo}
+          />
+          {/* ✅ Título com ref e propriedades de acessibilidade */}
+          <Text 
+            ref={titleRef}
+            style={styles.title}
+            accessible={true}
+            accessibilityRole="header"
+            accessibilityLabel="Login"
+            importantForAccessibility="yes"
           >
-            <Image source={require('../assets/images/icone-google.png')} />
-            <Text style={styles.googleButtonText}>
-              {/* O texto do botão continua o mesmo, o que está correto */}
-              {isButtonDisabled ? 'Você já está logado' : ' Entrar com Google'}
-            </Text>
-          </TouchableOpacity>
+            AcessiVision
+          </Text>
         </View>
+
+        <Text style={styles.subtitle}>
+          Entre no AcessiVision e desfrute de todas as funcionalidades!
+        </Text>
+
+        <TouchableOpacity 
+          style={[styles.googleButton, isButtonDisabled && styles.disabledButton]}
+          onPress={handleGoogleLogin}
+          disabled={isButtonDisabled}
+          accessibilityLabel={isButtonDisabled ? 'Você já está logado' : 'Entrar com Google'}
+          accessibilityHint={isButtonDisabled ? '' : 'Faz login usando sua conta Google'}
+          accessibilityRole="button"
+        >
+          <Image source={require('../assets/images/icone-google.png')} />
+          <Text style={styles.googleButtonText}>
+            {isButtonDisabled ? 'Você já está logado' : ' Entrar com Google'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

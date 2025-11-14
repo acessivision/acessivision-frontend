@@ -54,104 +54,118 @@ class SpeechManager {
       return false;
     }
   }
+
+  private talkBackSpeakingCallback: ((isSpeaking: boolean) => void) | null = null;
+  
+  // ✅ NOVO: Registrar callback para notificar quando TalkBack fala
+  setTalkBackSpeakingCallback(callback: (isSpeaking: boolean) => void) {
+    this.talkBackSpeakingCallback = callback;
+  }
   
   // ============================================
   // TTS (Text-to-Speech)
   // ============================================
   async speak(text: string, callback?: () => void, keepListening: boolean = false): Promise<void> {
-    console.log('[SpeechManager] 🔊 Speaking:', text, 'keepListening:', keepListening);
-    
-    // ✅ Track this text to ignore it if recognized
-    const normalizedText = text.toLowerCase().trim();
-    this.lastSpokenText = normalizedText;
-    this.recentlySpoken.add(normalizedText);
-    
-    // ✅ Only stop recognition if NOT keeping it active
-    if (this.isRecognizing && !keepListening) {
-      console.log('[SpeechManager] Stopping recognition to speak');
-      await this.stopRecognition();
-    }
-    
-    this.isSpeaking = true;
-    
-    // ✅ Track if callbacks already fired to prevent duplicates
-    let callbackFired = false;
-    let restartTimeout: ReturnType<typeof setTimeout> | null = null;
-    
-    const handleSpeechComplete = () => {
-      if (callbackFired) return;
-      callbackFired = true;
-      
-      console.log('[SpeechManager] Speech finished');
-      this.isSpeaking = false;
-      
-      // Clear any existing timeout
-      if (restartTimeout) clearTimeout(restartTimeout);
-      
-      // ✅ Wait longer before reactivating recognition to avoid echo
-      restartTimeout = setTimeout(() => {
-        // ✅ Remove from recently spoken after delay
-        this.recentlySpoken.delete(normalizedText);
-        this.lastSpokenText = null;
-        
-        // ✅ CORREÇÃO: Sempre tenta iniciar se enabled e não está reconhecendo
-        if (this.isEnabled && !this.isRecognizing) {
-          console.log('[SpeechManager] Restarting recognition after speech (keepListening was', keepListening, ')');
-          this.startRecognition('global');
-        } else if (keepListening && !this.isRecognizing) {
-          // ✅ Se keepListening=true mas não está reconhecendo, força o início
-          console.log('[SpeechManager] ⚠️ keepListening=true but not recognizing, forcing start');
-          this.startRecognition('global');
-        } else if (keepListening) {
-          console.log('[SpeechManager] Keeping recognition active (keepListening=true)');
-        }
-      }, 800);
-      
-      if (callback) callback();
-    };
-    
-    return new Promise((resolve) => {
-      Speech.speak(text, {
-        language: 'pt-BR',
-        onDone: () => {
-          handleSpeechComplete();
-          resolve();
-        },
-        onStopped: () => {
-          if (!callbackFired) {
-            console.log('[SpeechManager] Speech stopped');
-            this.isSpeaking = false;
-            setTimeout(() => {
-              this.recentlySpoken.delete(normalizedText);
-              this.lastSpokenText = null;
-            }, 500);
-            if (callback) callback();
-            callbackFired = true;
-          }
-          resolve();
-        },
-        onError: () => {
-          if (!callbackFired) {
-            console.log('[SpeechManager] Speech error');
-            this.isSpeaking = false;
-            this.recentlySpoken.delete(normalizedText);
-            this.lastSpokenText = null;
-            if (callback) callback();
-            callbackFired = true;
-          }
-          resolve();
-        }
-      });
-    });
+  console.log('[SpeechManager] 🔊 Speaking:', text, 'keepListening:', keepListening);
+  
+  const normalizedText = text.toLowerCase().trim();
+  this.lastSpokenText = normalizedText;
+  this.recentlySpoken.add(normalizedText);
+  
+  // ✅ SEMPRE para o reconhecimento antes de falar
+  const wasRecognizing = this.isRecognizing;
+  if (this.isRecognizing) {
+    console.log('[SpeechManager] ⏸️ Pausando reconhecimento para falar');
+    await this.stopRecognition();
   }
   
-  stopSpeaking(): void {
-    Speech.stop();
-    this.isSpeaking = false;
-    // ✅ Clear recently spoken when manually stopped
-    this.recentlySpoken.clear();
-    this.lastSpokenText = null;
+  this.isSpeaking = true;
+  
+  // ✅ Notifica que está falando
+  if (this.talkBackSpeakingCallback) {
+    this.talkBackSpeakingCallback(true);
   }
+  
+  let callbackFired = false;
+  let restartTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  const handleSpeechComplete = () => {
+    if (callbackFired) return;
+    callbackFired = true;
+    
+    console.log('[SpeechManager] ✅ Speech finished');
+    this.isSpeaking = false;
+    
+    // ✅ Notifica que parou de falar
+    if (this.talkBackSpeakingCallback) {
+      this.talkBackSpeakingCallback(false);
+    }
+    
+    if (restartTimeout) clearTimeout(restartTimeout);
+    
+    // ✅ Aguarda mais tempo antes de reativar
+    restartTimeout = setTimeout(() => {
+      this.recentlySpoken.delete(normalizedText);
+      this.lastSpokenText = null;
+      
+      // ✅ Só reinicia se estava reconhecendo antes E está habilitado
+      if (wasRecognizing && this.isEnabled) {
+        console.log('[SpeechManager] ▶️ Retomando reconhecimento após fala');
+        this.startRecognition('global');
+      }
+    }, 1000);
+    
+    if (callback) callback();
+  };
+  
+  return new Promise((resolve) => {
+    Speech.speak(text, {
+      language: 'pt-BR',
+      onDone: () => {
+        handleSpeechComplete();
+        resolve();
+      },
+      onStopped: () => {
+        if (!callbackFired) {
+          console.log('[SpeechManager] 🛑 Speech stopped');
+          this.isSpeaking = false;
+          if (this.talkBackSpeakingCallback) {
+            this.talkBackSpeakingCallback(false);
+          }
+          setTimeout(() => {
+            this.recentlySpoken.delete(normalizedText);
+            this.lastSpokenText = null;
+          }, 500);
+          if (callback) callback();
+          callbackFired = true;
+        }
+        resolve();
+      },
+      onError: () => {
+        if (!callbackFired) {
+          console.log('[SpeechManager] ❌ Speech error');
+          this.isSpeaking = false;
+          if (this.talkBackSpeakingCallback) {
+            this.talkBackSpeakingCallback(false);
+          }
+          this.recentlySpoken.delete(normalizedText);
+          this.lastSpokenText = null;
+          if (callback) callback();
+          callbackFired = true;
+        }
+        resolve();
+      }
+    });
+  });
+}
+
+// ✅ ADICIONAR também o método stopSpeaking no speechManager.ts:
+stopSpeaking(): void {
+  Speech.stop();
+  this.isSpeaking = false;
+  this.recentlySpoken.clear();
+  this.lastSpokenText = null;
+}
   
   // ============================================
   // RECONHECIMENTO DE VOZ

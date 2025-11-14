@@ -85,8 +85,11 @@ const ConversationScreen: React.FC = () => {
       console.log('[Conversa] 🚩 Parâmetro speakLastMessage recebido - ATIVANDO flag');
       shouldSpeakNextMessageRef.current = true;
       
-      // ✅ Limpa o parâmetro da URL para evitar re-ativações
-      router.setParams({ speakLastMessage: undefined });
+      // ✅ Limpa o parâmetro IMEDIATAMENTE para evitar re-processamento
+      router.setParams({ 
+        speakLastMessage: undefined,
+        timestamp: undefined // ✅ Limpa timestamp também
+      });
     }
   }, [speakLastMessage, isScreenFocused]);
 
@@ -594,7 +597,7 @@ const ConversationScreen: React.FC = () => {
 
           <TextInput
             style={[styles.input, { color: cores.texto, backgroundColor: cores.fundo }]}
-            placeholder="Faça uma pergunta..."
+            placeholder="Escreva uma pergunta"
             placeholderTextColor="#999"
             value={inputText}
             onChangeText={setInputText}
@@ -606,6 +609,7 @@ const ConversationScreen: React.FC = () => {
             onPress={toggleMicrophone}
             style={styles.micButton}
             accessibilityLabel={micEnabled ? "Desativar microfone" : "Ativar microfone"}
+            accessibilityRole="button"
           >
             <Ionicons 
               name={micEnabled ? 'mic' : 'mic-outline'}
@@ -618,7 +622,8 @@ const ConversationScreen: React.FC = () => {
             onPress={() => enviarMensagem()}
             disabled={isSending || micEnabled}
             style={styles.sendButton}
-            accessibilityHint="Enviar mensagem"
+            accessibilityRole='button'
+            accessibilityLabel="Enviar mensagem"
           >
             {isSending ? (
               <ActivityIndicator size="small" color={cores.texto} />

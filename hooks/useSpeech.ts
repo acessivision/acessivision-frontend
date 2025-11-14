@@ -140,8 +140,9 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
   }, [mode]);
   
   const stopListening = useCallback(() => {
-    console.log('[useSpeech] Requesting Manager.stopRecognition()');
-    SpeechManager.stopRecognition();
+    console.log('[useSpeech] Manual stop: Disabling Manager completely');
+    SpeechManager.disable();
+    
     setIsListening(false);
   }, []);
   

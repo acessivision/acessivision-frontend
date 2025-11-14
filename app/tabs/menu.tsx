@@ -22,10 +22,6 @@ export default function ConfigScreen() {
     router.push('/login');
   };
 
-  const handleEditProfile = () => {
-    router.push('/tabs/editarPerfil');
-  };
-
   const handleDeleteAccount = () => {
     Alert.alert(
       'Excluir Conta',
@@ -169,17 +165,6 @@ export default function ConfigScreen() {
                 />
               </View>
               <Text style={styles.optionText}>Fazer Login</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.option} onPress={handleEditProfile}>
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="person-outline"
-                  size={getIconSize('small')}
-                  color={cores.icone}
-                />
-              </View>
-              <Text style={styles.optionText}>Editar Perfil</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>

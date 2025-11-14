@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { toTitleCase } from '../../utils/toTitleCase';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { LayoutProvider, useLayout } from '../../components/LayoutContext';
 
 function LayoutWithVoiceUI() {
@@ -16,6 +16,7 @@ function LayoutWithVoiceUI() {
   const params = useGlobalSearchParams<{ titulo?: string }>();
   const { mudaTema, cores, getIconSize } = useTheme();
   const { setHeaderHeight } = useLayout();
+  const [hideTabsContent, setHideTabsContent] = useState(false);
 
   const getTitle = () => {
     if (pathname === '/tabs/conversa' && params.titulo) {
@@ -30,8 +31,6 @@ function LayoutWithVoiceUI() {
         return 'Histórico';
       case '/tabs/menu':
         return 'Menu';
-      case '/tabs/editarPerfil':
-        return 'Editar Perfil';
       case '/tabs/conversa':
         return 'Conversa';
       default:
@@ -52,75 +51,75 @@ function LayoutWithVoiceUI() {
         onLayout={(event: LayoutChangeEvent) => {
           setHeaderHeight(event.nativeEvent.layout.height);
         }}
+        onHideOtherElementsChange={setHideTabsContent} 
       />
-      
-      <Tabs
-        initialRouteName="index"
-        backBehavior="history"
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: cores.icone,
-          tabBarInactiveTintColor: cores.icone,
-          tabBarShowLabel: false,
-          tabBarStyle: {
-            backgroundColor: cores.barrasDeNavegacao,
-            height: 80,
-            paddingBottom: 10,
-            borderTopWidth: 1,
-            borderColor: cores.icone,
-            elevation: 0,
-            shadowOpacity: 0,
-            shadowColor: 'transparent',
-          },
-          tabBarIconStyle: {
-            height: 60,
-            width: 60,
-          },
-        }}
+      <View 
+        style={{ flex: 1 }}
+        accessibilityElementsHidden={hideTabsContent}
+        importantForAccessibility={hideTabsContent ? 'no-hide-descendants' : 'auto'}
       >
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Câmera',
-            tabBarAccessibilityLabel: 'Câmera',
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="camera" color={color} size={getIconSize('xlarge')} />
-            ),
+        <Tabs
+          initialRouteName="index"
+          backBehavior="history"
+          screenOptions={{
+            headerShown: false,
+            tabBarActiveTintColor: cores.icone,
+            tabBarInactiveTintColor: cores.icone,
+            tabBarShowLabel: false,
+            tabBarStyle: {
+              backgroundColor: cores.barrasDeNavegacao,
+              height: 80,
+              paddingBottom: 10,
+              borderTopWidth: 1,
+              borderColor: cores.icone,
+              elevation: 0,
+              shadowOpacity: 0,
+              shadowColor: 'transparent',
+            },
+            tabBarIconStyle: {
+              height: 60,
+              width: 60,
+            },
           }}
-        />
-        <Tabs.Screen
-          name="historico"
-          options={{
-            title: 'Histórico',
-            tabBarAccessibilityLabel: 'Histórico',
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="history" color={color} size={getIconSize('xlarge')} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="menu"
-          options={{
-            title: 'Menu',
-            tabBarAccessibilityLabel: 'Menu',
-            tabBarIcon: ({ color }) => (
-              <MaterialCommunityIcons name="menu" color={color} size={getIconSize('xlarge')} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="editarPerfil"
-          options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="conversa"
-          options={{
-            href: null,
-          }}
-        />
-      </Tabs>
+        >
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Câmera',
+              tabBarAccessibilityLabel: 'Câmera',
+              tabBarIcon: ({ color }) => (
+                <MaterialCommunityIcons name="camera" color={color} size={getIconSize('xlarge')} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="historico"
+            options={{
+              title: 'Histórico',
+              tabBarAccessibilityLabel: 'Histórico',
+              tabBarIcon: ({ color }) => (
+                <MaterialCommunityIcons name="history" color={color} size={getIconSize('xlarge')} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="menu"
+            options={{
+              title: 'Menu',
+              tabBarAccessibilityLabel: 'Menu',
+              tabBarIcon: ({ color }) => (
+                <MaterialCommunityIcons name="menu" color={color} size={getIconSize('xlarge')} />
+              ),
+            }}
+          />
+          <Tabs.Screen
+            name="conversa"
+            options={{
+              href: null,
+            }}
+          />
+        </Tabs>
+      </View>
     </View>
   );
 }
