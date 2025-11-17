@@ -19,6 +19,7 @@ import { useSpeech } from '../../hooks/useSpeech';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import firestore from '@react-native-firebase/firestore';
+import { useTalkBackState } from '../../hooks/useTalkBackState';
 
 const SERVER_URL = 'https://www.acessivision.com.br/upload';
 
@@ -34,7 +35,6 @@ const ConversationScreen: React.FC = () => {
   const router = useRouter();
   const isScreenFocused = useIsFocused();
   
-  // ✅ ADICIONA speakLastMessage aos parâmetros
   const params = useLocalSearchParams<{ 
     conversaId: string, 
     titulo: string,
@@ -44,6 +44,9 @@ const ConversationScreen: React.FC = () => {
   const { conversaId, titulo, speakLastMessage } = params;
   const { cores, getIconSize } = useTheme();
   const flatListRef = useRef<FlatList>(null);
+
+  // ✅ NOVO: Estado para controlar visibilidade do botão voltar para o TalkBack
+  const { isActive: isTalkBackActive } = useTalkBackState();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -78,17 +81,16 @@ const ConversationScreen: React.FC = () => {
   const shouldSpeakNextMessageRef = useRef<boolean>(false);
 
   // ===================================================================
-  // ✅ NOVO: ATIVAR FLAG QUANDO RECEBER PARÂMETRO speakLastMessage
+  // ATIVAR FLAG QUANDO RECEBER PARÂMETRO speakLastMessage
   // ===================================================================
   useEffect(() => {
     if (speakLastMessage === 'true' && isScreenFocused) {
       console.log('[Conversa] 🚩 Parâmetro speakLastMessage recebido - ATIVANDO flag');
       shouldSpeakNextMessageRef.current = true;
       
-      // ✅ Limpa o parâmetro IMEDIATAMENTE para evitar re-processamento
       router.setParams({ 
         speakLastMessage: undefined,
-        timestamp: undefined // ✅ Limpa timestamp também
+        timestamp: undefined
       });
     }
   }, [speakLastMessage, isScreenFocused]);
@@ -224,8 +226,6 @@ const ConversationScreen: React.FC = () => {
             console.log(`[Conversa] 📈 hasNewMessages: ${hasNewMessages}`);
             
             const isNewMessage = lastApiMessage.id !== lastSpokenMessageIdRef.current;
-            
-            // ✅ Só fala se a FLAG está ativa E é mensagem nova
             const shouldSpeak = shouldSpeakNextMessageRef.current && isNewMessage;
 
             console.log(`[Conversa] 🎯 Decisão final: ${shouldSpeak ? '✅ FALAR' : '❌ NÃO FALAR'}`);
@@ -477,7 +477,6 @@ const ConversationScreen: React.FC = () => {
 
       console.log('[Upload] ✅ Descrição recebida:', apiResponse);
 
-      // ✅ ATIVA FLAG para falar a resposta
       shouldSpeakNextMessageRef.current = true;
       console.log('[Conversa] 🚩 Flag ativada após enviar mensagem - resposta será falada');
 
@@ -517,6 +516,7 @@ const ConversationScreen: React.FC = () => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       <View style={[styles.container, { backgroundColor: cores.fundo }]}>
+        {/* ✅ BOTÃO VOLTAR COM CONTROLE DE ACESSIBILIDADE */}
         <TouchableOpacity 
           onPress={handleGoBack}
           style={[styles.header, { backgroundColor: cores.barrasDeNavegacao }]}
@@ -538,6 +538,7 @@ const ConversationScreen: React.FC = () => {
           style={{ paddingHorizontal: 10 }}
           data={messages}
           keyExtractor={item => item.id}
+          accessible={false}
           renderItem={({ item }) => {
             const senderLabel = item.sender === 'user' ? "Sua mensagem" : "Acessivision";
             const imageDescription = item.imageUri ? "Contém imagem." : ""; 
@@ -582,7 +583,9 @@ const ConversationScreen: React.FC = () => {
           </View>
         )}
 
-        <View style={[styles.inputContainer, { backgroundColor: cores.barrasDeNavegacao }]}>
+        <View style={[styles.inputContainer, { backgroundColor: cores.barrasDeNavegacao }]}
+          accessible={false}
+        >
           <TouchableOpacity 
             onPress={handlePickImage}
             style={styles.imagePickerButton}

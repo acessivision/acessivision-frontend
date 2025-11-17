@@ -7,6 +7,8 @@ import { useRouter, usePathname, Href } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
 import SpeechManager from '../utils/speechManager';
+import { useAuth } from '../components/AuthContext';
+import { useVoiceCommands } from '../components/VoiceCommandContext';
 
 type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/login' | '/conversa';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
@@ -56,6 +58,8 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const lastProcessedTimeRef = useRef(0);
   const lastNavigationRef = useRef<{ route: string; timestamp: number } | null>(null);
   const lastExecutedIntentRef = useRef<{ intent: string; timestamp: number } | null>(null);
+  const { user, logout } = useAuth();
+  
 
   // ✅ NOVO: Verifica se TalkBack está ativo
   const checkTalkBackActive = useCallback(async () => {
@@ -103,7 +107,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     
     console.log(`[Voice] 🚀 Iniciando navegação para ${targetPath}`);
     
-    // ✅ 1. Para TUDO antes de navegar
+    // ✅ 1. Para reconhecimento
     console.log('[Voice] 🔇 Desabilitando reconhecimento COMPLETAMENTE');
     SpeechManager.disable();
     stopListening();
@@ -116,19 +120,17 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     router.push(targetPath as Href);
     lastNavigationRef.current = { route: targetPath, timestamp: now };
     
-    // ✅ 4. Aguarda navegação + renderização
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // ✅ 5. Aguarda TalkBack anunciar (se ativo)
+    // ✅ 4. Aguarda navegação + renderização + TalkBack anunciar
     if (isTalkBackActive) {
-      console.log('[Voice] ⏳ Aguardando TalkBack anunciar título...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ 3 segundos (reduzido de 5s)
+      // Aguarda: navegação (500ms) + CustomHeader forçar foco (500ms) + TalkBack falar (~2-3s)
+      console.log('[Voice] ⏳ Aguardando navegação e anúncio do TalkBack...');
+      await new Promise(resolve => setTimeout(resolve, 3500)); // ✅ 3.5 segundos
     } else {
-      console.log('[Voice] ⏭️ TalkBack inativo, delay reduzido');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Sem TalkBack, aguarda apenas navegação
+      await new Promise(resolve => setTimeout(resolve, 800));
     }
     
-    // ✅ 6. Reativa reconhecimento
+    // ✅ 5. AGORA SIM reativa reconhecimento
     console.log('[Voice] ✅ Reativando reconhecimento');
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
@@ -231,12 +233,15 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         break;
         
       case 'ir_para_login':
-        await checkAndNavigate('/login', "Você já está na tela de login.");
+        user ? speak(`Você já está logado como: ${user.email || 'usuário'}.`, restartListeningAfterSpeak) : await checkAndNavigate('/login', "Você já está na tela de login.");
+
         break;
 
       case 'fazer_logout':
         stopListening();
         speak("Encerrando a sessão...", restartListeningAfterSpeak);
+        await logout();
+        router.replace('/login');
         return;
 
       case 'mudar_tema_claro':
@@ -400,7 +405,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       
       if (voiceState === "waiting_wake") {
         stopCurrentAudio();
-        stopListening();
         speak("Escutando", () => {
           setVoiceState("listening_command");
           setRecognizedText("");

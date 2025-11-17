@@ -37,80 +37,60 @@ export default function LoginScreen() {
   const hasSetInitialFocusRef = useRef(false);
 
   // ===================================================================
-  // ✅ CORREÇÃO: useEffect para foco inicial do TalkBack
-  // ===================================================================
-  useEffect(() => {
-    if (!isFocused) {
-      hasSetInitialFocusRef.current = false;
-      return;
-    }
+// ✅ CORREÇÃO: useEffect para foco inicial do TalkBack
+// ===================================================================
+useEffect(() => {
+  if (!isFocused) {
+    hasSetInitialFocusRef.current = false;
+    return;
+  }
 
-    if (hasSetInitialFocusRef.current) return;
+  if (hasSetInitialFocusRef.current) return;
 
-    const setInitialFocus = async () => {
-      try {
-        console.log('[Login] 🎯 Iniciando configuração de foco...');
-        
-        // ✅ Aguarda as interações terminarem
-        await new Promise(resolve => {
-          InteractionManager.runAfterInteractions(() => {
-            resolve(undefined);
-          });
+  const setInitialFocus = async () => {
+    try {
+      console.log('[Login] 🎯 Iniciando configuração de foco...');
+      
+      // ✅ Aguarda as interações terminarem
+      await new Promise(resolve => {
+        InteractionManager.runAfterInteractions(() => {
+          resolve(undefined);
         });
+      });
 
-        // ✅ Aguarda um delay para a UI estabilizar
-        await new Promise(resolve => setTimeout(resolve, 800));
+      // ✅ Aguarda a UI estabilizar (aumentado)
+      await new Promise(resolve => setTimeout(resolve, 1200)); // ← Aumentado de 800 para 1200
 
-        // ✅ Verifica se TalkBack está ativo
-        const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-        console.log('[Login] 📱 TalkBack ativo:', isScreenReaderEnabled);
+      // ✅ Verifica se TalkBack está ativo
+      const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+      console.log('[Login] 📱 TalkBack ativo:', isScreenReaderEnabled);
+      
+      if (isScreenReaderEnabled && titleRef.current) {
+        const reactTag = findNodeHandle(titleRef.current);
+        console.log('[Login] 🏷️ ReactTag obtido:', reactTag);
         
-        if (isScreenReaderEnabled && titleRef.current) {
-          const reactTag = findNodeHandle(titleRef.current);
-          console.log('[Login] 🏷️ ReactTag obtido:', reactTag);
+        if (reactTag) {
+          console.log('[Login] ✅ Definindo foco no título "AcessiVision"');
           
-          if (reactTag) {
-            console.log('[Login] ✅ Definindo foco no título "AcessiVision"');
-            
-            // ✅ Define o foco PRIMEIRO
-            AccessibilityInfo.setAccessibilityFocus(reactTag);
-            
-            // ✅ Depois anuncia (para garantir que o TalkBack fale)
-            setTimeout(() => {
-              AccessibilityInfo.announceForAccessibility("Página: Login");
-            }, 150);
-            
-            hasSetInitialFocusRef.current = true;
-            console.log('[Login] 🎉 Foco configurado com sucesso!');
-          } else {
-            console.warn('[Login] ⚠️ ReactTag é null, não foi possível definir foco');
-          }
+          // ✅ Apenas define o foco - NÃO anuncia manualmente
+          // O TalkBack vai anunciar automaticamente o elemento focado
+          AccessibilityInfo.setAccessibilityFocus(reactTag);
+          
+          hasSetInitialFocusRef.current = true;
+          console.log('[Login] 🎉 Foco configurado com sucesso!');
         } else {
-          console.log('[Login] ℹ️ TalkBack não está ativo ou ref não está disponível');
+          console.warn('[Login] ⚠️ ReactTag é null, não foi possível definir foco');
         }
-      } catch (error) {
-        console.error('[Login] ❌ Erro ao definir foco:', error);
+      } else {
+        console.log('[Login] ℹ️ TalkBack não está ativo ou ref não está disponível');
       }
-    };
-
-    setInitialFocus();
-  }, [isFocused]);
-
-  // ===================================================================
-  // useEffect para falar quando usuário já está logado
-  // ===================================================================
-  useEffect(() => {
-    if (user && isFocused && !spokenRef.current && !loading) {
-      const message = `Você já está logado como: ${user.email || 'usuário'}.`;
-      console.log('[LoginScreen] Falando (vinda de visita, não de login):', message);
-      speak(message);
-      spokenRef.current = true;
+    } catch (error) {
+      console.error('[Login] ❌ Erro ao definir foco:', error);
     }
+  };
 
-    if (!isFocused) {
-      spokenRef.current = false;
-    }
-  }, [user, isFocused, speak, loading]);
+  setInitialFocus();
+}, [isFocused]);
 
   // ===================================================================
   // Funções de navegação e login
@@ -278,13 +258,13 @@ export default function LoginScreen() {
           style={[styles.googleButton, isButtonDisabled && styles.disabledButton]}
           onPress={handleGoogleLogin}
           disabled={isButtonDisabled}
-          accessibilityLabel={isButtonDisabled ? 'Você já está logado' : 'Entrar com Google'}
+          accessibilityLabel='Entrar com Google'
           accessibilityHint={isButtonDisabled ? '' : 'Faz login usando sua conta Google'}
           accessibilityRole="button"
         >
           <Image source={require('../assets/images/icone-google.png')} />
           <Text style={styles.googleButtonText}>
-            {isButtonDisabled ? 'Você já está logado' : ' Entrar com Google'}
+            'Entrar com Google'
           </Text>
         </TouchableOpacity>
       </View>

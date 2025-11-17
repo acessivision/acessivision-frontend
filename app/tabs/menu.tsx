@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,24 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
 import { useAuth } from '../../components/AuthContext';
 import { useRouter } from 'expo-router';
+import LogoutModal from '../../components/LogoutModal';
 
-export default function ConfigScreen() {
+export default function MenuScreen() {
   const router = useRouter();
   const { theme, cores, getFontSize, getIconSize, temaAplicado } = useTheme();
-  const { logout } = useAuth();
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const { user, logout } = useAuth();
 
   const handleFazerLogin = () => {
-    router.push('/login');
+    if (user) {
+      setLogoutModalVisible(true);
+    } else {
+      router.push('/login');
+    }
   };
 
   const handleDeleteAccount = () => {
@@ -33,25 +39,9 @@ export default function ConfigScreen() {
     );
   };
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Sair',
-      'Tem certeza que deseja sair da sua conta?',
-      [
-        { 
-          text: 'Cancelar', 
-          style: 'cancel' 
-        },
-        { 
-          text: 'Sair', 
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/login'); 
-          },
-        },
-      ]
-    );
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
   };
 
   const styles = useMemo(
@@ -156,7 +146,7 @@ export default function ConfigScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Conta</Text>
           <View style={styles.optionContainer}>
-            <TouchableOpacity style={styles.option} onPress={handleFazerLogin}>
+            {user ? '' : <TouchableOpacity style={styles.option} onPress={handleFazerLogin}>
               <View style={styles.optionIcon}>
                 <Ionicons
                   name="log-in-outline"
@@ -165,9 +155,9 @@ export default function ConfigScreen() {
                 />
               </View>
               <Text style={styles.optionText}>Fazer Login</Text>
-            </TouchableOpacity>
+            </TouchableOpacity>}
 
-            <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>
+            {user ? <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>
               <View style={styles.optionIcon}>
                 <Ionicons
                   name="warning-outline"
@@ -178,9 +168,9 @@ export default function ConfigScreen() {
               <Text style={[styles.optionText, styles.deleteText]}>
                 Excluir Conta
               </Text>
-            </TouchableOpacity>
+            </TouchableOpacity> : ''}
 
-            <TouchableOpacity
+            {user ? <TouchableOpacity
               style={[styles.option, styles.lastOption]}
               onPress={handleLogout}
             >
@@ -192,9 +182,31 @@ export default function ConfigScreen() {
                 />
               </View>
               <Text style={styles.optionText}>Sair</Text>
+            </TouchableOpacity> : ''}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Telas</Text>
+          <View style={styles.optionContainer}>
+            <TouchableOpacity style={styles.option} onPress={() => router.push('/tabs')}>
+              <View style={styles.optionIcon}>
+                <MaterialCommunityIcons name="camera" color={cores.icone} size={getIconSize('small')} />
+              </View>
+              <Text style={styles.optionText}>Câmera</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.option} onPress={() => router.push('/tabs/historico')}>
+              <View style={styles.optionIcon}>
+                <MaterialCommunityIcons name="history" color={cores.icone} size={getIconSize('small')} />
+              </View>
+              <Text style={[styles.optionText]}>
+                Histórico
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
+        
 
         <View style={styles.logoContainer}>
           <Image
@@ -208,6 +220,13 @@ export default function ConfigScreen() {
           <Text style={styles.title}>AcessiVision</Text>
         </View>
       </ScrollView>
+
+      <LogoutModal
+        visible={logoutModalVisible}
+        onClose={() => setLogoutModalVisible(false)}
+        onConfirm={handleLogout}
+      />
+
     </View>
   );
 }

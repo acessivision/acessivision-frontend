@@ -559,7 +559,7 @@ const CameraScreen: React.FC = () => {
               style={styles.button}
               onPress={takePictureForButton}
               accessibilityLabel="Tirar foto"
-              role="button"
+              accessibilityRole="button"
               disabled={isSending || waitingForQuestion}
             >
               <Image

@@ -729,14 +729,9 @@ const HistoryScreen: React.FC = () => {
 
   return (
     // Container principal
-    <View style={[styles.container, { flex: 1 }]}>
-      
-      {/* 1. Wrapper para o conteúdo principal da tela */}
+    <View style={[styles.container, { flex: 1 }]}>      
       <View 
         style={{ flex: 1 }}
-        // ✅ TRUQUE DA GAIOLA: Esconde este <View> e tudo dentro dele
-        //    do TalkBack se um modal estiver ativo.
-        importantForAccessibility={isModalActive ? 'no-hide-descendants' : 'auto'}
       >
         <FlatList
           data={conversations}
@@ -831,14 +826,12 @@ const HistoryScreen: React.FC = () => {
             <Text style={[styles.deleteMessage, { color: cores.texto }]}>
               Tem certeza que deseja excluir a conversa "{conversaParaExcluir.titulo}"?
             </Text>
-            
-            {/* ... resto do seu overlay (indicadores, botões) ... */}
-            
+                        
             {isListening && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
                 <Text style={styles.listeningText}>
-                  {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo título...'}
+                  "Aguardando resposta..."
                 </Text>
               </View>
             )}

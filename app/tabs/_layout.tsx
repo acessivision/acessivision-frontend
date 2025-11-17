@@ -16,7 +16,6 @@ function LayoutWithVoiceUI() {
   const params = useGlobalSearchParams<{ titulo?: string }>();
   const { mudaTema, cores, getIconSize } = useTheme();
   const { setHeaderHeight } = useLayout();
-  const [hideTabsContent, setHideTabsContent] = useState(false);
 
   const getTitle = () => {
     if (pathname === '/tabs/conversa' && params.titulo) {
@@ -51,12 +50,9 @@ function LayoutWithVoiceUI() {
         onLayout={(event: LayoutChangeEvent) => {
           setHeaderHeight(event.nativeEvent.layout.height);
         }}
-        onHideOtherElementsChange={setHideTabsContent} 
       />
       <View 
         style={{ flex: 1 }}
-        accessibilityElementsHidden={hideTabsContent}
-        importantForAccessibility={hideTabsContent ? 'no-hide-descendants' : 'auto'}
       >
         <Tabs
           initialRouteName="index"
