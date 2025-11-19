@@ -1,4 +1,4 @@
-// SpeechManager.ts - Enhanced with echo prevention and duplicate event handling
+// SpeechManager.ts - MANTÉM microfone ativo enquanto fala
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import * as Speech from 'expo-speech';
 
@@ -65,107 +65,139 @@ class SpeechManager {
   // ============================================
   // TTS (Text-to-Speech)
   // ============================================
-  async speak(text: string, callback?: () => void, keepListening: boolean = false): Promise<void> {
-  console.log('[SpeechManager] 🔊 Speaking:', text, 'keepListening:', keepListening);
-  
-  const normalizedText = text.toLowerCase().trim();
-  this.lastSpokenText = normalizedText;
-  this.recentlySpoken.add(normalizedText);
-  
-  // ✅ SEMPRE para o reconhecimento antes de falar
-  const wasRecognizing = this.isRecognizing;
-  if (this.isRecognizing) {
-    console.log('[SpeechManager] ⏸️ Pausando reconhecimento para falar');
-    await this.stopRecognition();
-  }
-  
-  this.isSpeaking = true;
-  
-  // ✅ Notifica que está falando
-  if (this.talkBackSpeakingCallback) {
-    this.talkBackSpeakingCallback(true);
-  }
-  
-  let callbackFired = false;
-  let restartTimeout: ReturnType<typeof setTimeout> | null = null;
-  
-  const handleSpeechComplete = () => {
-    if (callbackFired) return;
-    callbackFired = true;
+  async speak(text: string, callback?: () => void, pauseRecognition: boolean = true): Promise<void> {
+    console.log('[SpeechManager] 🔊 Speaking:', text, 'pauseRecognition:', pauseRecognition);
     
-    console.log('[SpeechManager] ✅ Speech finished');
-    this.isSpeaking = false;
+    const normalizedText = text.toLowerCase().trim();
+    this.lastSpokenText = normalizedText;
+    this.recentlySpoken.add(normalizedText);
     
-    // ✅ Notifica que parou de falar
-    if (this.talkBackSpeakingCallback) {
-      this.talkBackSpeakingCallback(false);
-    }
+    // ✅ ADICIONA VARIAÇÕES COMUNS para proteção extra contra eco
+    const variations = [
+      normalizedText,
+      normalizedText.replace(/\s+/g, ''), // sem espaços
+      ...normalizedText.split(' '), // palavras individuais
+    ];
     
-    if (restartTimeout) clearTimeout(restartTimeout);
-    
-    // ✅ Aguarda mais tempo antes de reativar
-    restartTimeout = setTimeout(() => {
-      this.recentlySpoken.delete(normalizedText);
-      this.lastSpokenText = null;
-      
-      // ✅ Só reinicia se estava reconhecendo antes E está habilitado
-      if (wasRecognizing && this.isEnabled) {
-        console.log('[SpeechManager] ▶️ Retomando reconhecimento após fala');
-        this.startRecognition('global');
-      }
-    }, 1000);
-    
-    if (callback) callback();
-  };
-  
-  return new Promise((resolve) => {
-    Speech.speak(text, {
-      language: 'pt-BR',
-      onDone: () => {
-        handleSpeechComplete();
-        resolve();
-      },
-      onStopped: () => {
-        if (!callbackFired) {
-          console.log('[SpeechManager] 🛑 Speech stopped');
-          this.isSpeaking = false;
-          if (this.talkBackSpeakingCallback) {
-            this.talkBackSpeakingCallback(false);
-          }
-          setTimeout(() => {
-            this.recentlySpoken.delete(normalizedText);
-            this.lastSpokenText = null;
-          }, 500);
-          if (callback) callback();
-          callbackFired = true;
-        }
-        resolve();
-      },
-      onError: () => {
-        if (!callbackFired) {
-          console.log('[SpeechManager] ❌ Speech error');
-          this.isSpeaking = false;
-          if (this.talkBackSpeakingCallback) {
-            this.talkBackSpeakingCallback(false);
-          }
-          this.recentlySpoken.delete(normalizedText);
-          this.lastSpokenText = null;
-          if (callback) callback();
-          callbackFired = true;
-        }
-        resolve();
+    variations.forEach(v => {
+      if (v.length > 2) { // Apenas palavras com 3+ caracteres
+        this.recentlySpoken.add(v);
       }
     });
-  });
-}
+    
+    console.log('[SpeechManager] 🛡️ Proteção de eco ativa para:', Array.from(this.recentlySpoken));
+    
+    // ✅ CONDICIONAL: Só pausa o reconhecimento se pauseRecognition === true
+    const wasRecognizing = this.isRecognizing;
+    if (pauseRecognition && this.isRecognizing) {
+      console.log('[SpeechManager] ⏸️ Pausando reconhecimento para falar');
+      await this.stopRecognition();
+    } else if (!pauseRecognition) {
+      console.log('[SpeechManager] 🎤 Mantendo reconhecimento ATIVO durante fala');
+    }
+    
+    this.isSpeaking = true;
+    
+    // ✅ Notifica que está falando
+    if (this.talkBackSpeakingCallback) {
+      this.talkBackSpeakingCallback(true);
+    }
+    
+    let callbackFired = false;
+    let cleanupTimeout: ReturnType<typeof setTimeout> | null = null;
+    
+    const handleSpeechComplete = () => {
+      if (callbackFired) return;
+      callbackFired = true;
+      
+      console.log('[SpeechManager] ✅ Speech finished');
+      this.isSpeaking = false;
+      
+      // ✅ Notifica que parou de falar
+      if (this.talkBackSpeakingCallback) {
+        this.talkBackSpeakingCallback(false);
+      }
+      
+      if (cleanupTimeout) clearTimeout(cleanupTimeout);
+      
+      // ✅ REATIVA IMEDIATAMENTE se pausou o reconhecimento
+      if (pauseRecognition && wasRecognizing && this.isEnabled) {
+        console.log('[SpeechManager] ▶️ Retomando reconhecimento IMEDIATAMENTE após fala');
+        this.startRecognition('global');
+      }
+      
+      if (normalizedText.length <= 15) { 
+          console.log('[SpeechManager] ⏳ Agendando limpeza RÁPIDA de eco (500ms) para frase curta');
+          
+          cleanupTimeout = setTimeout(() => {
+            variations.forEach(v => this.recentlySpoken.delete(v));
+            this.lastSpokenText = null;
+            console.log('[SpeechManager] 🧹 Cache de eco LIMPO (frase curta)');
+          }, 500); // 500ms é o "sweet spot"
 
-// ✅ ADICIONAR também o método stopSpeaking no speechManager.ts:
-stopSpeaking(): void {
-  Speech.stop();
-  this.isSpeaking = false;
-  this.recentlySpoken.clear();
-  this.lastSpokenText = null;
-}
+      } else {
+          // ✅ Mantém a limpeza em background para frases mais longas
+          const ecoCacheTime = normalizedText.length <= 10 ? 1500 : 800;
+          console.log(`[SpeechManager] 🛡️ Cache de eco ativo por ${ecoCacheTime}ms (frase longa)`);
+          
+          cleanupTimeout = setTimeout(() => {
+            variations.forEach(v => this.recentlySpoken.delete(v));
+            this.lastSpokenText = null;
+            console.log('[SpeechManager] 🧹 Cache de eco limpo');
+          }, ecoCacheTime);
+      }
+      
+      if (callback) callback();
+    };
+    
+    return new Promise((resolve) => {
+      Speech.speak(text, {
+        language: 'pt-BR',
+        onDone: () => {
+          handleSpeechComplete();
+          resolve();
+        },
+        onStopped: () => {
+          if (!callbackFired) {
+            console.log('[SpeechManager] 🛑 Speech stopped');
+            this.isSpeaking = false;
+            if (this.talkBackSpeakingCallback) {
+              this.talkBackSpeakingCallback(false);
+            }
+            setTimeout(() => {
+              this.recentlySpoken.delete(normalizedText);
+              this.lastSpokenText = null;
+            }, 200);
+            if (callback) callback();
+            callbackFired = true;
+          }
+          resolve();
+        },
+        onError: () => {
+          if (!callbackFired) {
+            console.log('[SpeechManager] ❌ Speech error');
+            this.isSpeaking = false;
+            if (this.talkBackSpeakingCallback) {
+              this.talkBackSpeakingCallback(false);
+            }
+            this.recentlySpoken.delete(normalizedText);
+            this.lastSpokenText = null;
+            if (callback) callback();
+            callbackFired = true;
+          }
+          resolve();
+        }
+      });
+    });
+  }
+
+  // ✅ Método para parar TTS
+  stopSpeaking(): void {
+    Speech.stop();
+    this.isSpeaking = false;
+    this.recentlySpoken.clear();
+    this.lastSpokenText = null;
+  }
   
   // ============================================
   // RECONHECIMENTO DE VOZ
@@ -176,10 +208,8 @@ stopSpeaking(): void {
       return;
     }
     
-    if (this.isSpeaking) {
-      console.log('[SpeechManager] Cannot start recognition while speaking');
-      return;
-    }
+    // ✅ REMOVIDO: Não verifica mais se está falando
+    // O reconhecimento pode ficar ativo mesmo durante fala
     
     // Limpa timeout pendente
     if (this.startTimeout) {
@@ -187,17 +217,10 @@ stopSpeaking(): void {
       this.startTimeout = null;
     }
     
-    // ✅ CORREÇÃO: Permite reiniciar mesmo se já estiver "reconhecendo"
-    // porque às vezes o flag está true mas o microfone não está realmente ativo
+    // ✅ Se já está reconhecendo, não faz nada
     if (this.isRecognizing) {
-      console.log('[SpeechManager] ⚠️ Already recognizing flag is true, but will restart anyway');
-      // Força parar primeiro
-      try {
-        ExpoSpeechRecognitionModule.stop();
-      } catch (e) {
-        // Ignora erros ao parar
-      }
-      this.isRecognizing = false;
+      console.log('[SpeechManager] ✅ Already recognizing, skipping restart');
+      return;
     }
     
     this.currentMode = mode;
@@ -205,12 +228,11 @@ stopSpeaking(): void {
       this.localCallback = callback;
     }
     
-    // Debounce para evitar múltiplas chamadas
+    // Debounce mínimo para evitar múltiplas chamadas simultâneas
     this.startTimeout = setTimeout(async () => {
       try {
         console.log(`[SpeechManager] 🎤 Starting recognition (${mode} mode)`);
         
-        // ✅ Use interimResults: true for local mode to capture full phrases
         ExpoSpeechRecognitionModule.start({
           lang: 'pt-BR',
           interimResults: mode === 'local',
@@ -227,7 +249,7 @@ stopSpeaking(): void {
         console.error('[SpeechManager] Start error:', error);
         this.isRecognizing = false;
       }
-    }, 100);
+    }, 10);
   }
   
   async stopRecognition(): Promise<void> {
@@ -248,17 +270,15 @@ stopSpeaking(): void {
     
     this.stopTimeout = setTimeout(() => {
       try {
-        console.log('[SpeechManager] Stopping recognition (temporary pause)');
+        console.log('[SpeechManager] Stopping recognition');
         ExpoSpeechRecognitionModule.stop();
         this.isRecognizing = false;
-        // ✅ DON'T set isEnabled = false! We want to restart after speaking
-        // Only clear the mode and callback
         this.currentMode = null;
         this.localCallback = null;
       } catch (error) {
         console.error('[SpeechManager] Stop error:', error);
       }
-    }, 100);
+    }, 50);
   }
   
   // ============================================
@@ -281,31 +301,48 @@ stopSpeaking(): void {
     const normalizedText = text.toLowerCase().trim();
     const now = Date.now();
     
-    // ✅ FIRST: Block duplicate results from speech recognition
+    // ✅ 1. Prevenção de duplicatas do motor de voz (Mantenha curto, ex: 1500ms)
     if (this.lastProcessedResult === normalizedText && (now - this.lastProcessedTime) < 1500) {
+      console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA:', text);
       return;
     }
     
-    // Update tracking
+    // Atualiza rastreamento
     this.lastProcessedResult = normalizedText;
     this.lastProcessedTime = now;
     
-    // ✅ SECOND: Ignore if this matches recently spoken text (echo prevention)
+    // ====================================================================
+    // 🚨 AQUI ESTÁ A MUDANÇA LÓGICA PEDIDA
+    // ====================================================================
+
+    // ✅ CASO ESPECIAL: O termo exato "escutando" (ignora se for SÓ ISSO)
+    if (normalizedText === 'escutando' || normalizedText === 'escutando.') {
+       console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA (Exato):', normalizedText);
+       return;
+    }
+
+    // ✅ 2. Verifica se a frase INTEIRA já foi falada recentemente (Eco Exato)
+    // Se o sistema disse "Desculpe não entendi" e o microfone ouve "Desculpe não entendi", ele bloqueia.
     if (this.recentlySpoken.has(normalizedText)) {
-      console.log('[SpeechManager] 🔇 IGNORING ECHO:', text);
+      console.log('[SpeechManager] 🔇 IGNORANDO ECO EXATO:', text);
       return;
     }
     
-    // ✅ THIRD: Check partial matches with last spoken text
-    if (this.lastSpokenText) {
+    // ❌ REMOVIDO: O bloco "THIRD" que verificava palavra por palavra.
+    // Isso causava o bug: se você dissesse "Escutando música", ele achava "Escutando"
+    // na lista negra e bloqueava tudo. Ao remover isso, resolvemos o problema.
+
+    // ✅ 3. Verifica similaridade APENAS se a frase for curta (para evitar falsos positivos)
+    if (this.lastSpokenText && normalizedText.length < 20) {
       const similarity = this.calculateSimilarity(normalizedText, this.lastSpokenText);
-      if (similarity > 0.8) {
-        console.log('[SpeechManager] 🔇 IGNORING SIMILAR ECHO:', text, `(${(similarity * 100).toFixed(0)}% match)`);
+      // Se for 90% igual ao que o robô acabou de falar, ignoramos.
+      if (similarity > 0.9) { 
+        console.log('[SpeechManager] 🔇 IGNORANDO ECO MUITO SIMILAR:', text);
         return;
       }
     }
     
-    console.log('[SpeechManager] ✅ Result:', text, 'Mode:', this.currentMode);
+    console.log('[SpeechManager] ✅ Result (Aceito):', text, 'Mode:', this.currentMode);
     
     // Se está em modo local, chama apenas o callback local
     if (this.currentMode === 'local' && this.localCallback) {
@@ -367,15 +404,15 @@ stopSpeaking(): void {
       setTimeout(() => {
         console.log('[SpeechManager] Auto-restarting global recognition after end');
         this.startRecognition('global');
-      }, 300);
+      }, 200); // ✅ REDUZIDO: De 300ms para 200ms
     }
   }
   
   handleError(error: string): void {
     const now = Date.now();
     
-    // ✅ Prevent duplicate error events within 500ms
-    if (now - this.lastErrorTime < 500) {
+    // ✅ Prevent duplicate error events within 200ms
+    if (now - this.lastErrorTime < 200) {
       return;
     }
     this.lastErrorTime = now;
@@ -391,7 +428,7 @@ stopSpeaking(): void {
     
     // Restart based on error type
     if (this.isEnabled && !this.isSpeaking) {
-      const delay = error === 'no-speech' ? 1000 : 1000;
+      const delay = error === 'no-speech' ? 500 : 500; // ✅ REDUZIDO: De 1000ms para 500ms
       setTimeout(() => {
         console.log('[SpeechManager] Restarting after error:', error);
         this.startRecognition('global');
@@ -406,9 +443,8 @@ stopSpeaking(): void {
     console.log('[SpeechManager] ✅ Enabling manager');
     this.isEnabled = true;
     
-    // ✅ CORREÇÃO: Sempre tenta iniciar, mesmo se o flag diz que já está ativo
-    if (!this.isSpeaking) {
-      console.log('[SpeechManager] 🎤 Forcing recognition start on enable()');
+    if (!this.isSpeaking && !this.isRecognizing) {
+      console.log('[SpeechManager] 🎤 Starting recognition on enable()');
       this.startRecognition('global');
     }
   }

@@ -1,13 +1,14 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { AudioModule } from 'expo-audio';
 import * as Speech from 'expo-speech';
+import SpeechManager from '../utils/speechManager';
 
 export function useAudioSetup() {
   const currentAudioPlayerRef = useRef<any>(null);
   const isSpeakingRef = useRef(false);
   const lastSpokenTextRef = useRef<string | null>(null);
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  
   // Configurar áudio no mount
   useEffect(() => {
     const configureAudio = async () => {
@@ -26,60 +27,6 @@ export function useAudioSetup() {
     configureAudio();
   }, []);
 
-  const stopCurrentAudio = useCallback(() => {
-    Speech.stop();
-    isSpeakingRef.current = false; // Reset flag when stopping
-    lastSpokenTextRef.current = null; // Reset last spoken text
-    console.log('[TTS] Stop requested.');
-  }, []);
-
-  const speak = useCallback((text: string, onDone?: () => void) => { // Accept optional onDone callback
-    // 1. Stop any previous speech immediately
-    stopCurrentAudio();
-
-    // (Optional) Check for immediate duplicates - though less critical now
-    if (text === lastSpokenTextRef.current) {
-       console.log('[Voice] Skipping immediate duplicate TTS:', text);
-       onDone?.(); // Call callback even if skipped, to unblock
-       return;
-    }
-    lastSpokenTextRef.current = text; // Set last spoken text *before* speaking
-
-    console.log('[TTS] Speaking:', text);
-    isSpeakingRef.current = true; // Set flag *before* calling speak
-
-    // 2. Call Speech.speak directly (removed setTimeout)
-    Speech.speak(text, {
-      language: 'pt-BR',
-      pitch: 1.0,
-      rate: 1.0,
-      onDone: () => {
-        if (isSpeakingRef.current) { // Check if still supposed to be speaking
-            isSpeakingRef.current = false;
-            lastSpokenTextRef.current = null; // Clear last text on completion
-            console.log('[Voice] TTS finished');
-            onDone?.(); // 3. Call the provided callback on success
-        }
-      },
-      onError: (error) => {
-        if (isSpeakingRef.current) { // Check flag
-            isSpeakingRef.current = false;
-            lastSpokenTextRef.current = null; // Clear last text on error
-            console.error('[Voice] TTS error:', error);
-            onDone?.(); // 4. Call the provided callback on error to unblock
-        }
-      },
-      onStopped: () => { // Handle interruption
-        if (isSpeakingRef.current) {
-            isSpeakingRef.current = false;
-            lastSpokenTextRef.current = null; // Clear last text if stopped early
-            console.log('[Voice] TTS stopped (interrupted?)');
-            onDone?.(); // 5. Call the provided callback if stopped to unblock
-        }
-      }
-    });
-  }, [stopCurrentAudio]);
-
   const registerAudioPlayer = useCallback((player: any) => {
     currentAudioPlayerRef.current = player;
     console.log('[Voice] Audio player registered');
@@ -88,6 +35,45 @@ export function useAudioSetup() {
   const unregisterAudioPlayer = useCallback(() => {
     currentAudioPlayerRef.current = null;
     console.log('[Voice] Audio player unregistered');
+  }, []);
+
+  // ✅ FUNÇÃO SPEAK QUE ESTAVA FALTANDO
+  const speak = useCallback((text: string, onDone?: () => void) => {
+    console.log('[useAudioSetup] Speaking:', text);
+    
+    // Para qualquer áudio em reprodução
+    if (currentAudioPlayerRef.current) {
+      try {
+        currentAudioPlayerRef.current.pause();
+      } catch (e) {
+        console.log('[useAudioSetup] No audio to pause');
+      }
+    }
+
+    // ✅ Define se deve pausar o reconhecimento baseado no texto
+    const shouldPauseRecognition = text.toLowerCase().trim() !== 'escutando';
+    
+    console.log('[useAudioSetup] pauseRecognition:', shouldPauseRecognition);
+
+    // Usa o SpeechManager para falar
+    SpeechManager.speak(text, onDone, shouldPauseRecognition);
+  }, []);
+
+  // ✅ FUNÇÃO PARA PARAR ÁUDIO
+  const stopCurrentAudio = useCallback(() => {
+    console.log('[useAudioSetup] Stopping current audio');
+    
+    // Para o áudio player se existir
+    if (currentAudioPlayerRef.current) {
+      try {
+        currentAudioPlayerRef.current.pause();
+      } catch (e) {
+        console.log('[useAudioSetup] No audio to stop');
+      }
+    }
+
+    // Para o TTS
+    SpeechManager.stopSpeaking();
   }, []);
 
   // Cleanup

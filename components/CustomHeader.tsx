@@ -7,10 +7,7 @@ import {
   View, 
   Text, 
   TouchableOpacity, 
-  StyleSheet, 
-  ActivityIndicator,
-  findNodeHandle,
-  AccessibilityInfo,
+  StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -20,9 +17,6 @@ import { usePathname } from 'expo-router';
 import { LayoutChangeEvent } from 'react-native';
 import { useAuth } from '../components/AuthContext';
 import { useSpeech } from '../hooks/useSpeech';
-import { useIsFocused } from '@react-navigation/native';
-import { useTalkBackState } from '../hooks/useTalkBackState';
-import SpeechManager from '../utils/speechManager';
 import LogoutModal from '../components/LogoutModal';
 
 interface CustomHeaderProps {
@@ -43,20 +37,12 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     const insets = useSafeAreaInsets();
     const { cores, temaAplicado, getFontSize, getIconSize } = useTheme();
     const pathname = usePathname();
-    const isFocused = useIsFocused();
     const { user, logout } = useAuth(); 
     const tituloRef = useRef(null);
-
-    const { isActive: isTalkBackActive, isSpeaking: isTalkBackSpeaking, markAsSpeaking } = useTalkBackState();
 
     const [logoutModalVisible, setLogoutModalVisible] = useState(false);
     const [step, setStep] = useState<LogoutStepType>('idle');
     const logoutTimeoutRef = useRef<any>(null);
-    const focusTimeoutRef = useRef<any>(null);
-    
-    // ✅ NOVO: Controla se já anunciou para este pathname
-    const lastAnnouncedPathRef = useRef<string>('');
-    const isAnnouncingRef = useRef(false);
 
     const { 
       speak, 
@@ -71,60 +57,7 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
       mode: 'local',
     });
 
-    // ✅ Expõe método para focar no título externamente
-    useImperativeHandle(ref, () => ({
-      focusTitle: () => {
-        if (tituloRef.current && !isAnnouncingRef.current) {
-          const reactTag = findNodeHandle(tituloRef.current);
-          if (reactTag) {
-            console.log('[CustomHeader] 🎯 Foco externo solicitado no título');
-            isAnnouncingRef.current = true;
-            AccessibilityInfo.setAccessibilityFocus(reactTag);
-            
-            const textLength = title.length;
-            const estimatedDuration = Math.max(2500, textLength * 60);
-            markAsSpeaking(estimatedDuration);
-            
-            setTimeout(() => {
-              isAnnouncingRef.current = false;
-            }, estimatedDuration);
-          }
-        }
-      }
-    }));
-
-    useEffect(() => {
-      SpeechManager.setTalkBackSpeakingCallback((isSpeaking) => {
-        if (isSpeaking) {
-          const estimatedDuration = 3000;
-          markAsSpeaking(estimatedDuration);
-        }
-      });
-      
-      return () => {
-        SpeechManager.setTalkBackSpeakingCallback(() => {});
-      };
-    }, [markAsSpeaking]);
-
-    // ✅ Cleanup ao desmontar
-    useEffect(() => {
-      return () => {
-        if (logoutTimeoutRef.current) {
-          clearTimeout(logoutTimeoutRef.current);
-        }
-        if (focusTimeoutRef.current) {
-          clearTimeout(focusTimeoutRef.current);
-        }
-        isAnnouncingRef.current = false;
-      };
-    }, []);
-
     const toggleMicrofone = () => {
-      if (isTalkBackSpeaking) {
-        AccessibilityInfo.announceForAccessibility("Aguarde o anúncio terminar.");
-        return;
-      }
-
       if (isListening) {
         stopListening();
         speak("Microfone desativado.");
@@ -146,15 +79,6 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
       const texto = tutoriais[pathname] || 'Este é o aplicativo.';
       
       const estimatedDuration = Math.max(3000, texto.length * 60);
-      markAsSpeaking(estimatedDuration);
-      
-      if (isTalkBackActive) {
-        AccessibilityInfo.announceForAccessibility(texto);
-      } else {
-        import('expo-speech').then(Speech => {
-          Speech.speak(texto, { language: 'pt-BR' });
-        });
-      }
     };
 
     useEffect(() => {
@@ -377,13 +301,11 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
             style={styles.iconButton}
             accessibilityLabel={isListening ? "Desativar Microfone" : "Ativar Microfone"}
             accessibilityRole="button"
-            disabled={isTalkBackSpeaking}
           >
             <Ionicons 
               name={isListening ? "mic" : "mic-off"}
               size={getIconSize('medium')} 
-              color={isTalkBackSpeaking ? '#666' : (isListening ? cores.texto : cores.icone)}
-              style={{ opacity: isTalkBackSpeaking ? 0.5 : 1 }}
+              color={cores.icone}
             />
           </TouchableOpacity>
         </View>

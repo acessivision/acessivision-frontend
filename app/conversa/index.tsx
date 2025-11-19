@@ -6,11 +6,12 @@ import {
   TextInput, 
   TouchableOpacity, 
   StyleSheet, 
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   Image,
-  Alert
+  Alert,
+  Keyboard,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
@@ -19,7 +20,6 @@ import { useSpeech } from '../../hooks/useSpeech';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import firestore from '@react-native-firebase/firestore';
-import { useTalkBackState } from '../../hooks/useTalkBackState';
 
 const SERVER_URL = 'https://www.acessivision.com.br/upload';
 
@@ -45,14 +45,12 @@ const ConversationScreen: React.FC = () => {
   const { cores, getIconSize } = useTheme();
   const flatListRef = useRef<FlatList>(null);
 
-  // ✅ NOVO: Estado para controlar visibilidade do botão voltar para o TalkBack
-  const { isActive: isTalkBackActive } = useTalkBackState();
-
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   
   const recognitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRecognizedTextRef = useRef<string>('');
@@ -79,6 +77,32 @@ const ConversationScreen: React.FC = () => {
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const isFirstLoadRef = useRef<boolean>(true);
   const shouldSpeakNextMessageRef = useRef<boolean>(false);
+
+  // ===================================================================
+  // LISTENER PARA TECLADO - AGORA REALMENTE USADO!
+  // ===================================================================
+  useEffect(() => {
+    const keyboardWillShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        console.log('[Teclado] ⬆️ Teclado aberto - Altura:', e.endCoordinates.height);
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+
+    const keyboardWillHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        console.log('[Teclado] ⬇️ Teclado fechado');
+        setKeyboardHeight(0);
+      }
+    );
+
+    return () => {
+      keyboardWillShowListener.remove();
+      keyboardWillHideListener.remove();
+    };
+  }, []);
 
   // ===================================================================
   // ATIVAR FLAG QUANDO RECEBER PARÂMETRO speakLastMessage
@@ -507,16 +531,12 @@ const ConversationScreen: React.FC = () => {
   };
 
   // ===================================================================
-  // RENDER
+  // RENDER - AGORA USA keyboardHeight!
   // ===================================================================
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: cores.fundo }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      <View style={[styles.container, { backgroundColor: cores.fundo }]}>
-        {/* ✅ BOTÃO VOLTAR COM CONTROLE DE ACESSIBILIDADE */}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: cores.barrasDeNavegacao }]}>
+      <View style={[styles.outerContainer, { backgroundColor: cores.fundo }]}>
+        {/* Header fixo */}
         <TouchableOpacity 
           onPress={handleGoBack}
           style={[styles.header, { backgroundColor: cores.barrasDeNavegacao }]}
@@ -533,12 +553,18 @@ const ConversationScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
 
+        {/* Lista de mensagens com paddingBottom dinâmico */}
         <FlatList
           ref={flatListRef}
-          style={{ paddingHorizontal: 10 }}
+          style={styles.flatList}
+          contentContainerStyle={[
+            styles.flatListContent,
+            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 90 : 90 }
+          ]}
           data={messages}
           keyExtractor={item => item.id}
           accessible={false}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
             const senderLabel = item.sender === 'user' ? "Sua mensagem" : "Acessivision";
             const imageDescription = item.imageUri ? "Contém imagem." : ""; 
@@ -574,8 +600,15 @@ const ConversationScreen: React.FC = () => {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
+        {/* Indicador de escuta - posição absoluta ajustada pelo teclado */}
         {micEnabled && recognizedText && (
-          <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
+          <View style={[
+            styles.listeningIndicator, 
+            { 
+              backgroundColor: cores.barrasDeNavegacao,
+              bottom: keyboardHeight > 0 ? keyboardHeight + 90 : 90 
+            }
+          ]}>
             <ActivityIndicator size="small" color={cores.texto} />
             <Text style={[styles.listeningText, { color: cores.texto }]}>
               "{recognizedText}"
@@ -583,7 +616,15 @@ const ConversationScreen: React.FC = () => {
           </View>
         )}
 
-        <View style={[styles.inputContainer, { backgroundColor: cores.barrasDeNavegacao }]}
+        {/* Container de input - posição absoluta ajustada pelo teclado */}
+        <View 
+          style={[
+            styles.inputContainer, 
+            { 
+              backgroundColor: cores.barrasDeNavegacao,
+              bottom: keyboardHeight 
+            }
+          ]}
           accessible={false}
         >
           <TouchableOpacity 
@@ -606,6 +647,7 @@ const ConversationScreen: React.FC = () => {
             onChangeText={setInputText}
             multiline
             editable={!micEnabled}
+            maxLength={500}
           />
 
           <TouchableOpacity 
@@ -640,13 +682,16 @@ const ConversationScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  safeArea: {
+    flex: 1,
+  },
+  outerContainer: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -661,6 +706,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '600',
+  },
+  flatList: {
+    flex: 1,
+  },
+  flatListContent: {
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    flexGrow: 1,
   },
   messageBubble: {
     maxWidth: '80%',
@@ -685,13 +738,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   listeningIndicator: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    marginHorizontal: 10,
-    marginBottom: 8,
     borderRadius: 8,
   },
   listeningText: {
@@ -700,26 +754,30 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   inputContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     alignItems: 'flex-end', 
     paddingHorizontal: 8,
     paddingVertical: 8,
-    minHeight: 70,
-    marginBottom: 10,
-    marginLeft: 5,
+    paddingBottom: Platform.OS === 'ios' ? 8 : 12,
+    minHeight: 80,
   },
   imagePickerButton: { 
-    width: 90,
-    height: 90,
+    width: 60,
+    height: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#333', 
+    backgroundColor: '#333',
+    borderRadius: 8,
     marginRight: 8,
     marginBottom: 4,
   },
   activeImagePreview: { 
-    width: 90,
-    height: 90,
+    width: 60,
+    height: 60,
+    borderRadius: 8,
   },
   input: { 
     flex: 1, 
@@ -727,7 +785,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 22,
-    maxHeight: 120,
+    maxHeight: 100,
     marginBottom: 4,
   },
   micButton: {

@@ -1,5 +1,5 @@
 // ===================================================================
-// CORREÇÃO: useIntentHandler.ts - Navegação coordenada com TalkBack
+// CORREÇÃO: useIntentHandler.ts - Mantém microfone ativo durante navegação
 // ===================================================================
 
 import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
@@ -70,47 +70,36 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     }
   }, []);
 
-  // ✅ MODIFICADO: Reinicia listener com delay adaptativo
+  // ✅ MODIFICADO: Reinicia listener sem desabilitar
   const restartListeningAfterSpeak = useCallback(async () => {
-    console.log("[Intent] Ação/Fala concluída, verificando TalkBack...");
+    console.log("[Intent] Ação/Fala concluída, retornando ao estado waiting_wake...");
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
     setRecognizedText("");
     
-    const isTalkBackActive = await checkTalkBackActive();
-    const delay = isTalkBackActive ? 1500 : 800; // ✅ Reduzido: 1.5s com TalkBack
+    // ✅ NÃO chama startListening() - o SpeechManager já está ativo
+    console.log("[Intent] Listener continua ativo em background.");
+  }, [setVoiceState, setRecognizedText, isBusyRef]);
     
-    console.log(`[Intent] TalkBack: ${isTalkBackActive ? 'ATIVO' : 'INATIVO'}, delay: ${delay}ms`);
-    
-    setTimeout(() => {
-      console.log("[Intent] Reiniciando listener agora.");
-      startListening();
-    }, delay);
-  }, [startListening, setVoiceState, setRecognizedText, isBusyRef, checkTalkBackActive]);
-    
-  // ✅ MODIFICADO: Navegação coordenada com TalkBack
+  // ✅ MODIFICADO: Navegação SEM desabilitar microfone
   const checkAndNavigate = useCallback(async (targetPath: AppPath, alreadyMessage: string) => {
     const now = Date.now();
     
     if (lastNavigationRef.current?.route === targetPath && now - lastNavigationRef.current.timestamp < 5000) {
       console.log(`[Voice] Skipping duplicate navigation to ${targetPath}`);
-      stopListening();
       speak(alreadyMessage, restartListeningAfterSpeak);
       return false;
     }
     
     if (pathname === targetPath || pathname === `${targetPath}/`) {
-      stopListening();
       speak(alreadyMessage, restartListeningAfterSpeak);
       return false;
     }
     
     console.log(`[Voice] 🚀 Iniciando navegação para ${targetPath}`);
     
-    // ✅ 1. Para reconhecimento
-    console.log('[Voice] 🔇 Desabilitando reconhecimento COMPLETAMENTE');
-    SpeechManager.disable();
-    stopListening();
+    // ✅ 1. REMOVIDO: Não desabilita mais o SpeechManager
+    // O microfone continua ativo em background
     
     // ✅ 2. Verifica se TalkBack está ativo
     const isTalkBackActive = await checkTalkBackActive();
@@ -124,28 +113,27 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     if (isTalkBackActive) {
       // Aguarda: navegação (500ms) + CustomHeader forçar foco (500ms) + TalkBack falar (~2-3s)
       console.log('[Voice] ⏳ Aguardando navegação e anúncio do TalkBack...');
-      await new Promise(resolve => setTimeout(resolve, 3500)); // ✅ 3.5 segundos
+      await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ REDUZIDO: De 3.5s para 3s
     } else {
       // Sem TalkBack, aguarda apenas navegação
-      await new Promise(resolve => setTimeout(resolve, 800));
+      await new Promise(resolve => setTimeout(resolve, 600)); // ✅ REDUZIDO: De 800ms para 600ms
     }
     
-    // ✅ 5. AGORA SIM reativa reconhecimento
-    console.log('[Voice] ✅ Reativando reconhecimento');
+    // ✅ 5. Retorna ao estado waiting_wake (mas mantém reconhecimento ativo)
+    console.log('[Voice] ✅ Navegação concluída, retornando ao estado waiting_wake');
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
     setRecognizedText("");
-    SpeechManager.enable();
+    // ✅ NÃO reativa - já está ativo!
     
     return true;
-  }, [pathname, router, speak, stopListening, restartListeningAfterSpeak, isBusyRef, setVoiceState, setRecognizedText, checkTalkBackActive]);
+  }, [pathname, router, speak, restartListeningAfterSpeak, isBusyRef, setVoiceState, setRecognizedText, checkTalkBackActive]);
 
   const executeIntent = useCallback(async (intent: string, originalText: string, setPendingSpokenText?: (text: string) => void, clearPending?: () => void) => {
     const now = Date.now();
     
     if (lastExecutedIntentRef.current?.intent === intent && now - lastExecutedIntentRef.current.timestamp < 5000) {
       console.log(`[Intent] Skipping duplicate execution of ${intent}`);
-      stopListening();
       speak("Comando já executado recentemente.", restartListeningAfterSpeak);
       return;
     }
@@ -162,8 +150,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
 
     // ATIVAR MICROFONE
     if (intent === 'ativar_microfone') {
-      stopListening();
-      
       if (pathname.startsWith('/conversa')) {
         console.log('[Intent] 🎤 Ativando microfone na conversa');
         if (onActivateMic) {
@@ -182,8 +168,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
 
     // TIRAR FOTO
     if (intent === 'tirar_foto') {
-      stopListening();
-      
       setVoiceState('waiting_wake');
       setRecognizedText('');
       isBusyRef.current = false;
@@ -199,11 +183,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       else {
         if (setPendingSpokenText) setPendingSpokenText(originalText);
         const navigated = await checkAndNavigate('/tabs', "Indo para a câmera.");
-        if (!navigated) { 
-          setTimeout(() => {
-            startListening();
-          }, 1500);
-        }
+        // ✅ REMOVIDO: Não precisa mais reativar manualmente
       }
       return;
     }
@@ -212,7 +192,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     if (intent === 'abrir_camera') {
       if (pathname.startsWith('/conversa') && onOpenCamera) {
         console.log('[Intent] 📷 Abrindo câmera na conversa (sem tirar foto)');
-        stopListening();
         onOpenCamera();
         return;
       }
@@ -234,18 +213,17 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         
       case 'ir_para_login':
         user ? speak(`Você já está logado como: ${user.email || 'usuário'}.`, restartListeningAfterSpeak) : await checkAndNavigate('/login', "Você já está na tela de login.");
-
         break;
 
       case 'fazer_logout':
-        stopListening();
-        speak("Encerrando a sessão...", restartListeningAfterSpeak);
-        await logout();
-        router.replace('/login');
+        speak("Encerrando a sessão...", async () => {
+          await logout();
+          router.replace('/login');
+          restartListeningAfterSpeak();
+        });
         return;
 
       case 'mudar_tema_claro':
-        stopListening();
         console.log(`[Theme] Current theme: ${temaAplicado}, requested: claro`);
         
         if (temaAplicado === 'dark') { 
@@ -260,7 +238,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
 
       case 'mudar_tema_escuro':
-        stopListening();
         console.log(`[Theme] Current theme: ${temaAplicado}, requested: escuro`);
         
         if (temaAplicado === 'light') { 
@@ -275,41 +252,33 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
 
       case 'tutorial':
-        stopListening();
         speak("Mostrando o tutorial...", restartListeningAfterSpeak);
         return;
         
       case 'explicar_tela':
         const texto = tutoriais[pathname] || tutoriais['/conversa'] || 'Este é o aplicativo...';
-        stopListening();
         speak(texto, restartListeningAfterSpeak);
         return;
         
       case 'excluir_conta':
-        stopListening();
         speak("Iniciando exclusão de conta...", restartListeningAfterSpeak);
         return;
 
       case 'cadastro':
-        stopListening();
         await checkAndNavigate('/login', "Você já está na tela de login.");
         break;
         
       case 'cancelar_assinatura':
-        stopListening();
         speak('Cancelamento de assinatura ainda não implementado', restartListeningAfterSpeak);
         return;
 
       default:
-        stopListening();
         speak("Comando não reconhecido.", restartListeningAfterSpeak);
         return;
     }
   }, [ 
     temaAplicado, 
     mudaTema, 
-    startListening, 
-    stopListening, 
     setVoiceState, 
     setRecognizedText,
     router, 
@@ -320,7 +289,9 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     isBusyRef,
     onActivateMic, 
     onTakePhoto, 
-    onOpenCamera 
+    onOpenCamera,
+    user,
+    logout
   ]);
 
   const getIntentDisplayName = useCallback((intent: string): string => {
@@ -344,9 +315,9 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const processCommand = useCallback((
     spokenText: string, 
     voiceState: string,
-    stopCurrentAudio: () => void, 
-    setPendingIntent: (intent: string) => void, 
-    setPendingOriginalText: (text: string) => void, 
+    stopCurrentAudio?: () => void, 
+    setPendingIntent?: (intent: string) => void, 
+    setPendingOriginalText?: (text: string) => void, 
     setPendingSpokenText?: (text: string) => void, 
     clearPending?: () => void
   ) => {
@@ -391,26 +362,31 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       
       if (voiceState === "listening_command") {
         console.log('[Voice] ⚠️ Wake word in listening_command - resetting to waiting_wake');
-        stopCurrentAudio();
-        stopListening();
+        if (stopCurrentAudio) stopCurrentAudio();
         isBusyRef.current = false;
         
-        setTimeout(() => {
-          setVoiceState("waiting_wake");
-          setRecognizedText("");
-          startListening();
-        }, 1000);
+        // ✅ SIMPLIFICADO: Apenas reseta o estado, não para/reinicia listener
+        setVoiceState("waiting_wake");
+        setRecognizedText("");
         return;
       }
       
       if (voiceState === "waiting_wake") {
-        stopCurrentAudio();
-        speak("Escutando", () => {
+        if (stopCurrentAudio) stopCurrentAudio();
+        
+        // ✅ Verifica se speak está disponível
+        if (speak) {
+          speak("Escutando", () => {
+            setVoiceState("listening_command");
+            setRecognizedText("");
+            isBusyRef.current = false;
+          });
+        } else {
+          console.warn('[Voice] speak function not available');
           setVoiceState("listening_command");
           setRecognizedText("");
-          startListening();
           isBusyRef.current = false;
-        });
+        }
         return;
       }
     }
@@ -419,15 +395,12 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       console.log('[Voice] 🛑 Stop command detected:', trimmedText);
       lastProcessedCommandRef.current = trimmedText;
       lastProcessedTimeRef.current = now;
-      stopCurrentAudio();
-      stopListening();
+      if (stopCurrentAudio) stopCurrentAudio();
       isBusyRef.current = false;
       
-      setTimeout(() => {
-        setVoiceState("waiting_wake");
-        setRecognizedText("");
-        startListening();
-      }, 500);
+      // ✅ SIMPLIFICADO: Apenas reseta o estado
+      setVoiceState("waiting_wake");
+      setRecognizedText("");
       return;
     }
     
@@ -449,22 +422,29 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         const confidencePercent = (prediction.confidence * 100).toFixed(0);
         console.log(`[Intent] "${trimmedText}" -> ${prediction.intent} (${confidencePercent}%)`);
         setRecognizedText(trimmedText);
-        
-        stopListening(); 
 
         if (prediction.notUnderstood) {
-          speak("Desculpe, não entendi.", restartListeningAfterSpeak); 
+          if (speak) {
+            speak("Desculpe, não entendi.", restartListeningAfterSpeak);
+          } else {
+            console.warn('[Voice] speak function not available');
+            restartListeningAfterSpeak();
+          }
         } else {
           executeIntent(prediction.intent, trimmedText, setPendingSpokenText, clearPending);
         }
       }
     } catch (error) {
       console.error('[Voice] Error processing input:', error);
-      stopListening();
-      speak("Erro ao processar comando.", restartListeningAfterSpeak);
+      if (speak) {
+        speak("Erro ao processar comando.", restartListeningAfterSpeak);
+      } else {
+        console.warn('[Voice] speak function not available');
+        restartListeningAfterSpeak();
+      }
     }
 
-  }, [speak, stopListening, startListening, setVoiceState, setRecognizedText, executeIntent, restartListeningAfterSpeak]);
+  }, [speak, setVoiceState, setRecognizedText, executeIntent, restartListeningAfterSpeak]);
 
   return {
     executeIntent,

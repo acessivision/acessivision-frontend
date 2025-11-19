@@ -55,6 +55,9 @@ const HistoryScreen: React.FC = () => {
 
   const deleteModalTitleRef = useRef(null);
 
+  const isFocused = useIsFocused();
+  const screenTitle = 'Histórico de Conversas';
+
   // ✅ Usa o novo hook de voz
   const { 
     speak, 
@@ -68,6 +71,16 @@ const HistoryScreen: React.FC = () => {
     enabled: isScreenFocused && (modalVisible || !!conversaParaExcluir), // ✅ Ativa quando modal está aberto OU esperando confirmação
     mode: 'local',
   });
+
+  useEffect(() => {
+    if (isFocused) {
+      const timer = setTimeout(() => {
+        AccessibilityInfo.announceForAccessibility(screenTitle);
+      }, 500); // 500ms é um bom ponto de partida
+
+      return () => clearTimeout(timer);
+    }
+  }, [isFocused, screenTitle]);
 
   // ===================================================================
   // BUSCAR CONVERSAS DO FIRESTORE
@@ -396,46 +409,60 @@ const HistoryScreen: React.FC = () => {
   };
 
   const fecharModal = () => {
-    stopSpeaking();
-    
-    setModalVisible(false);
-    setTituloInput('');
-    setStep('idle');
-    setIsSaving(false);
-    setRecognizedText('');
-    tituloProcessadoRef.current = false;
-    
-    if (tituloTimeoutRef.current) {
-      clearTimeout(tituloTimeoutRef.current);
-      tituloTimeoutRef.current = null;
-    }
-    
-    stopListening();
-    
-    setTimeout(() => {
-      startListening(false);
-    }, 500);
-  };
+  console.log('[Histórico] 🚪 Fechando modal de criação');
+  stopSpeaking();
+  stopListening(); // ✅ Para o reconhecimento
+  
+  setModalVisible(false);
+  setTituloInput('');
+  setStep('idle');
+  setIsSaving(false);
+  setRecognizedText('');
+  tituloProcessadoRef.current = false;
+  
+  if (tituloTimeoutRef.current) {
+    clearTimeout(tituloTimeoutRef.current);
+    tituloTimeoutRef.current = null;
+  }
+  
+  // ✅ Desativa o reconhecimento local explicitamente
+  setShouldListenLocally(false);
+};
 
-  // Cancelar exclusão programaticamente
-  const cancelarExclusao = () => {
-    console.log('[Histórico] Cancelando exclusão manualmente');
-    stopSpeaking();
-    stopListening();
-    
-    if (confirmacaoTimeoutRef.current) {
-      clearTimeout(confirmacaoTimeoutRef.current);
-      confirmacaoTimeoutRef.current = null;
-    }
-    
-    setConversaParaExcluir(null);
-    setStep('idle');
-    setRecognizedText('');
-    
-    setTimeout(() => {
-      startListening(false);
-    }, 500);
-  };
+// Cancelar exclusão programaticamente
+const cancelarExclusao = () => {
+  console.log('[Histórico] ❌ Cancelando exclusão manualmente');
+  stopSpeaking();
+  stopListening(); // ✅ Para o reconhecimento
+  
+  if (confirmacaoTimeoutRef.current) {
+    clearTimeout(confirmacaoTimeoutRef.current);
+    confirmacaoTimeoutRef.current = null;
+  }
+  
+  setConversaParaExcluir(null);
+  setStep('idle');
+  setRecognizedText('');
+  
+  // ✅ Desativa o reconhecimento local explicitamente
+  setShouldListenLocally(false);
+};// HistoryScreen.tsx - Escuta APENAS quando modal está ativo
+
+// ✅ Estado que controla quando o reconhecimento local deve estar ativo
+const [shouldListenLocally, setShouldListenLocally] = useState(false);
+
+// ✅ Efeito que sincroniza o estado de escuta com modals
+useEffect(() => {
+  const hasActiveModal = modalVisible || !!conversaParaExcluir;
+  
+  if (hasActiveModal && !shouldListenLocally) {
+    console.log('[Histórico] ✅ Ativando escuta local - modal aberto');
+    setShouldListenLocally(true);
+  } else if (!hasActiveModal && shouldListenLocally) {
+    console.log('[Histórico] ❌ Desativando escuta local - modal fechado');
+    setShouldListenLocally(false);
+  }
+}, [modalVisible, conversaParaExcluir, shouldListenLocally]);// ✅ Corrigido: useSpeech só ativa quando modal está aberto
 
   // ===================================================================
   // ESTILOS
