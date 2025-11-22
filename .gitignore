@@ -40,10 +40,10 @@ yarn-error.*
 acessivision-firebase-adminsdk.json
 google-services.json
 
-assets/models/testarModelo.ts
-assets/models/package.json
-assets/models/package-lock.json
-assets/models/tsconfig.json
-assets/models/ios/
-assets/models/android/
-assets/models/app.json
+# assets/models/testarModelo.ts
+# assets/models/package.json
+# assets/models/package-lock.json
+# assets/models/tsconfig.json
+# assets/models/ios/
+# assets/models/android/
+# assets/models/app.json
