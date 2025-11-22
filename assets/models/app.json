@@ -1,8 +1,0 @@
-{
-  "android": {
-    "package": "com.acessivision.models"
-  },
-  "ios": {
-    "bundleIdentifier": "com.acessivision.models"
-  }
-}

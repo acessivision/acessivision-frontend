@@ -6,9 +6,8 @@ import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
 import { useRouter, usePathname, Href } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
-import SpeechManager from '../utils/speechManager';
 import { useAuth } from '../components/AuthContext';
-import { useVoiceCommands } from '../components/VoiceCommandContext';
+import { tutoriaisDasTelas } from '../utils/tutoriais';
 
 type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/login' | '/conversa';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
@@ -24,16 +23,9 @@ interface UseIntentHandlerProps {
   onActivateMic?: () => void;
   onTakePhoto?: (question: string) => void;
   onOpenCamera?: () => void;
+  onSendAudio?: () => void;
   setPendingContext?: (context: { mode?: string; conversaId?: string } | null) => void;
 }
-
-const tutoriais: Record<string, string> = {
-  '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
-  '/tabs/menu': 'Aqui você pode ver as páginas do aplicativo e ações',
-  '/login': 'Diga entrar com google para usar seu gmail salvo no celular.',
-  '/tabs': 'Para enviar uma foto, diga "Escute" e faça uma pergunta.',
-  '/conversa': 'Nesta tela você pode conversar sobre fotos. Diga "ativar microfone" para fazer perguntas por voz.',
-};
 
 export function useIntentHandler(props: UseIntentHandlerProps) {
   const { 
@@ -47,6 +39,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     onActivateMic,
     onTakePhoto,
     onOpenCamera,
+    onSendAudio,
     setPendingContext,
   } = props;
   
@@ -148,6 +141,24 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       }
     }
 
+    // ENVIAR ÁUDIO
+    if (intent === 'enviar_audio') {
+      if (pathname.startsWith('/conversa')) {
+        console.log('[Intent] 🎙️ Ativando microfone para enviar áudio na conversa');
+        if (onSendAudio) {
+          speak("Ativando microfone para gravar mensagem.", () => {
+            onSendAudio();
+            restartListeningAfterSpeak();
+          });
+        } else {
+          speak("Microfone ativado.", restartListeningAfterSpeak);
+        }
+      } else {
+        speak("O envio de áudio só pode ser feito na tela de conversa.", restartListeningAfterSpeak);
+      }
+      return;
+    }
+
     // ATIVAR MICROFONE
     if (intent === 'ativar_microfone') {
       if (pathname.startsWith('/conversa')) {
@@ -183,7 +194,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       else {
         if (setPendingSpokenText) setPendingSpokenText(originalText);
         const navigated = await checkAndNavigate('/tabs', "Indo para a câmera.");
-        // ✅ REMOVIDO: Não precisa mais reativar manualmente
       }
       return;
     }
@@ -256,7 +266,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
         
       case 'explicar_tela':
-        const texto = tutoriais[pathname] || tutoriais['/conversa'] || 'Este é o aplicativo...';
+        const texto = tutoriaisDasTelas[pathname] || tutoriaisDasTelas['/conversa'] || 'Este é o aplicativo...';
         speak(texto, restartListeningAfterSpeak);
         return;
         
@@ -290,12 +300,14 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     onActivateMic, 
     onTakePhoto, 
     onOpenCamera,
+    onSendAudio,
     user,
     logout
   ]);
 
   const getIntentDisplayName = useCallback((intent: string): string => {
     const intentNames: { [key: string]: string } = {
+      'enviar_audio': 'enviar uma mensagem de áudio',
       'tirar_foto': 'tirar uma foto',
       'abrir_camera': 'abrir a câmera',
       'ativar_microfone': 'ativar o microfone',

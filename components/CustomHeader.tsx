@@ -18,6 +18,7 @@ import { LayoutChangeEvent } from 'react-native';
 import { useAuth } from '../components/AuthContext';
 import { useSpeech } from '../hooks/useSpeech';
 import LogoutModal from '../components/LogoutModal';
+import { tutoriaisDasTelas } from '../utils/tutoriais';
 
 interface CustomHeaderProps {
   title: string;
@@ -67,18 +68,10 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
       }
     };
 
-    const tutoriais: Record<string, string> = {
-      '/tabs/historico': 'Aqui você pode ver suas conversas salvas.',
-      '/tabs/menu': 'Aqui você pode ajustar as preferências do aplicativo.',
-      '/tabs/editarPerfil': 'Nesta tela você pode atualizar suas informações.',
-      '/login': 'Diga entrar com google para usar seu gmail.',
-      '/tabs': 'Para enviar uma foto, diga "Escuta" e faça uma pergunta.',
-    };
-
     const handleAbrirTutorial = () => {
-      const texto = tutoriais[pathname] || 'Este é o aplicativo.';
+      const texto = tutoriaisDasTelas[pathname] || 'Este é o aplicativo.';
       
-      const estimatedDuration = Math.max(3000, texto.length * 60);
+      speak(texto);
     };
 
     useEffect(() => {

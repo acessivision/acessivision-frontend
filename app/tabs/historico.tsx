@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { 
   FlatList, 
   StyleSheet, 
@@ -20,7 +20,6 @@ import { useIsFocused } from '@react-navigation/native';
 import { toTitleCase } from '../../utils/toTitleCase';
 import { useSpeech } from '../../hooks/useSpeech';
 
-// ✅ Imports modulares do Firebase v9+
 import { getFirestore, collection, query, where, orderBy, onSnapshot, doc, getDocs, writeBatch, deleteDoc, updateDoc, addDoc, serverTimestamp, setDoc, arrayUnion, arrayRemove, Timestamp } from '@react-native-firebase/firestore';
 
 interface Conversation {
@@ -35,6 +34,11 @@ type StepType = 'aguardandoPalavraTitulo' | 'aguardandoTitulo' | 'aguardandoConf
 const HistoryScreen: React.FC = () => {
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [isSearchListening, setIsSearchListening] = useState(false);
+  const [searchStep, setSearchStep] = useState<'idle' | 'aguardandoPalavraPesquisa' | 'aguardandoPesquisa'>('idle');
+  const searchProcessadoRef = useRef(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { cores, getFontSize, getIconSize } = useTheme();
   const { user, isLoading: isAuthLoading } = useAuth();
   
@@ -45,6 +49,15 @@ const HistoryScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState<StepType>('idle');
 
+  // ✅ Estados para edição de conversa
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [conversaParaEditar, setConversaParaEditar] = useState<{ id: string; titulo: string } | null>(null);
+  const [editTituloInput, setEditTituloInput] = useState('');
+  const [isEditSaving, setIsEditSaving] = useState(false);
+  const [editStep, setEditStep] = useState<StepType>('idle');
+  const editTituloProcessadoRef = useRef(false);
+  const editTituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ✅ Estados para confirmação de exclusão
   const [conversaParaExcluir, setConversaParaExcluir] = useState<{ id: string; titulo: string } | null>(null);
 
@@ -52,13 +65,16 @@ const HistoryScreen: React.FC = () => {
   const tituloProcessadoRef = useRef(false);
   const tituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmacaoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+  
+  const wasListeningBeforeModalRef = useRef(false);
   const deleteModalTitleRef = useRef(null);
 
   const isFocused = useIsFocused();
   const screenTitle = 'Histórico de Conversas';
 
-  // ✅ Usa o novo hook de voz
+  const [shouldListenLocally, setShouldListenLocally] = useState(false);
+
+  // ✅ Hook de voz para modais (criação, edição e exclusão)
   const { 
     speak, 
     startListening, 
@@ -68,7 +84,13 @@ const HistoryScreen: React.FC = () => {
     recognizedText,
     setRecognizedText 
   } = useSpeech({
-    enabled: isScreenFocused && (modalVisible || !!conversaParaExcluir), // ✅ Ativa quando modal está aberto OU esperando confirmação
+    enabled: isScreenFocused && (modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening),
+    mode: 'local',
+  });
+
+  // ✅ Hook separado para comandos globais
+  const globalSpeech = useSpeech({
+    enabled: isScreenFocused && !modalVisible && !editModalVisible && !conversaParaExcluir && !isSearchListening,
     mode: 'local',
   });
 
@@ -76,8 +98,7 @@ const HistoryScreen: React.FC = () => {
     if (isFocused) {
       const timer = setTimeout(() => {
         AccessibilityInfo.announceForAccessibility(screenTitle);
-      }, 500); // 500ms é um bom ponto de partida
-
+      }, 500);
       return () => clearTimeout(timer);
     }
   }, [isFocused, screenTitle]);
@@ -120,17 +141,54 @@ const HistoryScreen: React.FC = () => {
   }, [user, isAuthLoading]);
 
   // ===================================================================
-  // PROCESSAR RECONHECIMENTO DE VOZ
+  // FILTRAR CONVERSAS POR PESQUISA
+  // ===================================================================
+  const filteredConversations = conversations.filter(conv => 
+    conv.titulo.toLowerCase().includes(searchText.toLowerCase())
+  );
+
+  // ===================================================================
+  // PROCESSAR COMANDOS GLOBAIS (fora de modais)
+  // ===================================================================
+  useEffect(() => {
+    if (!globalSpeech.recognizedText.trim() || modalVisible || editModalVisible || conversaParaExcluir) return;
+
+    const fala = globalSpeech.recognizedText.toLowerCase().trim();
+    console.log(`[Histórico - Global] Comando detectado: "${fala}"`);
+
+    if (fala.includes('criar') && (fala.includes('conversa') || fala.includes('nova'))) {
+      console.log('✅ Comando "criar nova conversa" detectado');
+      globalSpeech.setRecognizedText('');
+      globalSpeech.stopListening();
+      wasListeningBeforeModalRef.current = true;
+      
+      setTimeout(() => {
+        setTituloInput('');
+        setStep('aguardandoPalavraTitulo');
+        setModalVisible(true);
+        setRecognizedText('');
+        tituloProcessadoRef.current = false;
+        
+        setTimeout(() => {
+          speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
+            startListening(true);
+          });
+        }, 300);
+      }, 200);
+    }
+  }, [globalSpeech.recognizedText, modalVisible, editModalVisible, conversaParaExcluir]);
+
+  // ===================================================================
+  // PROCESSAR RECONHECIMENTO DE VOZ (dentro de modais)
   // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim()) return;
 
     const fala = recognizedText.toLowerCase().trim();
-    console.log(`[Histórico] Step: ${step}, Fala: "${fala}"`);
+    console.log(`[Histórico] Step: ${step}, EditStep: ${editStep}, Fala: "${fala}"`);
 
     // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
     if (modalVisible) {
-      // Passo 1: Detectar palavra "título"
       if (step === 'aguardandoPalavraTitulo' && (fala.includes('título') || fala.includes('titulo'))) {
         console.log("✅ Palavra 'título' detectada!");
         setStep('aguardandoTitulo');
@@ -148,7 +206,6 @@ const HistoryScreen: React.FC = () => {
         return;
       }
 
-      // Passo 2: Acumular texto falado com debounce
       if (step === 'aguardandoTitulo' && fala && !tituloProcessadoRef.current) {
         console.log(`📝 Acumulando título: "${fala}"`);
         
@@ -160,15 +217,52 @@ const HistoryScreen: React.FC = () => {
           if (!tituloProcessadoRef.current && fala) {
             console.log(`✅ Título final capturado: "${fala}"`);
             tituloProcessadoRef.current = true;
-            
             stopListening();
-            
             speak(`Criando conversa com título: ${fala}`, () => {
               criarConversaComTitulo(fala);
             });
           }
         }, 2000);
+        return;
+      }
+    }
+
+    // ===== FLUXO DE EDIÇÃO DE CONVERSA =====
+    if (editModalVisible) {
+      if (editStep === 'aguardandoPalavraTitulo' && (fala.includes('título') || fala.includes('titulo'))) {
+        console.log("✅ [Edição] Palavra 'título' detectada!");
+        setEditStep('aguardandoTitulo');
+        setRecognizedText('');
+        editTituloProcessadoRef.current = false;
         
+        if (editTituloTimeoutRef.current) {
+          clearTimeout(editTituloTimeoutRef.current);
+          editTituloTimeoutRef.current = null;
+        }
+        
+        speak("Escutando o novo título. Fale e aguarde um momento.", () => {
+          startListening(true);
+        });
+        return;
+      }
+
+      if (editStep === 'aguardandoTitulo' && fala && !editTituloProcessadoRef.current) {
+        console.log(`📝 [Edição] Acumulando título: "${fala}"`);
+        
+        if (editTituloTimeoutRef.current) {
+          clearTimeout(editTituloTimeoutRef.current);
+        }
+        
+        editTituloTimeoutRef.current = setTimeout(() => {
+          if (!editTituloProcessadoRef.current && fala) {
+            console.log(`✅ [Edição] Título final capturado: "${fala}"`);
+            editTituloProcessadoRef.current = true;
+            stopListening();
+            speak(`Renomeando conversa para: ${fala}`, () => {
+              renomearConversaComTitulo(fala);
+            });
+          }
+        }, 2000);
         return;
       }
     }
@@ -177,12 +271,10 @@ const HistoryScreen: React.FC = () => {
     if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
       console.log(`🗑️ Processando resposta de exclusão: "${fala}"`);
       
-      // Limpa timeout anterior
       if (confirmacaoTimeoutRef.current) {
         clearTimeout(confirmacaoTimeoutRef.current);
       }
 
-      // Aguarda 1.5 segundos de silêncio antes de processar
       confirmacaoTimeoutRef.current = setTimeout(() => {
         const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero'];
         const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
@@ -215,39 +307,65 @@ const HistoryScreen: React.FC = () => {
           });
         }
       }, 1500);
-
       return;
     }
 
-  }, [recognizedText, step, modalVisible, conversaParaExcluir]);
+    // ===== FLUXO DE PESQUISA POR VOZ =====
+    if (isSearchListening && searchStep === 'aguardandoPesquisa') {
+      if (fala && !searchProcessadoRef.current) {
+        console.log(`🔍 [Pesquisa] Acumulando termo: "${fala}"`);
+        
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+        
+        searchTimeoutRef.current = setTimeout(() => {
+          if (!searchProcessadoRef.current && fala) {
+            console.log(`✅ [Pesquisa] Termo final capturado: "${fala}"`);
+            searchProcessadoRef.current = true;
+            stopListening();
+            
+            setSearchText(fala);
+            setIsSearchListening(false);
+            setSearchStep('idle');
+            setRecognizedText('');
+            
+            speak(`Pesquisando por: ${fala}`, () => {
+              // Reativa microfone global após pesquisa
+              setTimeout(() => {
+                if (wasListeningBeforeModalRef.current) {
+                  console.log('[Histórico] ✅ Reativando microfone global após pesquisa');
+                  globalSpeech.startListening(true);
+                }
+              }, 500);
+            });
+          }
+        }, 2000);
+        return;
+      }
+    }
+  }, [recognizedText, step, editStep, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, searchStep]);
 
   // ✅ Cleanup dos timeouts
   useEffect(() => {
     return () => {
-      if (tituloTimeoutRef.current) {
-        clearTimeout(tituloTimeoutRef.current);
-      }
-      if (confirmacaoTimeoutRef.current) {
-        clearTimeout(confirmacaoTimeoutRef.current);
-      }
+      if (tituloTimeoutRef.current) clearTimeout(tituloTimeoutRef.current);
+      if (confirmacaoTimeoutRef.current) clearTimeout(confirmacaoTimeoutRef.current);
+      if (editTituloTimeoutRef.current) clearTimeout(editTituloTimeoutRef.current);
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, []);
 
   useEffect(() => {
-    // Se o overlay de exclusão apareceu...
     if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
-      
-      // ...espere um instante para a renderização...
       const timeoutId = setTimeout(() => {
         if (deleteModalTitleRef.current) {
           const reactTag = findNodeHandle(deleteModalTitleRef.current);
           if (reactTag) {
-            // ...e force o foco do TalkBack para o título do overlay.
             AccessibilityInfo.setAccessibilityFocus(reactTag);
           }
         }
-      }, 200); // 200ms de delay
-
+      }, 200);
       return () => clearTimeout(timeoutId);
     }
   }, [conversaParaExcluir, step]);
@@ -258,6 +376,109 @@ const HistoryScreen: React.FC = () => {
     }
   }, [isScreenFocused, user, isAuthLoading, speak]);
 
+  useEffect(() => {
+    const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
+    
+    if (hasActiveModal && !shouldListenLocally) {
+      console.log('[Histórico] ✅ Ativando escuta local - modal aberto');
+      setShouldListenLocally(true);
+    } else if (!hasActiveModal && shouldListenLocally) {
+      console.log('[Histórico] ❌ Desativando escuta local - modal fechado');
+      setShouldListenLocally(false);
+    }
+  }, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, shouldListenLocally]);
+
+  // ===================================================================
+  // EDITAR CONVERSA
+  // ===================================================================
+  const editarConversa = (conversationId: string, titulo: string) => {
+    if (!user) return;
+
+    console.log(`✏️ Iniciando edição da conversa: ${titulo}`);
+    
+    wasListeningBeforeModalRef.current = globalSpeech.isListening;
+    globalSpeech.stopListening();
+    
+    setConversaParaEditar({ id: conversationId, titulo });
+    setEditTituloInput(titulo);
+    setEditStep('aguardandoPalavraTitulo');
+    setEditModalVisible(true);
+    setRecognizedText('');
+    editTituloProcessadoRef.current = false;
+    
+    setTimeout(() => {
+      speak(`Editando conversa: ${titulo}. Digite o novo título ou diga 'título' para informá-lo por voz.`, () => {
+        startListening(true);
+      });
+    }, 300);
+  };
+
+  const renomearConversaComTitulo = async (novoTitulo: string) => {
+    if (!user || !conversaParaEditar) return;
+
+    const tituloFinal = novoTitulo.trim();
+    
+    if (!tituloFinal) {
+      Alert.alert('Atenção', 'O título não pode estar vazio.');
+      return;
+    }
+
+    console.log(`✏️ Renomeando conversa ${conversaParaEditar.id} para "${tituloFinal}"`);
+    setIsEditSaving(true);
+
+    try {
+      const db = getFirestore();
+      const conversaDocRef = doc(collection(db, 'conversas'), conversaParaEditar.id);
+      
+      await updateDoc(conversaDocRef, {
+        titulo: tituloFinal,
+        dataAlteracao: serverTimestamp(),
+      });
+
+      console.log('✅ Conversa renomeada com sucesso');
+      speak(`Conversa renomeada para ${tituloFinal}`);
+      fecharEditModal();
+
+    } catch (error) {
+      console.error("❌ Erro ao renomear conversa:", error);
+      Alert.alert('Erro', 'Não foi possível renomear a conversa. Tente novamente.');
+    } finally {
+      setIsEditSaving(false);
+    }
+  };
+
+  const renomearConversaManual = () => {
+    renomearConversaComTitulo(editTituloInput);
+  };
+
+  const fecharEditModal = () => {
+    console.log('[Histórico] 🚪 Fechando modal de edição');
+    stopSpeaking();
+    stopListening();
+    
+    setEditModalVisible(false);
+    setConversaParaEditar(null);
+    setEditTituloInput('');
+    setEditStep('idle');
+    setIsEditSaving(false);
+    setRecognizedText('');
+    editTituloProcessadoRef.current = false;
+    
+    if (editTituloTimeoutRef.current) {
+      clearTimeout(editTituloTimeoutRef.current);
+      editTituloTimeoutRef.current = null;
+    }
+    
+    setShouldListenLocally(false);
+    
+    setTimeout(() => {
+      if (wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global após fechar modal de edição');
+        globalSpeech.startListening(true);
+      }
+    }, 500);
+  };
+
   // ===================================================================
   // EXCLUIR CONVERSA - COM VOZ
   // ===================================================================
@@ -265,13 +486,12 @@ const HistoryScreen: React.FC = () => {
     if (!user) return;
 
     console.log(`🗑️ Iniciando fluxo de exclusão por voz para: ${titulo}`);
+    wasListeningBeforeModalRef.current = globalSpeech.isListening;
     
-    // Define a conversa a ser excluída e inicia o fluxo de voz
     setConversaParaExcluir({ id: conversationId, titulo });
     setStep('aguardandoConfirmacaoExclusao');
     setRecognizedText('');
     
-    // Fala a pergunta e inicia a escuta
     setTimeout(() => {
       speak(`Tem certeza que deseja excluir a conversa ${titulo}? Diga sim ou não.`, () => {
         startListening(true);
@@ -310,6 +530,13 @@ const HistoryScreen: React.FC = () => {
       
       console.log('✅ Conversa excluída com sucesso.');
       speak('Conversa excluída com sucesso.');
+
+      setTimeout(() => {
+        if (wasListeningBeforeModalRef.current) {
+          console.log('[Histórico] ✅ Reativando microfone global após exclusão');
+          globalSpeech.startListening(true);
+        }
+      }, 500);
 
     } catch (error) {
       console.error("❌ Erro ao excluir conversa:", error);
@@ -358,23 +585,17 @@ const HistoryScreen: React.FC = () => {
       const userDocRef = doc(collection(db, 'usuarios'), user.uid);
       await setDoc(
         userDocRef,
-        {
-          historico: arrayUnion(newConversationRef.id)
-        },
+        { historico: arrayUnion(newConversationRef.id) },
         { merge: true }
       );
 
       speak(`Conversa ${tituloFinal} criada com sucesso!`);
       fecharModal();
       
-      // ✅ Navega automaticamente para a nova conversa
       setTimeout(() => {
         router.push({
           pathname: '/conversa',
-          params: { 
-            conversaId: newConversationRef.id, 
-            titulo: tituloFinal 
-          }
+          params: { conversaId: newConversationRef.id, titulo: tituloFinal }
         });
       }, 500);
 
@@ -391,9 +612,12 @@ const HistoryScreen: React.FC = () => {
   };
 
   // ===================================================================
-  // ABRIR/FECHAR MODAL
+  // ABRIR/FECHAR MODAL DE CRIAÇÃO
   // ===================================================================
   const abrirModal = () => {
+    wasListeningBeforeModalRef.current = globalSpeech.isListening;
+    console.log(`[Histórico] Abrindo modal. Microfone estava: ${wasListeningBeforeModalRef.current ? 'ATIVO' : 'INATIVO'}`);
+    
     setTituloInput('');
     setStep('aguardandoPalavraTitulo');
     setModalVisible(true);
@@ -409,324 +633,156 @@ const HistoryScreen: React.FC = () => {
   };
 
   const fecharModal = () => {
-  console.log('[Histórico] 🚪 Fechando modal de criação');
-  stopSpeaking();
-  stopListening(); // ✅ Para o reconhecimento
-  
-  setModalVisible(false);
-  setTituloInput('');
-  setStep('idle');
-  setIsSaving(false);
-  setRecognizedText('');
-  tituloProcessadoRef.current = false;
-  
-  if (tituloTimeoutRef.current) {
-    clearTimeout(tituloTimeoutRef.current);
-    tituloTimeoutRef.current = null;
-  }
-  
-  // ✅ Desativa o reconhecimento local explicitamente
-  setShouldListenLocally(false);
-};
-
-// Cancelar exclusão programaticamente
-const cancelarExclusao = () => {
-  console.log('[Histórico] ❌ Cancelando exclusão manualmente');
-  stopSpeaking();
-  stopListening(); // ✅ Para o reconhecimento
-  
-  if (confirmacaoTimeoutRef.current) {
-    clearTimeout(confirmacaoTimeoutRef.current);
-    confirmacaoTimeoutRef.current = null;
-  }
-  
-  setConversaParaExcluir(null);
-  setStep('idle');
-  setRecognizedText('');
-  
-  // ✅ Desativa o reconhecimento local explicitamente
-  setShouldListenLocally(false);
-};// HistoryScreen.tsx - Escuta APENAS quando modal está ativo
-
-// ✅ Estado que controla quando o reconhecimento local deve estar ativo
-const [shouldListenLocally, setShouldListenLocally] = useState(false);
-
-// ✅ Efeito que sincroniza o estado de escuta com modals
-useEffect(() => {
-  const hasActiveModal = modalVisible || !!conversaParaExcluir;
-  
-  if (hasActiveModal && !shouldListenLocally) {
-    console.log('[Histórico] ✅ Ativando escuta local - modal aberto');
-    setShouldListenLocally(true);
-  } else if (!hasActiveModal && shouldListenLocally) {
-    console.log('[Histórico] ❌ Desativando escuta local - modal fechado');
+    console.log('[Histórico] 🚪 Fechando modal de criação');
+    stopSpeaking();
+    stopListening();
+    
+    setModalVisible(false);
+    setTituloInput('');
+    setStep('idle');
+    setIsSaving(false);
+    setRecognizedText('');
+    tituloProcessadoRef.current = false;
+    
+    if (tituloTimeoutRef.current) {
+      clearTimeout(tituloTimeoutRef.current);
+      tituloTimeoutRef.current = null;
+    }
+    
     setShouldListenLocally(false);
-  }
-}, [modalVisible, conversaParaExcluir, shouldListenLocally]);// ✅ Corrigido: useSpeech só ativa quando modal está aberto
+    
+    setTimeout(() => {
+      if (wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global após fechar modal');
+        globalSpeech.startListening(true);
+      }
+    }, 500);
+  };
+
+  const cancelarExclusao = () => {
+    console.log('[Histórico] ❌ Cancelando exclusão manualmente');
+    stopSpeaking();
+    stopListening();
+    
+    if (confirmacaoTimeoutRef.current) {
+      clearTimeout(confirmacaoTimeoutRef.current);
+      confirmacaoTimeoutRef.current = null;
+    }
+    
+    setConversaParaExcluir(null);
+    setStep('idle');
+    setRecognizedText('');
+    setShouldListenLocally(false);
+    
+    setTimeout(() => {
+      if (wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global após cancelar exclusão');
+        globalSpeech.startListening(true);
+      }
+    }, 500);
+  };
+
+  const activateSearchMicrophone = useCallback(() => {
+    console.log('[Histórico] 🎤 Ativando microfone de pesquisa');
+    wasListeningBeforeModalRef.current = globalSpeech.isListening;
+    globalSpeech.stopListening();
+    
+    setIsSearchListening(true);
+    setSearchStep('aguardandoPesquisa');
+    setRecognizedText('');
+    searchProcessadoRef.current = false;
+    
+    setTimeout(() => {
+      speak("Microfone de pesquisa ativado. Fale o termo de busca.", () => {
+        startListening(true);
+      });
+    }, 300);
+  }, [globalSpeech.isListening, globalSpeech.stopListening, speak, startListening, setRecognizedText]);
+
+  const deactivateSearchMicrophone = useCallback(() => {
+    console.log('[Histórico] 🔇 Desativando microfone de pesquisa');
+    stopSpeaking();
+    stopListening();
+    setIsSearchListening(false);
+    setSearchStep('idle');
+    setRecognizedText('');
+    searchProcessadoRef.current = false;
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+      searchTimeoutRef.current = null;
+    }
+    
+    // Reativa microfone global se estava ativo
+    setTimeout(() => {
+      if (wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global após desativar pesquisa');
+        globalSpeech.startListening(true);
+      }
+    }, 500);
+  }, [stopSpeaking, stopListening, setRecognizedText, globalSpeech.startListening]);
+
+  const toggleSearchMicrophone = useCallback(() => {
+    if (isSearchListening) {
+      deactivateSearchMicrophone();
+    } else {
+      activateSearchMicrophone();
+    }
+  }, [isSearchListening, activateSearchMicrophone, deactivateSearchMicrophone]);
 
   // ===================================================================
   // ESTILOS
   // ===================================================================
   const styles = StyleSheet.create({
-    centered: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      backgroundColor: cores.fundo
-    },
-    loginMessage: {
-      fontSize: 18,
-      textAlign: 'center',
-      color: cores.texto,
-    },
-    container: {
-      flex: 1,
-      padding: 16,
-      backgroundColor: cores.fundo,
-    },
-    item: {
-      padding: 16,
-      marginBottom: 8,
-      borderRadius: 8,
-      backgroundColor: cores.barrasDeNavegacao,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    itemContent: {
-      flex: 1,
-      marginRight: 12,
-    },
-    itemText: {
-      fontSize: getFontSize('medium'),
-      color: cores.texto,
-      fontWeight: '500',
-    },
-    itemDateText: {
-      fontSize: getFontSize('small'),
-      color: cores.texto || '#888',
-      marginTop: 4,
-    },
-    deleteButton: {
-      padding: 8,
-      margin: -8,
-    },
-    empty: {
-      fontSize: getFontSize('medium'),
-      textAlign: 'center',
-      marginTop: 20,
-      color: cores.texto,
-    },
-    createButton: {
-      backgroundColor: cores.barrasDeNavegacao,
-      paddingVertical: 14,
-      paddingHorizontal: 20,
-      borderRadius: 25,
-      margin: 16,
-      alignItems: 'center',
-      justifyContent: 'center',
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 3.84,
-      elevation: 5,
-    },
-    createButtonText: {
-      color: cores.texto,
-      fontSize: getFontSize('medium'),
-      fontWeight: 'bold',
-    },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.7)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-    },
-    modalContent: {
-      backgroundColor: cores.fundo,
-      borderRadius: 20,
-      padding: 28,
-      width: '100%',
-      maxWidth: 500,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 5,
-      elevation: 8,
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: 20,
-    },
-    modalTitle: {
-      fontSize: getFontSize('large'),
-      fontWeight: 'bold',
-      color: cores.texto,
-    },
-    closeButton: {
-      padding: 4,
-    },
-    inputContainer: {
-      marginBottom: 20,
-    },
-    label: {
-      fontSize: getFontSize('medium'),
-      color: cores.texto,
-      marginBottom: 8,
-      fontWeight: '500',
-    },
-    inputWrapper: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: '#fff',
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: cores.texto,
-    },
-    input: {
-      flex: 1,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      fontSize: getFontSize('medium'),
-      color: cores.fundo,
-    },
-    micButton: {
-      padding: 12,
-      marginRight: 4,
-    },
-    listeningIndicator: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 12,
-      backgroundColor: cores.fundo,
-      borderRadius: 8,
-      marginBottom: 16,
-    },
-    listeningText: {
-      marginLeft: 8,
-      color: cores.texto,
-      fontSize: getFontSize('medium'),
-      fontWeight: '500',
-    },
-    modalActions: {
-      flexDirection: 'row',
-      gap: 12,
-    },
-    cancelButton: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: cores.texto,
-      alignItems: 'center',
-    },
-    cancelButtonText: {
-      color: cores.texto,
-      fontSize: getFontSize('medium'),
-      fontWeight: '600',
-    },
-    saveButton: {
-      flex: 1,
-      paddingVertical: 12,
-      borderRadius: 8,
-      backgroundColor: cores.texto,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    saveButtonText: {
-      color: cores.fundo,
-      fontSize: getFontSize('medium'),
-      fontWeight: '600',
-    },
-    savingIndicator: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 16,
-      backgroundColor: cores.texto,
-      borderRadius: 8,
-      marginTop: 12,
-    },
-    savingText: {
-      marginLeft: 8,
-      color: cores.fundo,
-      fontSize: getFontSize('medium'),
-      fontWeight: '500',
-    },
-    deleteOverlay: {
-      ...StyleSheet.absoluteFillObject,
-      backgroundColor: 'rgba(0,0,0,0.8)',
-      justifyContent: 'center',
-      alignItems: 'center',
-      padding: 20,
-      zIndex: 1000,
-    },
-    deleteModal: {
-      backgroundColor: cores.fundo,
-      borderRadius: 20,
-      padding: 32,
-      width: '100%',
-      maxWidth: 500,
-      alignItems: 'center',
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 5,
-      elevation: 8,
-    },
-    deleteTitle: {
-      fontSize: getFontSize('large'),
-      fontWeight: 'bold',
-      marginBottom: 16,
-      textAlign: 'center',
-    },
-    deleteMessage: {
-      fontSize: getFontSize('medium'),
-      textAlign: 'center',
-      marginBottom: 8,
-      lineHeight: 24,
-    },
-    recognizedTextBox: {
-      padding: 12,
-      borderRadius: 8,
-      width: '100%',
-    },
-    recognizedTextLabel: {
-      fontSize: getFontSize('small'),
-      fontWeight: '600',
-      marginBottom: 4,
-    },
-    recognizedTextContent: {
-      fontSize: getFontSize('medium'),
-      fontStyle: 'italic',
-    },
-    deleteButtonsContainer: {
-      flexDirection: 'row',
-      marginTop: 20,
-      gap: 12,
-      width: '100%',
-    },
-    deleteActionButton: {
-      flex: 1,
-      paddingVertical: 12,
-      paddingHorizontal: 16,
-      borderRadius: 8,
-      borderWidth: 2,
-      borderColor: cores.texto,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    deleteActionText: {
-      fontSize: getFontSize('medium'),
-      fontWeight: '600',
-      textAlign: 'center',
-      color: '#000',
-    },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: cores.fundo },
+    loginMessage: { fontSize: 18, textAlign: 'center', color: cores.texto },
+    container: { flex: 1, backgroundColor: cores.fundo },
+    searchContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: cores.barrasDeNavegacao, borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.1)' },
+    searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: cores.fundo, borderRadius: 8, borderWidth: 1, borderColor: cores.texto, paddingHorizontal: 12 },
+    searchInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: getFontSize('medium'), color: cores.texto },
+    searchIcon: { marginRight: 8 },
+    searchMicButton: { padding: 8 },
+    clearButton: { padding: 4 },
+    listContainer: { flex: 1, padding: 16 },
+    item: { padding: 16, marginBottom: 8, borderRadius: 8, backgroundColor: cores.barrasDeNavegacao, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    itemContent: { flex: 1, marginRight: 12 },
+    itemText: { fontSize: getFontSize('medium'), color: cores.texto, fontWeight: '500' },
+    itemDateText: { fontSize: getFontSize('small'), color: cores.texto || '#888', marginTop: 4 },
+    itemActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    editButton: { padding: 8, margin: -8, marginRight: 4 },
+    deleteButton: { padding: 8, margin: -8 },
+    emptyMessage: { fontSize: getFontSize('medium'), textAlign: 'center', marginTop: 40, color: cores.texto },
+    createButton: { backgroundColor: cores.barrasDeNavegacao, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 25, margin: 16, alignItems: 'center', justifyContent: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
+    createButtonText: { color: cores.texto, fontSize: getFontSize('medium'), fontWeight: 'bold' },
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    modalContent: { backgroundColor: cores.fundo, borderRadius: 20, padding: 28, width: '100%', maxWidth: 500, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: getFontSize('large'), fontWeight: 'bold', color: cores.texto },
+    closeButton: { padding: 4 },
+    inputContainer: { marginBottom: 20 },
+    label: { fontSize: getFontSize('medium'), color: cores.texto, marginBottom: 8, fontWeight: '500' },
+    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: cores.texto },
+    input: { flex: 1, paddingHorizontal: 16, paddingVertical: 12, fontSize: getFontSize('medium'), color: '#000' },
+    micButton: { padding: 12, marginRight: 4 },
+    listeningIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: cores.fundo, borderRadius: 8, marginBottom: 16 },
+    listeningText: { marginLeft: 8, color: cores.texto, fontSize: getFontSize('medium'), fontWeight: '500' },
+    modalActions: { flexDirection: 'row', gap: 12 },
+    cancelButton: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: cores.texto, alignItems: 'center' },
+    cancelButtonText: { color: cores.texto, fontSize: getFontSize('medium'), fontWeight: '600' },
+    saveButton: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: cores.texto, alignItems: 'center', justifyContent: 'center' },
+    saveButtonText: { color: cores.fundo, fontSize: getFontSize('medium'), fontWeight: '600' },
+    savingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, backgroundColor: cores.texto, borderRadius: 8, marginTop: 12 },
+    savingText: { marginLeft: 8, color: cores.fundo, fontSize: getFontSize('medium'), fontWeight: '500' },
+    deleteOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 1000 },
+    deleteModal: { backgroundColor: cores.fundo, borderRadius: 20, padding: 32, width: '100%', maxWidth: 500, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
+    deleteTitle: { fontSize: getFontSize('large'), fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
+    deleteMessage: { fontSize: getFontSize('medium'), textAlign: 'center', marginBottom: 8, lineHeight: 24 },
+    recognizedTextBox: { padding: 12, borderRadius: 8, width: '100%' },
+    recognizedTextLabel: { fontSize: getFontSize('small'), fontWeight: '600', marginBottom: 4 },
+    recognizedTextContent: { fontSize: getFontSize('medium'), fontStyle: 'italic' },
+    deleteButtonsContainer: { flexDirection: 'row', marginTop: 20, gap: 12, width: '100%' },
+    deleteActionButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, borderWidth: 2, borderColor: cores.texto, alignItems: 'center', justifyContent: 'center' },
+    deleteActionText: { fontSize: getFontSize('medium'), fontWeight: '600', textAlign: 'center', color: '#000' },
   });
 
   // ===================================================================
@@ -743,159 +799,163 @@ useEffect(() => {
   if (!user) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.loginMessage}>
-          Faça login para acessar o histórico
-        </Text>
+        <Text style={styles.loginMessage}>Faça login para acessar o histórico</Text>
       </View>
     );
   }
 
   const aguardandoPalavraTitulo = step === 'aguardandoPalavraTitulo';
   const aguardandoConfirmacao = step === 'aguardandoConfirmacaoExclusao';
-  const isModalActive = modalVisible || (!!conversaParaExcluir && aguardandoConfirmacao);
+  const editAguardandoPalavraTitulo = editStep === 'aguardandoPalavraTitulo';
 
   return (
-    // Container principal
-    <View style={[styles.container, { flex: 1 }]}>      
-      <View 
-        style={{ flex: 1 }}
-      >
-        <FlatList
-          data={conversations}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity 
-              onPress={() => router.push({
-                pathname: '/conversa',
-                params: { conversaId: item.id, titulo: item.titulo }
-              })}
-              style={styles.item}
-              accessibilityLabel={`Conversa: ${toTitleCase(item.titulo || 'Sem título')}. Alterado em: ${item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando'}.`}
-              accessibilityActions={[
-                { name: 'activate', label: 'Abrir Conversa' }, 
-                { name: 'delete', label: 'Excluir Conversa' }
-              ]}
-              onAccessibilityAction={(event) => {
-                const actionName = event.nativeEvent.actionName;
-
-                if (actionName === 'activate') {
-                  router.push({
-                    pathname: '/conversa',
-                    params: { conversaId: item.id, titulo: item.titulo }
-                  });
-                } else if (actionName === 'delete') {
-                  excluirConversa(item.id, item.titulo);
-                }
-              }}
-            >
-              <View style={styles.itemContent}>
-                <Text style={styles.itemText}>
-                  {String(toTitleCase(item.titulo || 'Sem título'))}
-                </Text>
-                <Text style={styles.itemDateText}>
-                  Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}
-                </Text>
-              </View>
-              <TouchableOpacity 
-                style={styles.deleteButton} 
-                onPress={(e) => {
-                  e.stopPropagation(); 
-                  excluirConversa(item.id, item.titulo);
-                }}
-                // ✅ Esconde o botão de lixo duplicado do TalkBack
-                accessible={false} 
-              >
-                <Ionicons 
-                  name="trash-outline" 
-                  size={getIconSize('medium')} 
-                  color={cores.perigo}
-                />
-              </TouchableOpacity>
+    <View style={[styles.container, { flex: 1 }]}>
+      {/* BARRA DE PESQUISA */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchWrapper}>
+          <Ionicons name="search" size={getIconSize('medium')} color={cores.texto} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Pesquisar conversas..."
+            placeholderTextColor="#999"
+            value={searchText}
+            onChangeText={(text) => {
+              setSearchText(text);
+              if (isSearchListening) {
+                setIsSearchListening(false);
+                setSearchStep('idle');
+                stopListening();
+                searchProcessadoRef.current = false;
+              }
+            }}
+            autoCorrect={false}
+            accessibilityLabel="Pesquisar conversas"
+            editable={!isSearchListening}
+          />
+          {searchText.length > 0 && !isSearchListening && (
+            <TouchableOpacity style={styles.clearButton} onPress={() => setSearchText('')} accessible={true} accessibilityLabel="Limpar pesquisa" accessibilityRole="button">
+              <Ionicons name="close-circle" size={getIconSize('medium')} color={cores.texto} />
             </TouchableOpacity>
           )}
-        />
+          <TouchableOpacity 
+            style={styles.searchMicButton} 
+            onPress={toggleSearchMicrophone}
+            accessible={true} 
+            accessibilityLabel={isSearchListening ? "Desativar microfone de pesquisa" : "Pesquisar por voz"} 
+            accessibilityRole="button"
+          >
+            <Ionicons 
+              name={isSearchListening ? "mic" : "mic-outline"} 
+              size={getIconSize('medium')} 
+              color={isSearchListening ? '#FF453A' : cores.texto} 
+            />
+          </TouchableOpacity>
+        </View>
+        {isSearchListening && (
+          <View style={[styles.listeningIndicator, { marginTop: 8 }]}>
+            <ActivityIndicator size="small" color={cores.texto} />
+            <Text style={styles.listeningText}>
+              {recognizedText ? `"${recognizedText}"` : 'Ouvindo termo de busca...'}
+            </Text>
+          </View>
+        )}
+      </View>
 
-        <TouchableOpacity
-          style={styles.createButton}
-          onPress={abrirModal}
-          accessibilityRole='button'
-          accessibilityLabel="Criar nova conversa"
-        >
-          <Text style={styles.createButtonText}>
-            Criar Nova Conversa
-          </Text>
+      {/* LISTA DE CONVERSAS */}
+      <View style={{ flex: 1 }}>
+        {filteredConversations.length > 0 ? (
+          <FlatList
+            data={filteredConversations}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                onPress={() => router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } })}
+                style={styles.item}
+                accessibilityLabel={`Conversa: ${toTitleCase(item.titulo || 'Sem título')}. Alterado em: ${item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando'}.`}
+                accessibilityActions={[
+                  { name: 'activate', label: 'Abrir Conversa' },
+                  { name: 'magicTap', label: 'Editar Conversa' },
+                  { name: 'delete', label: 'Excluir Conversa' }
+                ]}
+                onAccessibilityAction={(event) => {
+                  const actionName = event.nativeEvent.actionName;
+                  if (actionName === 'activate') {
+                    router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } });
+                  } else if (actionName === 'magicTap') {
+                    editarConversa(item.id, item.titulo);
+                  } else if (actionName === 'delete') {
+                    excluirConversa(item.id, item.titulo);
+                  }
+                }}
+              >
+                <View style={styles.itemContent}>
+                  <Text style={styles.itemText}>{String(toTitleCase(item.titulo || 'Sem título'))}</Text>
+                  <Text style={styles.itemDateText}>Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}</Text>
+                </View>
+                <View style={styles.itemActions}>
+                  <TouchableOpacity 
+                    style={styles.editButton} 
+                    onPress={(e) => { e.stopPropagation(); editarConversa(item.id, item.titulo); }}
+                    accessible={true}
+                    accessibilityLabel='Editar Conversa'
+                    accessibilityRole='button'
+                  >
+                    <Ionicons name="pencil-outline" size={getIconSize('medium')} color={cores.texto} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.deleteButton} 
+                    onPress={(e) => { e.stopPropagation(); excluirConversa(item.id, item.titulo); }}
+                    accessible={true}
+                    accessibilityLabel='Excluir Conversa'
+                    accessibilityRole='button'
+                  >
+                    <Ionicons name="trash-outline" size={getIconSize('medium')} color={cores.perigo} />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            )}
+          />
+        ) : (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={styles.emptyMessage}>{searchText.length > 0 ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa salva ainda'}</Text>
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.createButton} onPress={abrirModal} accessibilityRole='button' accessibilityLabel="Criar nova conversa">
+          <Text style={styles.createButtonText}>Criar Nova Conversa</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ✅ OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
+      {/* OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {conversaParaExcluir && aguardandoConfirmacao && (
-        <View 
-          style={styles.deleteOverlay}
-          // ✅ TRUQUE DA GAIOLA: Diz ao TalkBack que ESTE é o
-          //    único item importante na tela agora.
-          importantForAccessibility="yes"
-        >
+        <View style={styles.deleteOverlay} importantForAccessibility="yes">
           <View style={styles.deleteModal}>
-            <Ionicons 
-              name="warning" 
-              size={48} 
-              color="#FF453A" 
-              style={{ marginBottom: 16 }}
-            />
-            <Text 
-              // ✅ ADICIONA A REF AQUI
-              ref={deleteModalTitleRef}
-              style={[styles.deleteTitle, { color: cores.texto }]}
-              accessibilityRole="header" // Ajuda o TalkBack
-            >
-              Confirmar Exclusão
-            </Text>
-            <Text style={[styles.deleteMessage, { color: cores.texto }]}>
-              Tem certeza que deseja excluir a conversa "{conversaParaExcluir.titulo}"?
-            </Text>
-                        
+            <Ionicons name="warning" size={48} color="#FF453A" style={{ marginBottom: 16 }} />
+            <Text ref={deleteModalTitleRef} style={[styles.deleteTitle, { color: cores.texto }]} accessibilityRole="header">Confirmar Exclusão</Text>
+            <Text style={[styles.deleteMessage, { color: cores.texto }]}>Tem certeza que deseja excluir a conversa "{conversaParaExcluir.titulo}"?</Text>
             {isListening && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
-                <Text style={styles.listeningText}>
-                  "Aguardando resposta..."
-                </Text>
+                <Text style={styles.listeningText}>"Aguardando resposta..."</Text>
               </View>
             )}
-
             {recognizedText && (
               <View style={[styles.recognizedTextBox, { backgroundColor: cores.barrasDeNavegacao, marginTop: 12 }]}>
-                <Text style={[styles.recognizedTextLabel, { color: cores.texto }]}>
-                  Você disse:
-                </Text>
-                <Text style={[styles.recognizedTextContent, { color: cores.texto }]}>
-                  "{recognizedText}"
-                </Text>
+                <Text style={[styles.recognizedTextLabel, { color: cores.texto }]}>Você disse:</Text>
+                <Text style={[styles.recognizedTextContent, { color: cores.texto }]}>"{recognizedText}"</Text>
               </View>
             )}
-
             <View style={styles.deleteButtonsContainer}>
-              <TouchableOpacity 
-                style={[styles.deleteActionButton, { backgroundColor: cores.confirmar }]}
-                onPress={cancelarExclusao}
-              >
-                <Text style={[styles.deleteActionText, { color: '#000' }]}>
-                  Cancelar
-                </Text>
+              <TouchableOpacity style={[styles.deleteActionButton, { backgroundColor: cores.confirmar }]} onPress={cancelarExclusao}>
+                <Text style={[styles.deleteActionText, { color: '#000' }]}>Cancelar</Text>
               </TouchableOpacity>
-
               <TouchableOpacity 
                 style={[styles.deleteActionButton, { backgroundColor: cores.perigo }]}
                 onPress={() => {
-                  console.log('[Histórico] Confirmação manual via botão');
                   stopSpeaking();
                   stopListening();
-                  
-                  if (confirmacaoTimeoutRef.current) {
-                    clearTimeout(confirmacaoTimeoutRef.current);
-                    confirmacaoTimeoutRef.current = null;
-                  }
-                  
+                  if (confirmacaoTimeoutRef.current) { clearTimeout(confirmacaoTimeoutRef.current); confirmacaoTimeoutRef.current = null; }
                   speak("Confirmado. Excluindo conversa.", () => {
                     deletarDocumentosDaConversa(conversaParaExcluir.id);
                     setConversaParaExcluir(null);
@@ -904,77 +964,42 @@ useEffect(() => {
                   });
                 }}
               >
-                <Text style={[styles.deleteActionText, { color: '#fff' }]}>
-                  Confirmar
-                </Text>
+                <Text style={[styles.deleteActionText, { color: '#fff' }]}>Confirmar</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       )}
 
-      {/* 3. Modal de Criação (já se gerencia sozinho, mas fica fora) */}
-      <Modal
-        visible={modalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={fecharModal}
-        statusBarTranslucent={true}
-      >
+      {/* MODAL DE CRIAÇÃO */}
+      <Modal visible={modalVisible} transparent={true} animationType="fade" onRequestClose={fecharModal} statusBarTranslucent={true}>
         <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]}
-            activeOpacity={1} 
-            onPress={fecharModal}
-          />
-          
+          <TouchableOpacity style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]} activeOpacity={1} onPress={fecharModal} />
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Nova Conversa</Text>
-              <TouchableOpacity 
-                style={styles.closeButton} 
-                onPress={fecharModal}
-                disabled={isSaving}
-              >
-                <Ionicons 
-                  name="close" 
-                  size={getIconSize('medium')} 
-                  color={cores.texto} 
-                />
+              <TouchableOpacity style={styles.closeButton} onPress={fecharModal} disabled={isSaving}>
+                <Ionicons name="close" size={getIconSize('medium')} color={cores.texto} />
               </TouchableOpacity>
             </View>
-
             {isListening && (
               <View style={styles.listeningIndicator}>
                 <ActivityIndicator size="small" color={cores.texto} />
-                <Text style={styles.listeningText}>
-                  {aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo título...'}
-                </Text>
+                <Text style={styles.listeningText}>{aguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo título...'}</Text>
               </View>
             )}
-
             {step === 'aguardandoTitulo' && recognizedText && (
               <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
-                <Text style={styles.listeningText}>
-                  "{recognizedText}"
-                </Text>
+                <Text style={styles.listeningText}>"{recognizedText}"</Text>
               </View>
             )}
-
             <View style={styles.inputContainer}>
               <Text style={styles.label}>Título da Conversa</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.input}
                   value={tituloInput}
-                  onChangeText={(text) => {
-                    setTituloInput(text);
-                    if (step !== 'idle') {
-                      setStep('idle');
-                      stopListening();
-                      tituloProcessadoRef.current = false;
-                    }
-                  }}
+                  onChangeText={(text) => { setTituloInput(text); if (step !== 'idle') { setStep('idle'); stopListening(); tituloProcessadoRef.current = false; } }}
                   placeholder="Digite ou fale o título"
                   placeholderTextColor='#999'
                   editable={!isSaving}
@@ -982,47 +1007,82 @@ useEffect(() => {
                 />
                 <TouchableOpacity 
                   style={styles.micButton}
-                  onPress={() => {
-                    setStep('aguardandoPalavraTitulo');
-                    setRecognizedText('');
-                    tituloProcessadoRef.current = false;
-                    speak("Diga 'título' para começar", () => {
-                      startListening(true);
-                    });
-                  }}
+                  onPress={() => { setStep('aguardandoPalavraTitulo'); setRecognizedText(''); tituloProcessadoRef.current = false; speak("Diga 'título' para começar", () => { startListening(true); }); }}
                   disabled={isListening || isSaving}
                 >
-                  <Ionicons 
-                    name={isListening ? "mic" : "mic-outline"} 
-                    size={getIconSize('medium')} 
-                    color={cores.fundo} 
-                  />
+                  <Ionicons name={isListening ? "mic" : "mic-outline"} size={getIconSize('medium')} color={cores.fundo} />
                 </TouchableOpacity>
               </View>
             </View>
-
             {step === 'idle' && !isSaving && (
               <View style={styles.modalActions}>
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={fecharModal}
-                >
-                  <Text style={styles.cancelButtonText}>Cancelar</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={styles.saveButton}
-                  onPress={criarConversaManual}
-                >
-                  <Text style={styles.saveButtonText}>Salvar</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelButton} onPress={fecharModal}><Text style={styles.cancelButtonText}>Cancelar</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={criarConversaManual}><Text style={styles.saveButtonText}>Salvar</Text></TouchableOpacity>
               </View>
             )}
-
             {isSaving && (
               <View style={styles.savingIndicator}>
                 <ActivityIndicator size="small" color={cores.fundo} />
                 <Text style={styles.savingText}>Salvando conversa...</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL DE EDIÇÃO */}
+      <Modal visible={editModalVisible} transparent={true} animationType="fade" onRequestClose={fecharEditModal} statusBarTranslucent={true}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]} activeOpacity={1} onPress={fecharEditModal} />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Conversa</Text>
+              <TouchableOpacity style={styles.closeButton} onPress={fecharEditModal} disabled={isEditSaving}>
+                <Ionicons name="close" size={getIconSize('medium')} color={cores.texto} />
+              </TouchableOpacity>
+            </View>
+            {isListening && (
+              <View style={styles.listeningIndicator}>
+                <ActivityIndicator size="small" color={cores.texto} />
+                <Text style={styles.listeningText}>{editAguardandoPalavraTitulo ? 'Aguardando "Título"...' : 'Ouvindo novo título...'}</Text>
+              </View>
+            )}
+            {editStep === 'aguardandoTitulo' && recognizedText && (
+              <View style={[styles.listeningIndicator, { backgroundColor: cores.barrasDeNavegacao }]}>
+                <Text style={styles.listeningText}>"{recognizedText}"</Text>
+              </View>
+            )}
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Novo Título</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={editTituloInput}
+                  onChangeText={(text) => { setEditTituloInput(text); if (editStep !== 'idle') { setEditStep('idle'); stopListening(); editTituloProcessadoRef.current = false; } }}
+                  placeholder="Digite ou fale o novo título"
+                  placeholderTextColor='#999'
+                  editable={!isEditSaving}
+                  autoFocus={false}
+                />
+                <TouchableOpacity 
+                  style={styles.micButton}
+                  onPress={() => { setEditStep('aguardandoPalavraTitulo'); setRecognizedText(''); editTituloProcessadoRef.current = false; speak("Diga 'título' para começar", () => { startListening(true); }); }}
+                  disabled={isListening || isEditSaving}
+                >
+                  <Ionicons name={isListening ? "mic" : "mic-outline"} size={getIconSize('medium')} color={cores.fundo} />
+                </TouchableOpacity>
+              </View>
+            </View>
+            {editStep === 'idle' && !isEditSaving && (
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelButton} onPress={fecharEditModal}><Text style={styles.cancelButtonText}>Cancelar</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={renomearConversaManual}><Text style={styles.saveButtonText}>Salvar</Text></TouchableOpacity>
+              </View>
+            )}
+            {isEditSaving && (
+              <View style={styles.savingIndicator}>
+                <ActivityIndicator size="small" color={cores.fundo} />
+                <Text style={styles.savingText}>Salvando alterações...</Text>
               </View>
             )}
           </View>

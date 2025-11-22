@@ -118,6 +118,34 @@ const ConversationScreen: React.FC = () => {
       });
     }
   }, [speakLastMessage, isScreenFocused]);
+  const toggleMicrophone = useCallback(() => {
+    console.log('[MIC] Toggle clicado. Estado atual:', micEnabled);
+    console.log('[MIC] activeImage:', activeImage);
+    
+    if (!activeImage) {
+      Alert.alert('Atenção', 'Por favor, tire uma foto antes de usar o microfone.');
+      return;
+    }
+    
+    const novoEstado = !micEnabled;
+    setMicEnabled(novoEstado);
+    
+    if (novoEstado) {
+      setRecognizedText('');
+      lastRecognizedTextRef.current = '';
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+      }
+      speak('Microfone ativado. Fale sua pergunta ou diga "enviar áudio" para continuar gravando.');
+    } else {
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+      }
+      setRecognizedText('');
+      lastRecognizedTextRef.current = '';
+      speak('Microfone desativado.');
+    }
+  }, [micEnabled, activeImage, speak]);
 
   // ===================================================================
   // REGISTRAR CALLBACKS QUANDO TELA ESTÁ EM FOCO
@@ -143,6 +171,35 @@ const ConversationScreen: React.FC = () => {
         onOpenCamera: () => {
           console.log('[Conversa] 📷 Callback onOpenCamera chamado');
           handlePickImage();
+        },
+        onSendAudio: () => {
+          console.log('[Conversa] 🎙️ Callback onSendAudio chamado');
+          console.log('[Conversa] activeImage no callback:', activeImage);
+          
+          // ✅ Verifica se há imagem ativa
+          if (!activeImage) {
+            console.warn('[Conversa] 🚫 Sem imagem ativa no callback onSendAudio');
+            speak('Nenhuma imagem está ativa. Por favor, tire uma foto primeiro.');
+            return;
+          }
+          
+          // ✅ Ativa o microfone se não estiver ativado
+          if (!micEnabled) {
+            console.log('[Conversa] ✅ Ativando microfone via onSendAudio');
+            setRecognizedText('');
+            lastRecognizedTextRef.current = '';
+            if (recognitionTimeoutRef.current) {
+              clearTimeout(recognitionTimeoutRef.current);
+            }
+            setMicEnabled(true);
+            
+            // Fala feedback após um pequeno delay
+            setTimeout(() => {
+              speak('Microfone ativado. Fale sua pergunta ou diga "enviar áudio" para continuar gravando.');
+            }, 300);
+          } else {
+            console.log('[Conversa] ℹ️ Microfone já estava ativado');
+          }
         }
       };
 
@@ -154,7 +211,8 @@ const ConversationScreen: React.FC = () => {
         setPendingContext(null);
       };
     }
-  }, [isScreenFocused, conversaId]);
+  }, [isScreenFocused, conversaId, activeImage, micEnabled, speak, registerConversationCallbacks, unregisterConversationCallbacks, setPendingContext, toggleMicrophone]);
+
 
   // ===================================================================
   // TIRAR FOTO POR COMANDO DE VOZ
@@ -301,9 +359,24 @@ const ConversationScreen: React.FC = () => {
     if (!recognizedText.trim() || !micEnabled) return;
 
     const textoAtual = recognizedText.trim();
+    const textoLower = textoAtual.toLowerCase();
     lastRecognizedTextRef.current = textoAtual;
 
     console.log("[Conversa] Texto sendo reconhecido:", textoAtual);
+
+    // ✅ NOVO: Detectar comando "enviar áudio" 
+    if (textoLower.includes('enviar') && textoLower.includes('áudio')) {
+      console.log('[Conversa] 🎙️ Comando "enviar áudio" detectado localmente');
+      setRecognizedText('');
+      lastRecognizedTextRef.current = '';
+      
+      if (recognitionTimeoutRef.current) {
+        clearTimeout(recognitionTimeoutRef.current);
+      }
+      
+      // Mantém o microfone ativo para a próxima mensagem
+      return;
+    }
 
     if (recognitionTimeoutRef.current) {
       clearTimeout(recognitionTimeoutRef.current);
@@ -334,7 +407,7 @@ const ConversationScreen: React.FC = () => {
       enviarMensagem(textoFinal);
     }, 2000);
 
-  }, [recognizedText, micEnabled, activeImage]);
+  }, [recognizedText, micEnabled, activeImage, speak]);
 
   useEffect(() => {
     return () => {
@@ -343,37 +416,6 @@ const ConversationScreen: React.FC = () => {
       }
     };
   }, []);
-
-  // ===================================================================
-  // ALTERNAR MICROFONE
-  // ===================================================================
-  const toggleMicrophone = () => {
-    console.log('[MIC] Toggle clicado. Estado atual:', micEnabled);
-    
-    if (!activeImage) {
-      Alert.alert('Atenção', 'Por favor, tire uma foto antes de usar o microfone.');
-      return;
-    }
-    
-    const novoEstado = !micEnabled;
-    setMicEnabled(novoEstado);
-    
-    if (novoEstado) {
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-      speak('Microfone ativado. Fale sua pergunta.');
-    } else {
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      speak('Microfone desativado.');
-    }
-  };
 
   // ===================================================================
   // NAVEGAR PARA TIRAR FOTO
@@ -559,7 +601,7 @@ const ConversationScreen: React.FC = () => {
           style={styles.flatList}
           contentContainerStyle={[
             styles.flatListContent,
-            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 90 : 90 }
+            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 100 : 100 }
           ]}
           data={messages}
           keyExtractor={item => item.id}
@@ -716,7 +758,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '85%',
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -729,11 +771,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start', 
   },
   messageText: { 
-    fontSize: 16 
+    fontSize: 16,
+    lineHeight: 22,
   },
   messageImage: {
-    width: 200,
-    height: 200,
+    width: 180,
+    height: 180,
     borderRadius: 12,
     marginBottom: 8,
   },
@@ -763,21 +806,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingBottom: Platform.OS === 'ios' ? 8 : 12,
     minHeight: 80,
+    gap: 4,
   },
   imagePickerButton: { 
-    width: 60,
-    height: 60,
+    width: 90,
+    height: 90,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#333',
-    borderRadius: 8,
-    marginRight: 8,
-    marginBottom: 4,
+    borderRadius: 12,
+    flexShrink: 0,
+    borderWidth: 2,
+    borderColor: '#555',
   },
   activeImagePreview: { 
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+    width: 90,
+    height: 90,
+    borderRadius: 12,
   },
   input: { 
     flex: 1, 
@@ -786,15 +831,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 22,
     maxHeight: 100,
-    marginBottom: 4,
+    minHeight: 40,
   },
   micButton: {
-    padding: 10,
-    marginBottom: 4,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
   sendButton: {
-    padding: 10,
-    marginBottom: 4,
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
   },
 });
 

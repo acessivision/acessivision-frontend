@@ -27,6 +27,7 @@ interface ConversationCallbacks {
   onActivateMic?: () => void;
   onTakePhoto?: (question: string) => void;
   onOpenCamera?: () => void;
+  onSendAudio?: () => void;
 }
 
 interface NavigationContext {
@@ -82,18 +83,19 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   const { executeIntent, getIntentDisplayName, processCommand, isBusyRef } = useIntentHandler({
-    speak,
-    temaAplicado,
-    mudaTema: mudaTema, 
-    startListening,
-    stopListening,
-    setVoiceState,
-    setRecognizedText,
-    onActivateMic: () => conversationCallbacksRef.current.onActivateMic?.(),
-    onTakePhoto: (q: string) => conversationCallbacksRef.current.onTakePhoto?.(q),
-    onOpenCamera: () => conversationCallbacksRef.current.onOpenCamera?.(),
-    setPendingContext,
-  });
+  speak,
+  temaAplicado,
+  mudaTema: mudaTema, 
+  startListening,
+  stopListening,
+  setVoiceState,
+  setRecognizedText,
+  onActivateMic: () => conversationCallbacksRef.current.onActivateMic?.(),
+  onTakePhoto: (q: string) => conversationCallbacksRef.current.onTakePhoto?.(q),
+  onOpenCamera: () => conversationCallbacksRef.current.onOpenCamera?.(),
+  onSendAudio: () => conversationCallbacksRef.current.onSendAudio?.(),
+  setPendingContext,
+});
 
   const handleConfirmationResponse = useCallback((spokenText: string) => {
     const normalizedText = spokenText.toLowerCase().trim();
@@ -187,6 +189,22 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
       const currentState = voiceStateRef.current;
       console.log(`[VoiceContext] Processing FINAL: "${trimmedText}", State: ${currentState}`);
+
+      // ✅ NOVO: Detectar comando "enviar áudio" localmente em qualquer estado
+      const textoLower = trimmedText.toLowerCase();
+      if ((textoLower.includes('enviar') && textoLower.includes('áudio')) || 
+          (textoLower.includes('enviar') && textoLower.includes('audio'))) {
+        console.log('[VoiceContext] 🎙️ Comando "enviar áudio" detectado - chamando callback onSendAudio');
+        
+        // Chama callback local se registrado (ConversationScreen)
+        if (conversationCallbacksRef.current?.onSendAudio) {
+          conversationCallbacksRef.current.onSendAudio();
+          setRecognizedText('');
+          return;
+        } else {
+          console.log('[VoiceContext] ⚠️ onSendAudio callback não registrado');
+        }
+      }
 
       if (currentState === "waiting_confirmation") {
         stopListeningRef.current();
