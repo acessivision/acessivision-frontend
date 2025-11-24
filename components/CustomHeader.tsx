@@ -19,6 +19,7 @@ import { useAuth } from '../components/AuthContext';
 import { useSpeech } from '../hooks/useSpeech';
 import LogoutModal from '../components/LogoutModal';
 import { tutoriaisDasTelas } from '../utils/tutoriais';
+import { useTutorial } from '../components/TutorialContext';
 
 interface CustomHeaderProps {
   title: string;
@@ -45,6 +46,8 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     const [step, setStep] = useState<LogoutStepType>('idle');
     const logoutTimeoutRef = useRef<any>(null);
 
+    const { reproduzirTutorial } = useTutorial();
+
     const { 
       speak, 
       startListening, 
@@ -69,9 +72,11 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     };
 
     const handleAbrirTutorial = () => {
-      const texto = tutoriaisDasTelas[pathname] || 'Este é o aplicativo.';
+      // Pega o texto baseado na rota, ou usa um padrão se não encontrar
+      const texto = tutoriaisDasTelas[pathname] || "Tutorial não disponível para esta tela.";
       
-      speak(texto);
+      // Chama a função do contexto que abre o modal e fala
+      reproduzirTutorial(texto);
     };
 
     useEffect(() => {

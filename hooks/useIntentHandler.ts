@@ -7,7 +7,7 @@ import { useRouter, usePathname, Href } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
 import { useAuth } from '../components/AuthContext';
-import { tutoriaisDasTelas } from '../utils/tutoriais';
+import { tutoriaisDasTelas, tutorialGeral } from '../utils/tutoriais';
 
 type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/login' | '/conversa';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
@@ -262,7 +262,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
 
       case 'tutorial':
-        speak("Mostrando o tutorial...", restartListeningAfterSpeak);
+        speak(tutorialGeral, restartListeningAfterSpeak);
         return;
         
       case 'explicar_tela':
@@ -352,14 +352,10 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     ];
     
     const stopPatterns = [
+      /^para\b/,
       /^pare\b/,
       /^parar\b/,
       /^cala a boca\b/,
-      /\bpare de\b/,
-      /\bpara de\b/,
-      /\bpara aí\b/,
-      /\bpara já\b/,
-      /\bcala a boca\b/,
       /^silêncio\b/,
       /^quieto\b/
     ];

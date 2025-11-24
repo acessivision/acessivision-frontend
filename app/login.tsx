@@ -259,12 +259,12 @@ useEffect(() => {
           onPress={handleGoogleLogin}
           disabled={isButtonDisabled}
           accessibilityLabel='Entrar com Google'
-          accessibilityHint={isButtonDisabled ? '' : 'Faz login usando sua conta Google'}
+          accessibilityHint={isButtonDisabled ? '' : 'Faz login usando emails salvos no celular'}
           accessibilityRole="button"
         >
           <Image source={require('../assets/images/icone-google.png')} />
           <Text style={styles.googleButtonText}>
-            'Entrar com Google'
+            Entrar com Google
           </Text>
         </TouchableOpacity>
       </View>

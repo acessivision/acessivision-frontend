@@ -32,7 +32,7 @@ const classes = model.classes;
 // === MUDANÇA 1: Threshold mais tolerante para JS ===
 // 45% é seguro o suficiente. Se não fosse a intenção certa, 
 // a confiança estaria pulverizada (ex: 15%, 10%, 12%).
-const LOW_CONFIDENCE_THRESHOLD = 0.40; 
+const LOW_CONFIDENCE_THRESHOLD = 0.35; 
 
 function preprocessText(text: string): string {
   let processed = text;

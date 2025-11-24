@@ -136,7 +136,7 @@ const ConversationScreen: React.FC = () => {
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
       }
-      speak('Microfone ativado. Fale sua pergunta ou diga "enviar áudio" para continuar gravando.');
+      speak('Gravando áudio');
     } else {
       if (recognitionTimeoutRef.current) {
         clearTimeout(recognitionTimeoutRef.current);
@@ -195,7 +195,7 @@ const ConversationScreen: React.FC = () => {
             
             // Fala feedback após um pequeno delay
             setTimeout(() => {
-              speak('Microfone ativado. Fale sua pergunta ou diga "enviar áudio" para continuar gravando.');
+              speak('Gravando áudio');
             }, 300);
           } else {
             console.log('[Conversa] ℹ️ Microfone já estava ativado');

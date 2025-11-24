@@ -37,21 +37,22 @@ export function useAudioSetup() {
     console.log('[Voice] Audio player unregistered');
   }, []);
 
-  // ✅ FUNÇÃO SPEAK QUE ESTAVA FALTANDO
+  // ✅ FUNÇÃO SPEAK COM PAUSA DO RECONHECIMENTO
   const speak = useCallback((text: string, onDone?: () => void) => {
-    console.log('[useAudioSetup] Speaking:', text);
+    console.log('[useAudioSetup] 🔊 Speaking:', text);
     
     // Para qualquer áudio em reprodução
     if (currentAudioPlayerRef.current) {
       try {
         currentAudioPlayerRef.current.pause();
+        console.log('[useAudioSetup] ⏸️ Paused audio player');
       } catch (e) {
         console.log('[useAudioSetup] No audio to pause');
       }
     }
 
-    // ✅ Define se deve pausar o reconhecimento baseado no texto
-    const shouldPauseRecognition = text.toLowerCase().trim() !== 'escutando';
+    // ✅ SEMPRE pausa o reconhecimento antes de falar (exceto "escutando")
+    const shouldPauseRecognition = !text.toLowerCase().includes('escutando');
     
     console.log('[useAudioSetup] pauseRecognition:', shouldPauseRecognition);
 
@@ -61,7 +62,7 @@ export function useAudioSetup() {
 
   // ✅ FUNÇÃO PARA PARAR ÁUDIO
   const stopCurrentAudio = useCallback(() => {
-    console.log('[useAudioSetup] Stopping current audio');
+    console.log('[useAudioSetup] 🛑 Stopping current audio');
     
     // Para o áudio player se existir
     if (currentAudioPlayerRef.current) {
