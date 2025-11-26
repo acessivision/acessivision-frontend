@@ -260,7 +260,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.acessivision";
-				PRODUCT_NAME = "acessivision";
+				PRODUCT_NAME = "AcessiVision";
 				SWIFT_OBJC_BRIDGING_HEADER = "acessivision/acessivision-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -289,7 +289,7 @@
 					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.acessivision";
-				PRODUCT_NAME = "acessivision";
+				PRODUCT_NAME = "AcessiVision";
 				SWIFT_OBJC_BRIDGING_HEADER = "acessivision/acessivision-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
