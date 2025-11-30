@@ -1,4 +1,4 @@
-// useSpeech.ts - Hook simplificado usando SpeechManager
+// useSpeech.ts - Respeita o estado global do SpeechManager
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   useSpeechRecognitionEvent,
@@ -19,84 +19,97 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
   const [permissionsGranted, setPermissionsGranted] = useState(false);
 
   const localCallbackRef = useRef(onResult);
-  const autoStartAttemptedRef = useRef(false);
+  
+  // ✅ Controle de duplicatas no próprio hook
+  const lastResultRef = useRef<string>('');
+  const lastResultTimeRef = useRef<number>(0);
   
   useEffect(() => {
     localCallbackRef.current = onResult;
   }, [onResult]);
   
   // ============================================
-  // SETUP DE PERMISSÕES - PRIMEIRA PRIORIDADE
+  // SETUP DE PERMISSÕES
   // ============================================
   useEffect(() => {
     const initializePermissions = async () => {
-      console.log('[useSpeech] 🔐 Requesting permissions...');
       const granted = await SpeechManager.requestPermissions();
-      
       if (granted) {
-        console.log('[useSpeech] ✅ Permissions granted');
         setPermissionsGranted(true);
-      } else {
-        console.log('[useSpeech] ❌ Permissions denied');
       }
     };
-    
     initializePermissions();
   }, []);
   
   // ============================================
-  // CONTROLE DE ATIVAÇÃO - DEPOIS DAS PERMISSÕES
+  // CONTROLE DE ATIVAÇÃO (LÓGICA CORRIGIDA)
   // ============================================
   useEffect(() => {
-    if (!permissionsGranted) {
-      console.log('[useSpeech] ⏳ Waiting for permissions...');
-      return;
-    }
+    if (!permissionsGranted) return;
     
-    if (enabled && mode === 'global') {
-      console.log(`[useSpeech - ${mode}] ✅ Enabling Manager and starting recognition.`);
-      SpeechManager.enable();
-      
-      if (!autoStartAttemptedRef.current) {
-        autoStartAttemptedRef.current = true;
+    // Verificamos o estado GLOBAL real do manager
+    const managerState = SpeechManager.getState();
+
+    if (enabled) {
+      // ✅ Só inicia se o Manager estiver HABILITADO globalmente (pelo Context)
+      if (managerState.isEnabled) {
+        console.log(`[useSpeech - ${mode}] ✅ Solicitando início (Manager está ON)`);
         
+        // Pequeno delay para garantir que transições de tela não encavalem
         setTimeout(() => {
-          const state = SpeechManager.getState();
-          if (!state.isRecognizing && !state.isSpeaking) {
-            console.log('[useSpeech] 🎤 Auto-starting recognition');
-            SpeechManager.startRecognition('global');
-            setIsListening(true);
-          } else {
-            console.log('[useSpeech] ⏭️ Skipping auto-start (already active)');
-          }
-        }, 500);
+           const current = SpeechManager.getState();
+           if (!current.isRecognizing && !current.isSpeaking && current.isEnabled) {
+             SpeechManager.startRecognition(mode);
+             setIsListening(true);
+           }
+        }, 300);
+      } else {
+        console.log(`[useSpeech - ${mode}] 🔇 Ignorando ativação (Manager está OFF globalmente)`);
       }
-    }
-    else if (!enabled && mode === 'global') {
-       console.log(`[useSpeech - ${mode}] ❌ Disabling Manager.`);
-       SpeechManager.disable();
-       autoStartAttemptedRef.current = false;
+    } 
+    else {
+      // Se enabled = false (tela perdeu foco), paramos o reconhecimento
+      // MAS NÃO desabilitamos o manager globalmente
+      if (mode === 'local') {
+         SpeechManager.stopRecognition();
+      } else if (managerState.isRecognizing && managerState.currentMode === 'global') {
+         // Se for global e perdeu foco, pausamos o reconhecimento, mas mantemos isEnabled
+         SpeechManager.stopRecognition();
+      }
     }
 
     return () => {
-      if (mode === 'global') {
-         console.log('[useSpeech - global] 🔄 Unmounting, disabling Manager.');
-         SpeechManager.disable();
-         autoStartAttemptedRef.current = false;
+      // Cleanup: Ao desmontar, para o reconhecimento, mas nunca desabilita o Manager global
+      if (mode === 'local') {
+         SpeechManager.stopRecognition();
       }
     };
   }, [enabled, mode, permissionsGranted]);
+
+  // ============================================
+  // MONITORAMENTO DE ESTADO DO MANAGER
+  // ============================================
+  // Adiciona um listener para atualizar o isListening se o estado do Manager mudar externamente
+  useEffect(() => {
+     const interval = setInterval(() => {
+        const state = SpeechManager.getState();
+        if (state.isRecognizing !== isListening) {
+           setIsListening(state.isRecognizing);
+        }
+        if (state.isSpeaking !== isSpeaking) {
+           setIsSpeaking(state.isSpeaking);
+        }
+     }, 500);
+     return () => clearInterval(interval);
+  }, [isListening, isSpeaking]);
   
-  // ============================================
-  // EVENTOS DO RECONHECIMENTO
-  // ============================================
+  // ... (RESTO DO ARQUIVO IGUAL: Eventos, Filtros, Funções Expostas) ...
+  
   useSpeechRecognitionEvent('start', () => {
-    console.log('[useSpeech] 🎤 Recognition STARTED');
     setIsListening(true);
   });
   
   useSpeechRecognitionEvent('end', () => {
-    console.log('[useSpeech] 🛑 Recognition ENDED');
     setIsListening(false);
     SpeechManager.handleEnd();
   });
@@ -105,55 +118,63 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
     const transcript = event.results?.[0]?.transcript || '';
     const isFinal = event.isFinal || false;
     
+    if (!transcript.trim()) return;
+    
+    const now = Date.now();
+    const normalizedTranscript = transcript.toLowerCase().trim();
+    
+    if (!isFinal) {
+      if (normalizedTranscript === lastResultRef.current) return;
+      setRecognizedText(transcript);
+      lastResultRef.current = normalizedTranscript;
+      return;
+    }
+    
+    if (normalizedTranscript === lastResultRef.current && (now - lastResultTimeRef.current) < 1000) {
+      return;
+    }
+    
+    lastResultRef.current = normalizedTranscript;
+    lastResultTimeRef.current = now;
+    
     console.log('[useSpeech] 📝 Result:', transcript, 'isFinal:', isFinal);
     setRecognizedText(transcript);
-
-    if (isFinal && transcript.trim()) {
-      SpeechManager.handleResult(transcript, true);
-    }
+    SpeechManager.handleResult(transcript, true);
   });
   
   useSpeechRecognitionEvent('error', (error) => {
-    console.log('[useSpeech] ❌ Recognition ERROR:', error);
     setIsListening(false);
     SpeechManager.handleError(error.error);
   });
   
-  // ============================================
-  // FUNÇÕES EXPOSTAS
-  // ============================================
   const speak = useCallback(async (text: string, callback?: () => void) => {
-    console.log('[useSpeech] 🔊 Speaking:', text);
-    console.log('[useSpeech] 🎤 Pausing recognition before speaking');
-    
-    // ✅ CRÍTICO: Para o reconhecimento ANTES de falar
     setIsListening(false);
     setIsSpeaking(true);
-    
     await SpeechManager.speak(text, () => {
-      console.log('[useSpeech] ✅ Speech finished');
       setIsSpeaking(false);
       callback?.();
-    }, true); // ✅ Força pausar reconhecimento
+    }, true);
   }, []);
   
   const startListening = useCallback((localMode: boolean = false, localOverrideCallback?: (text: string) => void) => {
+    // ✅ Proteção: Só inicia se o global estiver habilitado
+    if (!SpeechManager.getState().isEnabled) {
+       console.log('[useSpeech] ❌ Tentativa de iniciar recusada: Microfone desabilitado globalmente.');
+       return;
+    }
+
     const actualMode = localMode ? 'local' : mode;
     const callbackToUse = localMode ? (localOverrideCallback || localCallbackRef.current) : undefined;
-    
-    console.log(`[useSpeech] 🎤 Requesting Manager.startRecognition(mode=${actualMode})`);
     SpeechManager.startRecognition(actualMode, callbackToUse);
     setIsListening(true);
   }, [mode]);
   
   const stopListening = useCallback(() => {
-    console.log('[useSpeech] 🛑 Manual stop: Disabling Manager completely');
-    SpeechManager.disable();
+    SpeechManager.stopRecognition();
     setIsListening(false);
   }, []);
   
   const stopSpeaking = useCallback(() => {
-    console.log('[useSpeech] 🔇 Stopping speech');
     SpeechManager.stopSpeaking();
     setIsSpeaking(false);
   }, []);

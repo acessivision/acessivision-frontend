@@ -19,6 +19,8 @@ import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { toTitleCase } from '../../utils/toTitleCase';
 import { useSpeech } from '../../hooks/useSpeech';
+import SpeechManager from '../../utils/speechManager';
+import { useMicrophone } from '../../components/MicrophoneContext';
 
 import { getFirestore, collection, query, where, orderBy, onSnapshot, doc, getDocs, writeBatch, deleteDoc, updateDoc, addDoc, serverTimestamp, setDoc, arrayUnion, arrayRemove, Timestamp } from '@react-native-firebase/firestore';
 
@@ -49,6 +51,8 @@ const HistoryScreen: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [step, setStep] = useState<StepType>('idle');
 
+  const wasMicEnabledBeforeScreenRef = useRef(false);
+
   // ✅ Estados para edição de conversa
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conversaParaEditar, setConversaParaEditar] = useState<{ id: string; titulo: string } | null>(null);
@@ -76,6 +80,9 @@ const HistoryScreen: React.FC = () => {
 
   const isSpeakingRef = useRef(false);
 
+  const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
+
+
   // ✅ Hook de voz para modais (criação, edição e exclusão)
   const { 
     speak, 
@@ -86,14 +93,15 @@ const HistoryScreen: React.FC = () => {
     recognizedText,
     setRecognizedText 
   } = useSpeech({
-    enabled: isScreenFocused && (modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening),
+    enabled: isScreenFocused && hasActiveModal, 
     mode: 'local',
   });
 
-  // ✅ Hook separado para comandos globais
+  const { isMicrophoneEnabled } = useMicrophone();
+
   const globalSpeech = useSpeech({
-    enabled: isScreenFocused && !modalVisible && !editModalVisible && !conversaParaExcluir && !isSearchListening,
-    mode: 'local',
+    enabled: isScreenFocused && isMicrophoneEnabled && !hasActiveModal,
+    mode: 'global',
   });
 
   useEffect(() => {
@@ -149,10 +157,91 @@ const HistoryScreen: React.FC = () => {
     conv.titulo.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  // ===================================================================
+useEffect(() => {
+  console.log(`[Histórico] 🔄 Foco mudou: ${isScreenFocused}`);
+  
+  if (!isScreenFocused) {
+    // ✅ SAIU DA TELA - Apenas limpa estados locais
+    console.log('[Histórico] 🚫 Saindo da tela - limpando estados locais');
+    
+    stopListening();
+    stopSpeaking();
+    
+    setRecognizedText('');
+    setIsSearchListening(false);
+    setSearchStep('idle');
+    
+    // Fecha modais
+    if (modalVisible) {
+      setModalVisible(false);
+      setStep('idle');
+      setTituloInput('');
+    }
+    if (editModalVisible) {
+      setEditModalVisible(false);
+      setEditStep('idle');
+      setEditTituloInput('');
+    }
+    if (conversaParaExcluir) {
+      setConversaParaExcluir(null);
+      setStep('idle');
+    }
+    
+    // ✅ NÃO TOCA NO ESTADO GLOBAL DO MICROFONE
+    
+  } else {
+    // ✅ ENTROU NA TELA
+    console.log('[Histórico] ✅ Entrando na tela');
+    
+    setTimeout(() => {      
+      if (!hasActiveModal) {
+        // ✅ VERIFICA O ESTADO GLOBAL DO CONTEXTO
+        if (isMicrophoneEnabled) {
+          console.log('[Histórico] 🎤 Microfone está habilitado globalmente, iniciando reconhecimento');
+          SpeechManager.startRecognition('global');
+        } else {
+          console.log('[Histórico] 🔇 Microfone está desabilitado globalmente, não iniciando');
+        }
+      } else {
+        console.log('[Histórico] ⏭️ Modais ativos, não ativando global ainda');
+      }
+    }, 500);
+  }
+}, [isScreenFocused, isMicrophoneEnabled]);
+
+useEffect(() => {
+  if (!isScreenFocused) return;
+  
+  const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
+  
+  if (hasActiveModal) {
+    console.log('[Histórico] 🛑 Modal aberto - parando reconhecimento local');
+    SpeechManager.stopRecognition(); // ✅ Só para, não desabilita
+  } else {
+    console.log('[Histórico] ▶️ Modal fechado - verificando se deve reativar');
+    
+    setTimeout(() => {
+      // ✅ Só reativa se o microfone estiver habilitado GLOBALMENTE
+      if (isMicrophoneEnabled) {
+        console.log('[Histórico] ✅ Microfone habilitado, reativando reconhecimento');
+        SpeechManager.startRecognition('global');
+      } else {
+        console.log('[Histórico] 🔇 Microfone desabilitado, não reativando');
+      }
+    }, 300);
+  }
+}, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, isScreenFocused, isMicrophoneEnabled]);
+
+
+// ===================================================================
 // PROCESSAR COMANDOS GLOBAIS COM DEBOUNCE (fora de modais)
 // ===================================================================
 useEffect(() => {
+  if (!isScreenFocused) {
+    console.log('[Histórico] ⏭️ Tela não focada, ignorando comando');
+    return;
+  }
+
   if (!globalSpeech.recognizedText.trim() || modalVisible || editModalVisible || conversaParaExcluir || isSearchListening) return;
 
   const textoAtual = globalSpeech.recognizedText.trim();
@@ -768,11 +857,12 @@ useEffect(() => {
   // ABRIR/FECHAR MODAL DE CRIAÇÃO
   // ===================================================================
   const abrirModal = () => {
+    console.log('[Histórico] 📂 Abrindo modal de criação');
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
-    console.log(`[Histórico] Abrindo modal. Microfone estava: ${wasListeningBeforeModalRef.current ? 'ATIVO' : 'INATIVO'}`);
+    console.log(`[Histórico] 🎤 Estado do microfone antes: ${wasListeningBeforeModalRef.current ? 'ATIVO' : 'INATIVO'}`);
     
     globalSpeech.stopListening();
-    console.log('[Histórico] 🛑 Reconhecimento global pausado antes de abrir modal');
+    console.log('[Histórico] 🛑 Reconhecimento global pausado');
     
     setTituloInput('');
     setStep('aguardandoPalavraTitulo');
@@ -799,6 +889,7 @@ useEffect(() => {
 
   const fecharModal = () => {
     console.log('[Histórico] 🚪 Fechando modal de criação');
+    
     stopSpeaking();
     stopListening();
     
@@ -808,7 +899,7 @@ useEffect(() => {
     setIsSaving(false);
     setRecognizedText('');
     tituloProcessadoRef.current = false;
-    isSpeakingRef.current = false; // ✅ NOVO: Reset
+    isSpeakingRef.current = false;
     
     if (tituloTimeoutRef.current) {
       clearTimeout(tituloTimeoutRef.current);
@@ -817,10 +908,13 @@ useEffect(() => {
     
     setShouldListenLocally(false);
     
+    // ✅ Reativa global APENAS se a tela ainda estiver focada
     setTimeout(() => {
-      if (wasListeningBeforeModalRef.current) {
-        console.log('[Histórico] ✅ Reativando microfone global após fechar modal');
-        globalSpeech.startListening(true);
+      if (isScreenFocused && wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global (tela focada)');
+        globalSpeech.startListening(false);
+      } else if (!isScreenFocused) {
+        console.log('[Histórico] ⏭️ Tela não focada, não reativando global');
       }
     }, 500);
   };
@@ -1064,7 +1158,7 @@ useEffect(() => {
                     style={styles.editButton} 
                     onPress={(e) => { e.stopPropagation(); editarConversa(item.id, item.titulo); }}
                     accessible={true}
-                    accessibilityLabel='Editar Conversa'
+                    accessibilityLabel='Editar Título'
                     accessibilityRole='button'
                   >
                     <MaterialIcons name="edit" size={getIconSize('medium')} color={cores.texto} />

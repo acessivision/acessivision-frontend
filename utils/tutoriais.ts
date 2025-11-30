@@ -2,19 +2,19 @@ export const tutoriaisDasTelas: Record<string, string> = {
       '/tabs/historico': `Esta é a tela de histórico. Aqui ficam as suas conversas salvas. 
       Para iniciar uma nova conversa, diga: 'Criar nova conversa', ou clique no botão de criar, localizado ao centro inferior da tela. 
       O AcessiVision vai pedir um título, que você pode falar ou digitar. 
-      Depois disso, a conversa abre automaticamente. Para pesquisar por uma conversa, diga: "Pesquisar" e informe o título da conversa que deseja encontrar. 
-      Para editar o título de alguma conversa, clique no botão de editar, que fica ao canto direito de cada conve
-      Para apagar uma conversa, localize e clique no botão de excluir, que fica ao canto direito de cada conversa listada no histórico.`,
+      Depois disso, a conversa abre automaticamente. Para pesquisar por uma conversa, diga: "Pesquisar", aguarde e informe o título da conversa que deseja encontrar. 
+      Para editar o título de alguma conversa, clique no botão de editar, que fica ao canto direito de cada conversa e à esquerda do botão de excluir conversa.
+      Para apagar uma conversa, clique no botão de excluir, que fica ao canto direito de cada conversa listada no histórico, à direita do botão de editar título.`,
 
       '/tabs/menu': 'Esta é a tela de menu. Aqui estão listadas as telas e ações disponíveis.',
 
-      '/login': `Esta é a tela de login. Para acessar sua conta, diga: 'Entrar com Google', ou clique no botão 'Entrar com Google' na parte inferior da tela. Após isso,
+      '/login': `Esta é a tela de login. Para acessar sua conta, diga: 'Entrar com Google', ou clique no botão "Entrar com Google" na parte inferior da tela. Após isso,
       é necessário clicar em um dos emails disponíveis`,
       
-      '/tabs': `Esta é a câmera. Para enviar uma foto, aponte o celular para o objeto, diga 'Escuta', e faça sua pergunta. 
-      Exemplos: 'O que é isso?', ou: 'Lê este texto para mim'. 
-      Se preferir, use o botão de tirar foto, localizado um pouco abaixo do centro da tela, digite e envie sua 
-      pergunta. Aguarde alguns segundos para a obter a resposta.`,
+      '/tabs': `Esta é a câmera. Para enviar uma foto, aponte o celular para o objeto, diga "Escuta", e faça sua pergunta. 
+      Exemplos: "O que é isso?", ou: "Lê este texto para mim". 
+      Se preferir, use o botão de tirar foto, localizado um pouco abaixo do centro da tela, digite e envie sua pergunta. 
+      Aguarde alguns segundos para a obter a resposta.`,
 
       '/conversa': `Esta é a tela de conversa. Todas as mensagens enviadas aqui ficam salvas caso queira fazer uma consulta depois. 
       Você pode enviar uma nova foto, usando os comandos de voz. O AcessiVision vai abrir a câmera, tirar uma foto e salvar a resposta automaticamente. 

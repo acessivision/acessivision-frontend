@@ -8,6 +8,8 @@ import { AccessibilityInfo } from 'react-native';
 import { IntentClassifierService } from '../assets/models/IntentClassifier';
 import { useAuth } from '../components/AuthContext';
 import { tutoriaisDasTelas, tutorialGeral } from '../utils/tutoriais';
+import { useTutorial } from '../components/TutorialContext';
+import SpeechManager from '../utils/speechManager';
 
 type AppPath = '/tabs' | '/tabs/historico' | '/tabs/menu' | '/login' | '/conversa';
 export type VoiceState = 'waiting_wake' | 'listening_command' | 'waiting_confirmation';
@@ -45,7 +47,7 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   
   const router = useRouter();
   const pathname = usePathname();
-
+  const { reproduzirTutorial } = useTutorial();
   const isBusyRef = useRef(false);
   const lastProcessedCommandRef = useRef<string>('');
   const lastProcessedTimeRef = useRef(0);
@@ -262,12 +264,80 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
 
       case 'tutorial':
-        speak(tutorialGeral, restartListeningAfterSpeak);
+        console.log('[Intent] 📚 Iniciando tutorial geral');
+        
+        // ✅ Desabilita microfone
+        SpeechManager.disable();
+        console.log('[Intent] 🔇 Microfone DESABILITADO para tutorial');
+        
+        isBusyRef.current = false;
+        setVoiceState("waiting_wake");
+        setRecognizedText("");
+        
+        reproduzirTutorial(tutorialGeral);
         return;
         
       case 'explicar_tela':
-        const texto = tutoriaisDasTelas[pathname] || tutoriaisDasTelas['/conversa'] || 'Este é o aplicativo...';
-        speak(texto, restartListeningAfterSpeak);
+        const lowerText = originalText.toLowerCase();
+        
+        let targetPath: AppPath | null = null;
+        let textoTutorial = '';
+
+        if (lowerText.includes('histórico') || lowerText.includes('historico')) {
+          targetPath = '/tabs/historico';
+        } 
+        else if (lowerText.includes('menu') || lowerText.includes('configurações')) {
+          targetPath = '/tabs/menu';
+        } 
+        else if (lowerText.includes('câmera') || lowerText.includes('camera') || lowerText.includes('inicio') || lowerText.includes('início')) {
+          targetPath = '/tabs';
+        }
+
+        // ✅ CORREÇÃO: Usar checkAndNavigate e aguardar navegação completar
+        if (targetPath && pathname !== targetPath) {
+          console.log(`[Tutorial] Navegando para ${targetPath} antes de explicar.`);
+          
+          // ✅ Desabilita microfone ANTES de navegar
+          SpeechManager.disable();
+          console.log('[Intent] 🔇 Microfone DESABILITADO antes de navegar para tutorial');
+          
+          isBusyRef.current = false;
+          setVoiceState("waiting_wake");
+          setRecognizedText("");
+          
+          // ✅ Aguarda navegação completar
+          const navigated = await checkAndNavigate(
+            targetPath, 
+            `Você já está ${targetPath === '/tabs/historico' ? 'no histórico' : targetPath === '/tabs/menu' ? 'no menu' : 'na câmera'}.`
+          );
+          
+          if (!navigated) {
+            // Já estava na tela, apenas explica
+            textoTutorial = tutoriaisDasTelas[pathname] || tutorialGeral;
+            reproduzirTutorial(textoTutorial);
+            return;
+          }
+          
+          // ✅ Aguarda renderização + foco antes de iniciar tutorial
+          await new Promise(resolve => setTimeout(resolve, 800));
+          
+          textoTutorial = tutoriaisDasTelas[targetPath] || tutorialGeral;
+        } 
+        else {
+          console.log('[Tutorial] Explicando tela atual.');
+          
+          // ✅ Desabilita microfone
+          SpeechManager.disable();
+          console.log('[Intent] 🔇 Microfone DESABILITADO para tutorial de tela');
+          
+          isBusyRef.current = false;
+          setVoiceState("waiting_wake");
+          setRecognizedText("");
+          
+          textoTutorial = tutoriaisDasTelas[pathname] || tutoriaisDasTelas['/conversa'] || tutorialGeral;
+        }
+        
+        reproduzirTutorial(textoTutorial);
         return;
         
       case 'excluir_conta':
@@ -302,7 +372,8 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     onOpenCamera,
     onSendAudio,
     user,
-    logout
+    logout,
+    reproduzirTutorial
   ]);
 
   const getIntentDisplayName = useCallback((intent: string): string => {

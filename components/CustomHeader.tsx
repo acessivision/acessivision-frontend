@@ -1,5 +1,5 @@
 // ===================================================================
-// CustomHeader.tsx - CORRIGIDO: Foco único no título
+// CustomHeader.tsx - CORRIGIDO: Integração com MicrophoneContext
 // ===================================================================
 
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
@@ -8,18 +8,20 @@ import {
   Text, 
   TouchableOpacity, 
   StyleSheet,
+  LayoutChangeEvent // Adicionado que estava faltando no seu import
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../components/ThemeContext';
 import { usePathname } from 'expo-router';
-import { LayoutChangeEvent } from 'react-native';
 import { useAuth } from '../components/AuthContext';
 import { useSpeech } from '../hooks/useSpeech';
 import LogoutModal from '../components/LogoutModal';
 import { tutoriaisDasTelas } from '../utils/tutoriais';
-import { useTutorial } from '../components/TutorialContext';
+import { useTutorial } from '../components/TutorialContext'; // Ajuste o caminho se necessário
+// ✅ IMPORTANTE: Importar o contexto do microfone
+import { useMicrophone } from '../components/MicrophoneContext';
 
 interface CustomHeaderProps {
   title: string;
@@ -27,8 +29,6 @@ interface CustomHeaderProps {
   abreLogin?: () => void;
   onLayout?: (event: LayoutChangeEvent) => void;
 }
-
-type LogoutStepType = 'idle' | 'aguardandoConfirmacaoLogout';
 
 export interface CustomHeaderHandle {
   focusTitle: () => void;
@@ -43,79 +43,42 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     const tituloRef = useRef(null);
 
     const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-    const [step, setStep] = useState<LogoutStepType>('idle');
-    const logoutTimeoutRef = useRef<any>(null);
-
+    
+    // ✅ NOVO: Usar o estado global do microfone
+    const { isMicrophoneEnabled, toggleMicrophone: toggleGlobalMic } = useMicrophone();
+    
     const { reproduzirTutorial } = useTutorial();
 
+    // Hook para escuta local (apenas para o modal de logout, se necessário)
+    // Nota: O header em si não precisa "ouvir" comandos o tempo todo, 
+    // quem ouve comandos globais é a tela ativa.
     const { 
-      speak, 
-      startListening, 
+      speak,
       stopListening,
-      stopSpeaking,
-      isListening,
-      recognizedText,
-      setRecognizedText 
+      stopSpeaking 
     } = useSpeech({
-      enabled: logoutModalVisible,
+      enabled: false, // O Header não ouve ativamente, só fala feedback
       mode: 'local',
     });
 
-    const toggleMicrofone = () => {
-      if (isListening) {
-        stopListening();
+    const handleToggleMicrofone = () => {
+      // ✅ Alterna o estado GLOBAL do microfone
+      toggleGlobalMic();
+      
+      // Feedback falado
+      if (isMicrophoneEnabled) {
+        // Estava ligado, vai desligar
         speak("Microfone desativado.");
       } else {
-        startListening();
+        // Estava desligado, vai ligar
         speak("Microfone ativado.");
       }
     };
 
     const handleAbrirTutorial = () => {
-      // Pega o texto baseado na rota, ou usa um padrão se não encontrar
       const texto = tutoriaisDasTelas[pathname] || "Tutorial não disponível para esta tela.";
-      
-      // Chama a função do contexto que abre o modal e fala
       reproduzirTutorial(texto);
     };
-
-    useEffect(() => {
-      if (!recognizedText.trim() || step !== 'aguardandoConfirmacaoLogout') return;
-
-      const fala = recognizedText.toLowerCase().trim();
-
-      if (logoutTimeoutRef.current) {
-        clearTimeout(logoutTimeoutRef.current);
-      }
-
-      logoutTimeoutRef.current = setTimeout(() => {
-        const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero', 'sair'];
-        const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
-        
-        const isConfirm = confirmWords.some(word => fala.includes(word));
-        const isDeny = denyWords.some(word => fala.includes(word));
-        
-        if (isConfirm) {
-          stopListening();
-          setRecognizedText('');
-          speak("Confirmado. Saindo da conta.", () => {
-            handleLogout();
-          });
-        } else if (isDeny) {
-          stopListening();
-          setRecognizedText('');
-          speak("Cancelado.", () => {
-            fecharModalLogout();
-          });
-        } else {
-          setRecognizedText('');
-          speak(`Não entendi. Você quer sair da conta? Diga sim ou não.`, () => {
-            startListening(true);
-          });
-        }
-      }, 1500);
-
-    }, [recognizedText, step, logoutModalVisible]);
 
     const abrirModalLogout = () => {
       setLogoutModalVisible(true);
@@ -137,6 +100,7 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     
     const handleLogout = async () => {
       await logout();
+      fecharModalLogout(); // Fecha modal após logout
     };
 
     const styles = StyleSheet.create({
@@ -174,104 +138,6 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
         justifyContent: 'center',
         alignItems: 'center',
       },
-      modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.7)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-      },
-      modalContent: {
-        backgroundColor: cores.fundo,
-        borderRadius: 20,
-        padding: 28,
-        width: '100%',
-        maxWidth: 500,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
-        alignItems: 'center',
-      },
-      modalTitle: {
-        fontSize: getFontSize('large'),
-        fontWeight: 'bold',
-        color: cores.texto,
-        marginBottom: 16,
-        textAlign: 'center',
-      },
-      modalMessage: {
-        fontSize: getFontSize('medium'),
-        color: cores.texto,
-        textAlign: 'center',
-        marginBottom: 24,
-        lineHeight: 24,
-      },
-      modalActions: {
-        flexDirection: 'row',
-        gap: 12,
-        width: '100%',
-      },
-      cancelButton: {
-        flex: 1,
-        paddingVertical: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: cores.texto,
-        alignItems: 'center',
-        backgroundColor: cores.confirmar,
-      },
-      cancelButtonText: {
-        color: '#000',
-        fontSize: getFontSize('medium'),
-        fontWeight: '600',
-      },
-      logoutButton: { 
-        flex: 1,
-        paddingVertical: 12,
-        borderRadius: 8,
-        backgroundColor: cores.perigo,
-        alignItems: 'center',
-        justifyContent: 'center',
-      },
-      logoutButtonText: { 
-        color: '#fff',
-        fontSize: getFontSize('medium'),
-        fontWeight: '600',
-      },
-      listeningIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        marginBottom: 16,
-        width: '100%',
-      },
-      listeningText: {
-        marginLeft: 8,
-        color: cores.texto,
-        fontSize: getFontSize('medium'),
-        fontWeight: '500',
-      },
-      recognizedTextBox: {
-        padding: 12,
-        borderRadius: 8,
-        width: '100%',
-        backgroundColor: cores.barrasDeNavegacao,
-        marginBottom: 20,
-      },
-      recognizedTextLabel: {
-        fontSize: getFontSize('small'),
-        fontWeight: '600',
-        marginBottom: 4,
-        color: cores.texto,
-      },
-      recognizedTextContent: {
-        fontSize: getFontSize('medium'),
-        fontStyle: 'italic',
-        color: cores.texto,
-      },
     });
 
     return (
@@ -295,18 +161,20 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
           </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={toggleMicrofone}
+            onPress={handleToggleMicrofone}
             style={styles.iconButton}
-            accessibilityLabel={isListening ? "Desativar Microfone" : "Ativar Microfone"}
+            // ✅ Usa o estado global para definir o ícone e label
+            accessibilityLabel={isMicrophoneEnabled ? "Desativar Microfone" : "Ativar Microfone"}
             accessibilityRole="button"
           >
             <Ionicons 
-              name={isListening ? "mic" : "mic-off"}
+              name={isMicrophoneEnabled ? "mic" : "mic-off"}
               size={getIconSize('medium')} 
-              color={cores.icone}
+              color={isMicrophoneEnabled ? cores.texto : cores.icone} // Destaque visual quando ativo
             />
           </TouchableOpacity>
         </View>
+        
         <View style={styles.titleContainer}>
           <View style={styles.iconButton} />
           <Text

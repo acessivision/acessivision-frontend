@@ -37,7 +37,7 @@ class AuthService {
       Speech.speak('Registro realizado com sucesso! Bem-vindo!', {
         language: 'pt-BR',
         pitch: 1.0,
-        rate: 0.7
+        rate: 1.0
       });
       
       return { 
@@ -72,7 +72,7 @@ class AuthService {
         Speech.speak(mensagem, {
           language: 'pt-BR',
           pitch: 1.0,
-          rate: 0.7,
+          rate: 1.0,
         });
         
         return { 

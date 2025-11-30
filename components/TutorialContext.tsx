@@ -1,48 +1,136 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { Modal, View, Text, StyleSheet, TouchableOpacity, AccessibilityInfo } from 'react-native';
+import React, { createContext, useState, useContext } from 'react';
+import { 
+  Modal, 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableWithoutFeedback 
+} from 'react-native';
 import * as Speech from 'expo-speech';
+import SpeechManager from '../utils/speechManager'; 
 
-// Definição do tipo do Contexto
 interface TutorialContextData {
   reproduzirTutorial: (texto: string) => void;
   pararTutorial: () => void;
   isTutorialAtivo: boolean;
 }
 
-const TutorialContext = createContext<TutorialContextData>({} as TutorialContextData);
+const TutorialContext = createContext<TutorialContextData | null>(null);
 
 export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [visivel, setVisivel] = useState(false);
   const [textoAtual, setTextoAtual] = useState('');
 
-  // Função que inicia o tutorial
+  // ✅ Função para religar o microfone
+  const retomarReconhecimento = () => {
+    console.log('[Tutorial] 🏁 Finalizando tutorial e reativando microfone');
+    setVisivel(false);
+    setTextoAtual('');
+    
+    // ✅ Aguarda 1 segundo antes de reativar
+    setTimeout(() => {
+      try {
+        console.log('[Tutorial] 🎤 REABILITANDO microfone');
+        SpeechManager.enable();
+        
+        // ✅ Delay adicional para garantir que o áudio acabou
+        setTimeout(() => {
+          console.log('[Tutorial] 🎤 Iniciando reconhecimento global');
+          SpeechManager.startRecognition('global');
+        }, 500);
+      } catch (e) {
+        console.warn('[Tutorial] ⚠️ Erro ao retomar reconhecimento:', e);
+      }
+    }, 1000);
+  };
+
+  // ✅ Função que inicia o tutorial
   const reproduzirTutorial = (texto: string) => {
-    // Para qualquer fala anterior
+    console.log('[Tutorial] 🎓 Iniciando tutorial');
+    
+    // ✅ Para qualquer áudio atual
     Speech.stop();
+    
+    // ✅ DESABILITA o microfone COMPLETAMENTE
+    try {
+      console.log('[Tutorial] 🔇 DESABILITANDO microfone para tutorial');
+      SpeechManager.disable();
+    } catch (e) {
+      console.warn('[Tutorial] ⚠️ Erro ao pausar reconhecimento:', e);
+    }
     
     setTextoAtual(texto);
     setVisivel(true);
 
-    // Inicia a fala
+    // ✅ Inicia o TTS
     Speech.speak(texto, {
       language: 'pt-BR',
-      rate: 0.9, // Ajuste a velocidade conforme sua preferência
-      // Quando terminar de falar tudo, fecha o modal automaticamente?
-      // Se quiser que feche sozinho ao fim, descomente a linha abaixo:
-      onDone: () => setVisivel(false), 
-      onStopped: () => setVisivel(false), // Garante estado limpo se for parado externamente
+      rate: 1.2, 
+      onDone: () => {
+        console.log('[Tutorial] ✅ Tutorial concluído (onDone)');
+        retomarReconhecimento();
+      }, 
+      onStopped: () => {
+        console.log('[Tutorial] 🛑 Tutorial interrompido (onStopped)');
+        // ✅ Só retoma se o modal ainda estava visível
+        if (visivel) {
+          retomarReconhecimento();
+        }
+      },
+      onError: (error) => {
+        console.error('[Tutorial] ❌ Erro no TTS:', error);
+        retomarReconhecimento();
+      }
     });
   };
 
-  // Função que interrompe e fecha
+  // ✅ Função que interrompe e fecha
   const pararTutorial = () => {
-    Speech.stop();
-    setVisivel(false);
+    console.log('[Tutorial] ⏹️ Parando tutorial manualmente');
     
-    // Feedback sonoro de encerramento
-    // O setTimeout é um "truque" para garantir que o stop() processou antes de falar o novo texto
+    // ✅ Para o TTS atual
+    Speech.stop();
+    
+    // ✅ Fecha o modal visualmente
+    setVisivel(false); 
+    setTextoAtual('');
+    
+    // ✅ Fala "fechado" e depois reativa o microfone
     setTimeout(() => {
-        Speech.speak("Tutorial fechado", { language: 'pt-BR' });
+      Speech.speak("Tutorial fechado", { 
+        language: 'pt-BR',
+        rate: 1.2,
+        onDone: () => {
+          console.log('[Tutorial] ✅ Feedback de fechamento concluído');
+          // ✅ Reativa microfone após delay menor (parada manual)
+          setTimeout(() => {
+            try {
+              console.log('[Tutorial] 🎤 REABILITANDO microfone (parada manual)');
+              SpeechManager.enable();
+              
+              setTimeout(() => {
+                SpeechManager.startRecognition('global');
+              }, 300);
+            } catch (e) {
+              console.warn('[Tutorial] ⚠️ Erro ao retomar:', e);
+            }
+          }, 500);
+        },
+        onStopped: () => {
+          // ✅ Mesmo comportamento se for interrompido
+          setTimeout(() => {
+            try {
+              SpeechManager.enable();
+              setTimeout(() => {
+                SpeechManager.startRecognition('global');
+              }, 300);
+            } catch (e) {
+              console.warn('[Tutorial] ⚠️ Erro ao retomar:', e);
+            }
+          }, 500);
+        }
+      });
     }, 100);
   };
 
@@ -50,60 +138,73 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     <TutorialContext.Provider value={{ reproduzirTutorial, pararTutorial, isTutorialAtivo: visivel }}>
       {children}
 
-      {/* O MODAL QUE COBRE A TELA INTEIRA */}
       <Modal
         animationType="fade"
-        transparent={true} // Fundo transparente (ou semi-transparente)
+        transparent={true}
         visible={visivel}
-        // Acessibilidade Android: Botão físico de voltar
-        onRequestClose={pararTutorial} 
+        onRequestClose={pararTutorial}
       >
-        {/* View que captura o toque na tela inteira */}
-        <TouchableOpacity 
-          style={styles.overlay} 
-          activeOpacity={0.9} 
-          onPress={pararTutorial}
-          // Acessibilidade iOS: Gesto "Z" (Scrub)
-          accessibilityViewIsModal={true}
-          onAccessibilityEscape={pararTutorial}
-          accessibilityLabel="O tutorial está sendo reproduzido. Toque duas vezes para fechar."
-          accessibilityRole="button"
-        >
+        {/* ✅ TouchableWithoutFeedback para fechar ao tocar fora */}
+        <View style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={pararTutorial}>
+            <View style={styles.backgroundTouchable} />
+          </TouchableWithoutFeedback>
+          
+          {/* ✅ Conteúdo do modal (não recebe toques do fundo) */}
           <View style={styles.containerTexto}>
             <Text style={styles.titulo}>Reproduzindo Tutorial...</Text>
-            <Text style={styles.instrucao}>Toque na tela para fechar</Text>
+            <Text style={styles.instrucao}>Toque fora do cartão para fechar</Text>
             
-            {/* Opcional: Mostrar o texto que está sendo lido para quem tem baixa visão */}
+            {/* ✅ Card scrollável */}
             <View style={styles.cardTexto}>
-                <Text style={styles.textoTutorial} numberOfLines={10}>
-                    {textoAtual}
+              <ScrollView 
+                contentContainerStyle={styles.scrollContent}
+                indicatorStyle="white"
+                showsVerticalScrollIndicator={true}
+                scrollEventThrottle={16}
+                nestedScrollEnabled={true}
+                bounces={true}
+              >
+                <Text style={styles.textoTutorial}>
+                  {textoAtual}
                 </Text>
+              </ScrollView>
             </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
     </TutorialContext.Provider>
   );
 };
 
-// Hook personalizado para facilitar o uso
 export const useTutorial = () => {
   const context = useContext(TutorialContext);
-  if (!context) throw new Error('useTutorial deve ser usado dentro de um TutorialProvider');
+  if (!context) {
+    throw new Error('useTutorial deve ser usado dentro de um TutorialProvider');
+  }
   return context;
 };
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)', // Fundo escuro para foco
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
+  backgroundTouchable: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   containerTexto: {
     alignItems: 'center',
     width: '100%',
+    maxHeight: '90%',
+    zIndex: 1, // ✅ Garante que fica acima do background
   },
   titulo: {
     color: '#fff',
@@ -119,15 +220,22 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   cardTexto: {
-    backgroundColor: '#333',
-    padding: 20,
-    borderRadius: 10,
+    backgroundColor: '#222',
+    borderRadius: 16,
     width: '100%',
+    borderWidth: 1,
+    borderColor: '#444',
+    maxHeight: '70%',
+    overflow: 'hidden',
+  },
+  scrollContent: {
+    padding: 24,
+    flexGrow: 1,
   },
   textoTutorial: {
     color: '#fff',
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: 20,
+    lineHeight: 28,
     textAlign: 'center'
   }
 });

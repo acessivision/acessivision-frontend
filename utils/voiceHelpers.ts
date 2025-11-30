@@ -43,7 +43,7 @@ export const falar = (
   
   Speech.speak(texto, {
     language: config?.language || 'pt-BR',
-    rate: config?.rate || 0.7,
+    rate: config?.rate || 1.0,
     pitch: config?.pitch || 1.0,
     onDone: () => {
       if (callback) callback();
@@ -209,7 +209,7 @@ export const RECONHECIMENTO_UNICO: RecognitionConfig = {
 
 export const VOZ_PADRAO: VoiceConfig = {
   language: 'pt-BR',
-  rate: 0.7,
+  rate: 1.0,
   pitch: 1.0,
 };
 
