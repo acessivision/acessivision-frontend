@@ -1,4 +1,4 @@
-// app/login.tsx - CORREÇÃO COMPLETA
+// app/login.tsx - ATUALIZADO COM COMANDO DE VOZ
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -19,6 +19,8 @@ import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../components/AuthContext';
 import { useIsFocused } from '@react-navigation/native';
 import { useSpeech } from '../hooks/useSpeech';
+// ✅ 1. Importar Contexto do Microfone (igual ao histórico)
+import { useMicrophone } from '../components/MicrophoneContext';
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -26,71 +28,96 @@ export default function LoginScreen() {
   const { temaAplicado, cores, getIconSize, getFontSize } = useTheme();
   const [loading, setLoading] = useState(false);
   const { loginWithGoogle, user, isLoading: isAuthLoading } = useAuth();
+  
+  // ✅ 2. Pegar estado do microfone
+  const { isMicrophoneEnabled } = useMicrophone();
 
   const isFocused = useIsFocused();
-  const { speak } = useSpeech({
-    enabled: isFocused,
-    mode: 'local',
+  
+  // ✅ 3. Hook configurado como 'global' para ouvir comandos
+  const { 
+    speak, 
+    recognizedText, 
+    setRecognizedText, 
+    stopListening 
+  } = useSpeech({
+    // Só escuta se a tela estiver focada E o microfone global estiver ligado
+    enabled: isFocused && isMicrophoneEnabled,
+    mode: 'global',
   });
   
-  const spokenRef = useRef(false);
   const hasSetInitialFocusRef = useRef(false);
 
   // ===================================================================
-// ✅ CORREÇÃO: useEffect para foco inicial do TalkBack
-// ===================================================================
-useEffect(() => {
-  if (!isFocused) {
-    hasSetInitialFocusRef.current = false;
-    return;
-  }
-
-  if (hasSetInitialFocusRef.current) return;
-
-  const setInitialFocus = async () => {
-    try {
-      console.log('[Login] 🎯 Iniciando configuração de foco...');
-      
-      // ✅ Aguarda as interações terminarem
-      await new Promise(resolve => {
-        InteractionManager.runAfterInteractions(() => {
-          resolve(undefined);
-        });
-      });
-
-      // ✅ Aguarda a UI estabilizar (aumentado)
-      await new Promise(resolve => setTimeout(resolve, 1200)); // ← Aumentado de 800 para 1200
-
-      // ✅ Verifica se TalkBack está ativo
-      const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
-      console.log('[Login] 📱 TalkBack ativo:', isScreenReaderEnabled);
-      
-      if (isScreenReaderEnabled && titleRef.current) {
-        const reactTag = findNodeHandle(titleRef.current);
-        console.log('[Login] 🏷️ ReactTag obtido:', reactTag);
-        
-        if (reactTag) {
-          console.log('[Login] ✅ Definindo foco no título "AcessiVision"');
-          
-          // ✅ Apenas define o foco - NÃO anuncia manualmente
-          // O TalkBack vai anunciar automaticamente o elemento focado
-          AccessibilityInfo.setAccessibilityFocus(reactTag);
-          
-          hasSetInitialFocusRef.current = true;
-          console.log('[Login] 🎉 Foco configurado com sucesso!');
-        } else {
-          console.warn('[Login] ⚠️ ReactTag é null, não foi possível definir foco');
-        }
-      } else {
-        console.log('[Login] ℹ️ TalkBack não está ativo ou ref não está disponível');
-      }
-    } catch (error) {
-      console.error('[Login] ❌ Erro ao definir foco:', error);
+  // Lógica de Foco Inicial (Mantida igual)
+  // ===================================================================
+  useEffect(() => {
+    if (!isFocused) {
+      hasSetInitialFocusRef.current = false;
+      return;
     }
-  };
 
-  setInitialFocus();
-}, [isFocused]);
+    if (hasSetInitialFocusRef.current) return;
+
+    const setInitialFocus = async () => {
+      try {
+        await new Promise(resolve => {
+          InteractionManager.runAfterInteractions(() => {
+            resolve(undefined);
+          });
+        });
+
+        await new Promise(resolve => setTimeout(resolve, 1200));
+
+        const isScreenReaderEnabled = await AccessibilityInfo.isScreenReaderEnabled();
+        
+        if (isScreenReaderEnabled && titleRef.current) {
+          const reactTag = findNodeHandle(titleRef.current);
+          if (reactTag) {
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+            hasSetInitialFocusRef.current = true;
+          }
+        }
+      } catch (error) {
+        console.error('[Login] ❌ Erro ao definir foco:', error);
+      }
+    };
+
+    setInitialFocus();
+  }, [isFocused]);
+
+  // ===================================================================
+  // ✅ 4. DETECÇÃO DE COMANDO DE VOZ (Lógica Nova)
+  // ===================================================================
+  useEffect(() => {
+    // Se não tiver texto, ou se a tela não estiver focada, ou se já estiver carregando, ignora
+    if (!recognizedText.trim() || !isFocused || loading || isAuthLoading || user) return;
+
+    const textoAtual = recognizedText.trim();
+    const textoLower = textoAtual.toLowerCase();
+
+    console.log(`[Login] 🗣️ Texto reconhecido: "${textoAtual}"`);
+
+    // Palavras-chave: "google", "entrar", "login"
+    // Ex: "Entrar com Google", "Fazer login Google", "Google"
+    const querLogar = textoLower.includes('google') && 
+                     (textoLower.includes('entrar') || textoLower.includes('login') || textoLower.includes('fazer') || textoLower === 'google');
+
+    if (querLogar) {
+      console.log('[Login] 🎯 Comando de login detectado!');
+      
+      // Limpa o texto para não disparar 2x
+      setRecognizedText('');
+      
+      // Para de ouvir para não interferir no processo
+      stopListening();
+      
+      speak("Escolha uma conta na tela para fazer o login", () => {
+        handleGoogleLogin();
+      });
+    }
+
+  }, [recognizedText, isFocused, loading, isAuthLoading, user]);
 
   // ===================================================================
   // Funções de navegação e login
@@ -104,6 +131,8 @@ useEffect(() => {
   };
 
   const handleGoogleLogin = async () => {
+    if (loading || isAuthLoading) return;
+    
     setLoading(true);
     
     try {
@@ -237,7 +266,6 @@ useEffect(() => {
             }
             style={styles.logo}
           />
-          {/* ✅ Título com ref e propriedades de acessibilidade */}
           <Text 
             ref={titleRef}
             style={styles.title}
@@ -259,7 +287,7 @@ useEffect(() => {
           onPress={handleGoogleLogin}
           disabled={isButtonDisabled}
           accessibilityLabel='Entrar com Google'
-          accessibilityHint={isButtonDisabled ? '' : 'Faz login usando emails salvos no celular'}
+          accessibilityHint={isButtonDisabled ? '' : 'Diga "Entrar com Google" ou toque duas vezes para fazer login'}
           accessibilityRole="button"
         >
           <Image source={require('../assets/images/icone-google.png')} />
