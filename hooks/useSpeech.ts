@@ -1,10 +1,7 @@
-// useSpeech.ts - Respeita o estado global do SpeechManager
+// hooks/useSpeech.ts - Versão Definitiva (Subscriber + Persistência)
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  useSpeechRecognitionEvent,
-  ExpoSpeechRecognitionResultEvent 
-} from 'expo-speech-recognition';
 import SpeechManager from '../utils/speechManager';
+import { useMicrophone } from '../components/MicrophoneContext'; 
 
 interface UseSpeechProps {
   enabled?: boolean;
@@ -13,170 +10,112 @@ interface UseSpeechProps {
 }
 
 export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpeechProps = {}) {
+  // Estado local sincronizado com o Manager
   const [recognizedText, setRecognizedText] = useState('');
   const [isListening, setIsListening] = useState(SpeechManager.getState().isRecognizing);
   const [isSpeaking, setIsSpeaking] = useState(SpeechManager.getState().isSpeaking);
-  const [permissionsGranted, setPermissionsGranted] = useState(false);
+  
+  // ✅ Obtém o estado real do interruptor mestre
+  const { isMicrophoneEnabled } = useMicrophone(); 
 
   const localCallbackRef = useRef(onResult);
   
-  // ✅ Controle de duplicatas no próprio hook
-  const lastResultRef = useRef<string>('');
-  const lastResultTimeRef = useRef<number>(0);
-  
+  // Atualiza a ref do callback para não quebrar o useEffect
   useEffect(() => {
     localCallbackRef.current = onResult;
   }, [onResult]);
   
   // ============================================
-  // SETUP DE PERMISSÕES
+  // 1. GERENCIAMENTO DA ASSINATURA (Ouvir Texto)
   // ============================================
-  useEffect(() => {
-    const initializePermissions = async () => {
-      const granted = await SpeechManager.requestPermissions();
-      if (granted) {
-        setPermissionsGranted(true);
-      }
-    };
-    initializePermissions();
+  const handleManagerResult = useCallback((text: string) => {
+    setRecognizedText(text);
+    setIsListening(true);
+    if (localCallbackRef.current) {
+        localCallbackRef.current(text);
+    }
   }, []);
-  
+
+  useEffect(() => {
+    if (enabled) {
+      SpeechManager.addListener(handleManagerResult);
+    }
+    return () => {
+      SpeechManager.removeListener(handleManagerResult);
+    };
+  }, [enabled, handleManagerResult]);
+
   // ============================================
-  // CONTROLE DE ATIVAÇÃO (LÓGICA CORRIGIDA)
+  // 2. CONTROLE DO MOTOR (Ligar/Desligar)
   // ============================================
   useEffect(() => {
-    if (!permissionsGranted) return;
+    const shouldBeRunning = enabled && isMicrophoneEnabled;
     
-    // Verificamos o estado GLOBAL real do manager
-    const managerState = SpeechManager.getState();
-
-    if (enabled) {
-      // ✅ Só inicia se o Manager estiver HABILITADO globalmente (pelo Context)
-      if (managerState.isEnabled) {
-        console.log(`[useSpeech - ${mode}] ✅ Solicitando início (Manager está ON)`);
-        
-        // Pequeno delay para garantir que transições de tela não encavalem
-        setTimeout(() => {
-           const current = SpeechManager.getState();
-           if (!current.isRecognizing && !current.isSpeaking && current.isEnabled) {
-             SpeechManager.startRecognition(mode);
-             setIsListening(true);
-           }
-        }, 300);
-      } else {
-        console.log(`[useSpeech - ${mode}] 🔇 Ignorando ativação (Manager está OFF globalmente)`);
+    if (shouldBeRunning) {
+      const state = SpeechManager.getState();
+      // ✅ Se deve estar rodando, inicia
+      if (!state.isRecognizing && !state.isSpeaking) {
+         console.log(`[useSpeech] 🎤 Iniciando reconhecimento (${mode})`);
+         SpeechManager.startRecognition(mode);
       }
     } 
-    else {
-      // Se enabled = false (tela perdeu foco), paramos o reconhecimento
-      // MAS NÃO desabilitamos o manager globalmente
-      if (mode === 'local') {
-         SpeechManager.stopRecognition();
-      } else if (managerState.isRecognizing && managerState.currentMode === 'global') {
-         // Se for global e perdeu foco, pausamos o reconhecimento, mas mantemos isEnabled
-         SpeechManager.stopRecognition();
-      }
-    }
-
+    // ✅ CRÍTICO: NÃO para o motor automaticamente!
+    // Apenas quando o componente desmontar (cleanup abaixo)
+    
     return () => {
-      // Cleanup: Ao desmontar, para o reconhecimento, mas nunca desabilita o Manager global
-      if (mode === 'local') {
-         SpeechManager.stopRecognition();
+      // ✅ Cleanup: Só para se ERA ESTE hook que estava controlando
+      if (mode === 'local' && enabled) {
+        const state = SpeechManager.getState();
+        if (state.isRecognizing && state.currentMode === 'local') {
+          console.log('[useSpeech] 🧹 Cleanup: parando reconhecimento local');
+          SpeechManager.stopRecognition();
+        }
       }
+      // ✅ Modo global NÃO para ao desmontar - deixa para outros usarem
     };
-  }, [enabled, mode, permissionsGranted]);
+  }, [enabled, mode, isMicrophoneEnabled]);
 
   // ============================================
-  // MONITORAMENTO DE ESTADO DO MANAGER
+  // 3. SINCRONIA VISUAL (Polling)
   // ============================================
-  // Adiciona um listener para atualizar o isListening se o estado do Manager mudar externamente
   useEffect(() => {
      const interval = setInterval(() => {
         const state = SpeechManager.getState();
-        if (state.isRecognizing !== isListening) {
-           setIsListening(state.isRecognizing);
-        }
-        if (state.isSpeaking !== isSpeaking) {
-           setIsSpeaking(state.isSpeaking);
-        }
+        if (state.isRecognizing !== isListening) setIsListening(state.isRecognizing);
+        if (state.isSpeaking !== isSpeaking) setIsSpeaking(state.isSpeaking);
      }, 500);
      return () => clearInterval(interval);
   }, [isListening, isSpeaking]);
-  
-  // ... (RESTO DO ARQUIVO IGUAL: Eventos, Filtros, Funções Expostas) ...
-  
-  useSpeechRecognitionEvent('start', () => {
-    setIsListening(true);
-  });
-  
-  useSpeechRecognitionEvent('end', () => {
-    setIsListening(false);
-    SpeechManager.handleEnd();
-  });
-  
-  useSpeechRecognitionEvent('result', (event: ExpoSpeechRecognitionResultEvent) => {
-    const transcript = event.results?.[0]?.transcript || '';
-    const isFinal = event.isFinal || false;
-    
-    if (!transcript.trim()) return;
-    
-    const now = Date.now();
-    const normalizedTranscript = transcript.toLowerCase().trim();
-    
-    if (!isFinal) {
-      if (normalizedTranscript === lastResultRef.current) return;
-      setRecognizedText(transcript);
-      lastResultRef.current = normalizedTranscript;
-      return;
-    }
-    
-    if (normalizedTranscript === lastResultRef.current && (now - lastResultTimeRef.current) < 1000) {
-      return;
-    }
-    
-    lastResultRef.current = normalizedTranscript;
-    lastResultTimeRef.current = now;
-    
-    console.log('[useSpeech] 📝 Result:', transcript, 'isFinal:', isFinal);
-    setRecognizedText(transcript);
-    SpeechManager.handleResult(transcript, true);
-  });
-  
-  useSpeechRecognitionEvent('error', (error) => {
-    setIsListening(false);
-    SpeechManager.handleError(error.error);
-  });
+
+  // ============================================
+  // 4. AÇÕES EXPOSTAS
+  // ============================================
   
   const speak = useCallback(async (text: string, callback?: () => void) => {
-    setIsListening(false);
+    setIsListening(false); 
     setIsSpeaking(true);
     await SpeechManager.speak(text, () => {
       setIsSpeaking(false);
       callback?.();
-    }, true);
+    }, true); 
   }, []);
   
-  const startListening = useCallback((localMode: boolean = false, localOverrideCallback?: (text: string) => void) => {
-    // ✅ Proteção: Só inicia se o global estiver habilitado
-    if (!SpeechManager.getState().isEnabled) {
-       console.log('[useSpeech] ❌ Tentativa de iniciar recusada: Microfone desabilitado globalmente.');
-       return;
+  const startListening = useCallback((localMode: boolean = false) => {
+    if (!SpeechManager.getState().isEnabled && !localMode) {
+        console.log('[useSpeech] Bloqueado pelo Master Switch');
+        return;
     }
-
-    const actualMode = localMode ? 'local' : mode;
-    const callbackToUse = localMode ? (localOverrideCallback || localCallbackRef.current) : undefined;
-    SpeechManager.startRecognition(actualMode, callbackToUse);
-    setIsListening(true);
+    SpeechManager.startRecognition(localMode ? 'local' : mode);
   }, [mode]);
   
   const stopListening = useCallback(() => {
-    SpeechManager.stopRecognition();
-    setIsListening(false);
+      SpeechManager.stopRecognition();
+      setIsListening(false);
   }, []);
   
   const stopSpeaking = useCallback(() => {
-    SpeechManager.stopSpeaking();
-    setIsSpeaking(false);
+      SpeechManager.stopSpeaking();
+      setIsSpeaking(false);
   }, []);
   
   return {

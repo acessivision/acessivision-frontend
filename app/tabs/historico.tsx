@@ -100,7 +100,7 @@ const HistoryScreen: React.FC = () => {
   const { isMicrophoneEnabled } = useMicrophone();
 
   const globalSpeech = useSpeech({
-    enabled: isScreenFocused && isMicrophoneEnabled && !hasActiveModal,
+    enabled: isScreenFocused && !hasActiveModal,
     mode: 'global',
   });
 
@@ -157,80 +157,28 @@ const HistoryScreen: React.FC = () => {
     conv.titulo.toLowerCase().includes(searchText.toLowerCase())
   );
 
-useEffect(() => {
-  console.log(`[Histórico] 🔄 Foco mudou: ${isScreenFocused}`);
-  
-  if (!isScreenFocused) {
-    // ✅ SAIU DA TELA - Apenas limpa estados locais
-    console.log('[Histórico] 🚫 Saindo da tela - limpando estados locais');
+  useEffect(() => {
+    if (!isScreenFocused) return;
     
-    stopListening();
-    stopSpeaking();
+    const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
     
-    setRecognizedText('');
-    setIsSearchListening(false);
-    setSearchStep('idle');
-    
-    // Fecha modais
-    if (modalVisible) {
-      setModalVisible(false);
-      setStep('idle');
-      setTituloInput('');
-    }
-    if (editModalVisible) {
-      setEditModalVisible(false);
-      setEditStep('idle');
-      setEditTituloInput('');
-    }
-    if (conversaParaExcluir) {
-      setConversaParaExcluir(null);
-      setStep('idle');
-    }
-    
-    // ✅ NÃO TOCA NO ESTADO GLOBAL DO MICROFONE
-    
-  } else {
-    // ✅ ENTROU NA TELA
-    console.log('[Histórico] ✅ Entrando na tela');
-    
-    setTimeout(() => {      
-      if (!hasActiveModal) {
-        // ✅ VERIFICA O ESTADO GLOBAL DO CONTEXTO
+    if (hasActiveModal) {
+      console.log('[Histórico] 🛑 Modal aberto - parando reconhecimento local');
+      SpeechManager.stopRecognition(); // ✅ Só para, não desabilita
+    } else {
+      console.log('[Histórico] ▶️ Modal fechado - verificando se deve reativar');
+      
+      setTimeout(() => {
+        // ✅ Só reativa se o microfone estiver habilitado GLOBALMENTE
         if (isMicrophoneEnabled) {
-          console.log('[Histórico] 🎤 Microfone está habilitado globalmente, iniciando reconhecimento');
+          console.log('[Histórico] ✅ Microfone habilitado, reativando reconhecimento');
           SpeechManager.startRecognition('global');
         } else {
-          console.log('[Histórico] 🔇 Microfone está desabilitado globalmente, não iniciando');
+          console.log('[Histórico] 🔇 Microfone desabilitado, não reativando');
         }
-      } else {
-        console.log('[Histórico] ⏭️ Modais ativos, não ativando global ainda');
-      }
-    }, 500);
-  }
-}, [isScreenFocused, isMicrophoneEnabled]);
-
-useEffect(() => {
-  if (!isScreenFocused) return;
-  
-  const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
-  
-  if (hasActiveModal) {
-    console.log('[Histórico] 🛑 Modal aberto - parando reconhecimento local');
-    SpeechManager.stopRecognition(); // ✅ Só para, não desabilita
-  } else {
-    console.log('[Histórico] ▶️ Modal fechado - verificando se deve reativar');
-    
-    setTimeout(() => {
-      // ✅ Só reativa se o microfone estiver habilitado GLOBALMENTE
-      if (isMicrophoneEnabled) {
-        console.log('[Histórico] ✅ Microfone habilitado, reativando reconhecimento');
-        SpeechManager.startRecognition('global');
-      } else {
-        console.log('[Histórico] 🔇 Microfone desabilitado, não reativando');
-      }
-    }, 300);
-  }
-}, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, isScreenFocused, isMicrophoneEnabled]);
+      }, 300);
+    }
+  }, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, isScreenFocused, isMicrophoneEnabled]);
 
 
 // ===================================================================

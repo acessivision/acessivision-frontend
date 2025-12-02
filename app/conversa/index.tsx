@@ -20,8 +20,13 @@ import { useSpeech } from '../../hooks/useSpeech';
 import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import firestore from '@react-native-firebase/firestore';
+import { useMicrophone } from '../../components/MicrophoneContext';
+import SpeechManager from '../../utils/speechManager';
 
 const SERVER_URL = 'https://www.acessivision.com.br/upload';
+
+// ✅ Tempo de silêncio antes de enviar automaticamente (3 segundos)
+const SILENCE_TIMEOUT = 3000;
 
 interface Message {
   id: string;
@@ -52,9 +57,16 @@ const ConversationScreen: React.FC = () => {
   const [micEnabled, setMicEnabled] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   
-  const recognitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastRecognizedTextRef = useRef<string>('');
+  // ✅ Timer para detectar silêncio
+  const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMessageCountRef = useRef<number>(0);
+  const localListenerRef = useRef<((text: string) => void) | null>(null);
+
+  const { disableMicrophone: disableGlobalMic, enableMicrophone: enableGlobalMic } = useMicrophone();
+
+  const { 
+    isMicrophoneEnabled: globalMicEnabled
+  } = useMicrophone();
 
   const { 
     speak, 
@@ -64,7 +76,7 @@ const ConversationScreen: React.FC = () => {
     recognizedText,
     setRecognizedText
   } = useSpeech({
-    enabled: isScreenFocused && micEnabled,
+    enabled: false,
     mode: 'local',
   });
 
@@ -78,9 +90,24 @@ const ConversationScreen: React.FC = () => {
   const isFirstLoadRef = useRef<boolean>(true);
   const shouldSpeakNextMessageRef = useRef<boolean>(false);
 
-  // ===================================================================
-  // LISTENER PARA TECLADO - AGORA REALMENTE USADO!
-  // ===================================================================
+  useEffect(() => {
+    if (!micEnabled) {
+      setRecognizedText('');
+      setInputText('');
+    }
+  }, [micEnabled, setRecognizedText]);
+
+  useEffect(() => {
+    if (!globalMicEnabled && micEnabled) {
+      console.log('[Conversa] 🔴 Toggle global desligado, desativando mic local');
+      setMicEnabled(false);
+      stopListening();
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+    }
+  }, [globalMicEnabled, micEnabled, stopListening]);
+
   useEffect(() => {
     const keyboardWillShowListener = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -104,9 +131,6 @@ const ConversationScreen: React.FC = () => {
     };
   }, []);
 
-  // ===================================================================
-  // ATIVAR FLAG QUANDO RECEBER PARÂMETRO speakLastMessage
-  // ===================================================================
   useEffect(() => {
     if (speakLastMessage === 'true' && isScreenFocused) {
       console.log('[Conversa] 🚩 Parâmetro speakLastMessage recebido - ATIVANDO flag');
@@ -118,38 +142,113 @@ const ConversationScreen: React.FC = () => {
       });
     }
   }, [speakLastMessage, isScreenFocused]);
+
+  // ===================================================================
+  // ✅ LISTENER LOCAL - Atualiza input e detecta silêncio
+  // ===================================================================
+  useEffect(() => {
+    if (!micEnabled || !isScreenFocused) return;
+
+    console.log('[Conversa] 🎧 Registrando listener LOCAL no SpeechManager');
+
+    const localListener = (text: string) => {
+      console.log('[Conversa] 📥 Texto recebido no listener LOCAL:', text);
+      
+      const normalizedText = text.trim();
+      if (!normalizedText) return;
+
+      // ✅ Atualiza o input diretamente
+      setInputText(prev => {
+        const newText = prev ? `${prev} ${normalizedText}` : normalizedText;
+        console.log('[Conversa] 📝 Texto no input:', newText);
+        return newText;
+      });
+
+      // ✅ Cancela timeout anterior e cria novo
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+
+      // ✅ Após 3 segundos de silêncio, envia automaticamente
+      silenceTimeoutRef.current = setTimeout(() => {
+        console.log('[Conversa] ⏰ Silêncio detectado - Enviando automaticamente');
+        
+        setInputText(currentText => {
+          const textoParaEnviar = currentText.trim();
+          
+          if (!textoParaEnviar) {
+            speak('Nenhum texto foi reconhecido.');
+            return '';
+          }
+          
+          if (!activeImage) {
+            speak('Tire uma foto primeiro.');
+            return '';
+          }
+          
+          // Desliga microfone e envia
+          setMicEnabled(false);
+          stopListening();
+          setRecognizedText('');
+          
+          // Envia após um pequeno delay
+          setTimeout(() => {
+            enviarMensagem(textoParaEnviar);
+          }, 100);
+          
+          return ''; // Limpa input
+        });
+      }, SILENCE_TIMEOUT);
+    };
+
+    localListenerRef.current = localListener;
+    SpeechManager.addListener(localListener);
+
+    return () => {
+      if (localListenerRef.current) {
+        SpeechManager.removeListener(localListenerRef.current);
+        localListenerRef.current = null;
+        console.log('[Conversa] 🧹 Listener LOCAL removido');
+      }
+      
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+    };
+  }, [micEnabled, isScreenFocused, activeImage, speak, stopListening]);
+
   const toggleMicrophone = useCallback(() => {
-    console.log('[MIC] Toggle clicado. Estado atual:', micEnabled);
-    console.log('[MIC] activeImage:', activeImage);
-    
-    if (!activeImage) {
-      Alert.alert('Atenção', 'Por favor, tire uma foto antes de usar o microfone.');
+    if (!globalMicEnabled) {
+      Alert.alert('Microfone Desabilitado', 'Ative no cabeçalho primeiro.');
+      speak('Microfone está desabilitado globalmente.');
       return;
     }
     
-    const novoEstado = !micEnabled;
-    setMicEnabled(novoEstado);
-    
-    if (novoEstado) {
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-      speak('Gravando áudio');
-    } else {
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      speak('Microfone desativado.');
+    if (!activeImage) {
+      Alert.alert('Atenção', 'Tire uma foto primeiro.');
+      speak('Tire uma foto primeiro.');
+      return;
     }
-  }, [micEnabled, activeImage, speak]);
+    
+    if (micEnabled) {
+      setMicEnabled(false);
+      setInputText('');
+      stopListening();
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+      speak('Microfone desativado.');
+    } else {
+      setMicEnabled(true);
+      setRecognizedText('');
+      setInputText('');
+      
+      speak('Gravando áudio. Fale sua pergunta.', () => {
+        SpeechManager.startRecognition('local');
+      });
+    }
+  }, [micEnabled, activeImage, globalMicEnabled, speak, stopListening, setRecognizedText]);
 
-  // ===================================================================
-  // REGISTRAR CALLBACKS QUANDO TELA ESTÁ EM FOCO
-  // ===================================================================
   useEffect(() => {
     if (isScreenFocused && conversaId) {
       console.log('[Conversa] 🎤 Registrando callbacks de voz');
@@ -174,31 +273,23 @@ const ConversationScreen: React.FC = () => {
         },
         onSendAudio: () => {
           console.log('[Conversa] 🎙️ Callback onSendAudio chamado');
-          console.log('[Conversa] activeImage no callback:', activeImage);
           
-          // ✅ Verifica se há imagem ativa
           if (!activeImage) {
-            console.warn('[Conversa] 🚫 Sem imagem ativa no callback onSendAudio');
-            speak('Nenhuma imagem está ativa. Por favor, tire uma foto primeiro.');
+            speak('Tire uma foto primeira.');
             return;
           }
           
-          // ✅ Ativa o microfone se não estiver ativado
           if (!micEnabled) {
             console.log('[Conversa] ✅ Ativando microfone via onSendAudio');
-            setRecognizedText('');
-            lastRecognizedTextRef.current = '';
-            if (recognitionTimeoutRef.current) {
-              clearTimeout(recognitionTimeoutRef.current);
-            }
             setMicEnabled(true);
+            setRecognizedText('');
+            setInputText('');
             
-            // Fala feedback após um pequeno delay
             setTimeout(() => {
-              speak('Gravando áudio');
+              speak('Gravando áudio. Fale sua pergunta.', () => {
+                SpeechManager.startRecognition('local');
+              });
             }, 300);
-          } else {
-            console.log('[Conversa] ℹ️ Microfone já estava ativado');
           }
         }
       };
@@ -213,18 +304,14 @@ const ConversationScreen: React.FC = () => {
     }
   }, [isScreenFocused, conversaId, activeImage, micEnabled, speak, registerConversationCallbacks, unregisterConversationCallbacks, setPendingContext, toggleMicrophone]);
 
-
-  // ===================================================================
-  // TIRAR FOTO POR COMANDO DE VOZ
-  // ===================================================================
   const handleTakePhotoFromVoice = useCallback((question: string) => {
     console.log('[Conversa] 📸 Navegando para câmera com auto-foto');
     setMicEnabled(false);
     setRecognizedText('');
-    lastRecognizedTextRef.current = '';
+    setInputText('');
     
-    if (recognitionTimeoutRef.current) {
-      clearTimeout(recognitionTimeoutRef.current);
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
     }
     
     router.replace({
@@ -239,9 +326,6 @@ const ConversationScreen: React.FC = () => {
     });
   }, [conversaId, router]);
 
-  // ===================================================================
-  // VOLTAR PARA TELA ANTERIOR
-  // ===================================================================
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -250,31 +334,20 @@ const ConversationScreen: React.FC = () => {
     }
   };
 
-  // ===================================================================
-  // CONTROLAR ESTADO QUANDO PERDE/GANHA FOCO
-  // ===================================================================
   useEffect(() => {
     if (!isScreenFocused) {
       console.log('[Conversa] 🔴 Tela perdeu foco');
       setMessages([]);
       setActiveImage(null);
       setMicEnabled(false);
+      setInputText('');
     } else {
       console.log('[Conversa] 🟢 Tela ganhou foco');
-      console.log(`[Conversa] 🔍 shouldSpeakNextMessage: ${shouldSpeakNextMessageRef.current}`);
-      console.log(`[Conversa] 🔍 isFirstLoad: ${isFirstLoadRef.current}`);
-      console.log(`[Conversa] 🔍 lastSpokenMessageId: ${lastSpokenMessageIdRef.current}`);
-      console.log(`[Conversa] 🔍 lastMessageCount: ${lastMessageCountRef.current}`);
     }
   }, [isScreenFocused]);
 
-  // ===================================================================
-  // BUSCAR MENSAGENS DO FIRESTORE
-  // ===================================================================
   useEffect(() => {
     if (!conversaId || !isScreenFocused) return;
-
-    console.log(`[Firestore] 🎧 Iniciando listener para ${conversaId}`);
 
     const unsubscribe = firestore()
       .collection('conversas')
@@ -288,46 +361,24 @@ const ConversationScreen: React.FC = () => {
             ...doc.data(),
           })) as Message[];
           
-          console.log(`[Conversa] 📊 Total de mensagens: ${msgs.length}`);
-          console.log(`[Conversa] 📊 Mensagens anteriores: ${lastMessageCountRef.current}`);
-          
-          const hasNewMessages = msgs.length > lastMessageCountRef.current && lastMessageCountRef.current > 0;
-          
           setMessages(msgs);
 
           const lastApiMessage = [...msgs].reverse().find(m => m.sender === 'api');
           
           if (lastApiMessage) {
-            console.log('═══════════════════════════════════════════════');
-            console.log(`[Conversa] 🔍 ANÁLISE DE FALA`);
-            console.log(`[Conversa] 📨 Message ID: ${lastApiMessage.id}`);
-            console.log(`[Conversa] 🗣️ Last Spoken ID: ${lastSpokenMessageIdRef.current}`);
-            console.log(`[Conversa] 🆕 isNewMessage: ${lastApiMessage.id !== lastSpokenMessageIdRef.current}`);
-            console.log(`[Conversa] 🚩 shouldSpeakFlag: ${shouldSpeakNextMessageRef.current}`);
-            console.log(`[Conversa] 1️⃣ isFirstLoad: ${isFirstLoadRef.current}`);
-            console.log(`[Conversa] 📈 hasNewMessages: ${hasNewMessages}`);
-            
             const isNewMessage = lastApiMessage.id !== lastSpokenMessageIdRef.current;
             const shouldSpeak = shouldSpeakNextMessageRef.current && isNewMessage;
 
-            console.log(`[Conversa] 🎯 Decisão final: ${shouldSpeak ? '✅ FALAR' : '❌ NÃO FALAR'}`);
-            console.log('═══════════════════════════════════════════════');
-
             if (shouldSpeak) {
-              console.log('[Conversa] 🔊 PREPARANDO PARA FALAR:', lastApiMessage.text.substring(0, 50) + '...');
               lastSpokenMessageIdRef.current = lastApiMessage.id;
               shouldSpeakNextMessageRef.current = false;
               
               setTimeout(() => {
-                console.log('[Conversa] 🔊 FALANDO AGORA!');
                 speak(lastApiMessage.text);
               }, 3500);
             } else {
               if (isFirstLoadRef.current || lastSpokenMessageIdRef.current === null) {
                 lastSpokenMessageIdRef.current = lastApiMessage.id;
-                console.log('[Conversa] 📝 Primeira carga, marcando como já falada (SEM FALAR)');
-              } else {
-                console.log('[Conversa] ⏭️ Mensagem já foi falada anteriormente, ignorando');
               }
             }
           }
@@ -346,89 +397,20 @@ const ConversationScreen: React.FC = () => {
       );
 
     return () => {
-      console.log(`[Firestore] 🔇 Parando listener para ${conversaId}`);
       unsubscribe();
     };
 
   }, [conversaId, isScreenFocused, speak]);
 
-  // ===================================================================
-  // PROCESSAR RECONHECIMENTO DE VOZ COM DEBOUNCE
-  // ===================================================================
-  useEffect(() => {
-    if (!recognizedText.trim() || !micEnabled) return;
-
-    const textoAtual = recognizedText.trim();
-    const textoLower = textoAtual.toLowerCase();
-    lastRecognizedTextRef.current = textoAtual;
-
-    console.log("[Conversa] Texto sendo reconhecido:", textoAtual);
-
-    // ✅ NOVO: Detectar comando "enviar áudio" 
-    if (textoLower.includes('enviar') && textoLower.includes('áudio')) {
-      console.log('[Conversa] 🎙️ Comando "enviar áudio" detectado localmente');
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-      
-      // Mantém o microfone ativo para a próxima mensagem
-      return;
-    }
-
-    if (recognitionTimeoutRef.current) {
-      clearTimeout(recognitionTimeoutRef.current);
-    }
-
-    recognitionTimeoutRef.current = setTimeout(() => {
-      const textoFinal = lastRecognizedTextRef.current;
-      
-      if (!textoFinal) {
-        console.log('[Conversa] Texto vazio após timeout, ignorando');
-        return;
-      }
-
-      console.log("[Conversa] ✅ Texto final capturado:", textoFinal);
-
-      if (!activeImage) {
-        console.warn('[Conversa] Não há imagem ativa para enviar esta pergunta.');
-        speak('Nenhuma imagem está ativa. Por favor, tire uma foto primeiro.');
-        setRecognizedText('');
-        setMicEnabled(false);
-        return;
-      }
-
-      setMicEnabled(false);
-      setRecognizedText('');
-      lastRecognizedTextRef.current = '';
-      
-      enviarMensagem(textoFinal);
-    }, 2000);
-
-  }, [recognizedText, micEnabled, activeImage, speak]);
-
-  useEffect(() => {
-    return () => {
-      if (recognitionTimeoutRef.current) {
-        clearTimeout(recognitionTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // ===================================================================
-  // NAVEGAR PARA TIRAR FOTO
-  // ===================================================================
   const handlePickImage = () => {
-    console.log('[Conversa] 📷 Navegando para câmera manualmente');
+    console.log('[Conversa] 📷 Navegando para câmera');
     
     setMicEnabled(false);
     setRecognizedText('');
-    lastRecognizedTextRef.current = '';
+    setInputText('');
     
-    if (recognitionTimeoutRef.current) {
-      clearTimeout(recognitionTimeoutRef.current);
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
     }
     
     router.push({
@@ -441,9 +423,6 @@ const ConversationScreen: React.FC = () => {
     });
   };
 
-  // ===================================================================
-  // ENVIAR MENSAGEM
-  // ===================================================================
   const enviarMensagem = async (textOverride?: string) => {
     const texto = (textOverride !== undefined ? textOverride : inputText).trim();
 
@@ -453,14 +432,11 @@ const ConversationScreen: React.FC = () => {
     }
 
     if (!activeImage) {
-      Alert.alert('Erro', 'Não há uma imagem ativa para perguntar...');
+      Alert.alert('Erro', 'Não há uma imagem ativa.');
       return;
     }
 
-    if (textOverride === undefined) {
-      setInputText('');
-    }
-    
+    setInputText('');
     setIsSending(true);
 
     try {
@@ -486,7 +462,6 @@ const ConversationScreen: React.FC = () => {
       let base64Image: string;
       
       if (activeImage.startsWith('http')) {
-        console.log('[Upload] 📥 Baixando imagem do Firebase Storage...');
         const response = await fetch(activeImage);
         const blob = await response.blob();
         
@@ -501,16 +476,12 @@ const ConversationScreen: React.FC = () => {
           reader.readAsDataURL(blob);
         });
       } else {
-        console.log('[Upload] 📂 Lendo arquivo local...');
         const FileSystem = require('expo-file-system').default;
         base64Image = await FileSystem.readAsStringAsync(activeImage, {
           encoding: FileSystem.EncodingType.Base64,
         });
       }
 
-      console.log(`[Upload] ✅ Base64 pronto (${base64Image.length} caracteres)`);
-
-      console.log('[Upload] 📤 Enviando requisição JSON para:', SERVER_URL);
       const response = await fetch(SERVER_URL, {
         method: 'POST',
         headers: {
@@ -523,28 +494,19 @@ const ConversationScreen: React.FC = () => {
         }),
       });
 
-      console.log('[Upload] 📥 Resposta recebida');
-      console.log('[Upload] Status:', response.status);
-
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error('[Upload] ❌ Erro do servidor:', errorBody);
-        throw new Error(`Erro na resposta do servidor: ${response.status} - ${errorBody}`);
+        throw new Error(`Erro: ${response.status} - ${errorBody}`);
       }
 
       const data = await response.json();
-      console.log('[Upload] 🎉 Resultado:', data);
-      
       const apiResponse = data.description;
 
       if (!apiResponse) {
-        throw new Error("O servidor respondeu, mas não enviou uma 'description'.");
+        throw new Error("Servidor não enviou 'description'.");
       }
 
-      console.log('[Upload] ✅ Descrição recebida:', apiResponse);
-
       shouldSpeakNextMessageRef.current = true;
-      console.log('[Conversa] 🚩 Flag ativada após enviar mensagem - resposta será falada');
 
       await messagesCollectionRef.add({
         sender: 'api',
@@ -553,36 +515,22 @@ const ConversationScreen: React.FC = () => {
         timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log('[Conversa] ✅ Resposta salva no Firestore, será falada pelo listener');
-
     } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-      let errorMessage = 'Ocorreu um erro desconhecido.';
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        
-        if (errorMessage.includes('Network request failed')) {
-          errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
-        }
-      }
-      Alert.alert('Erro', 'Não foi possível enviar a mensagem: ' + errorMessage);
-      speak('Erro ao enviar mensagem. Por favor, tente novamente.');
+      console.error('Erro ao enviar:', error);
+      Alert.alert('Erro', 'Não foi possível enviar a mensagem.');
+      speak('Erro ao enviar mensagem.');
     } finally {
       setIsSending(false);
     }
   };
 
-  // ===================================================================
-  // RENDER - AGORA USA keyboardHeight!
-  // ===================================================================
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: cores.barrasDeNavegacao }]}>
       <View style={[styles.outerContainer, { backgroundColor: cores.fundo }]}>
-        {/* Header fixo */}
         <TouchableOpacity 
           onPress={handleGoBack}
           style={[styles.header, { backgroundColor: cores.barrasDeNavegacao }]}
-          accessibilityLabel="Voltar para tela anterior"
+          accessibilityLabel="Voltar"
           accessibilityRole="button"
         >
           <Ionicons 
@@ -595,7 +543,6 @@ const ConversationScreen: React.FC = () => {
           </Text>
         </TouchableOpacity>
 
-        {/* Lista de mensagens com paddingBottom dinâmico */}
         <FlatList
           ref={flatListRef}
           style={styles.flatList}
@@ -608,10 +555,8 @@ const ConversationScreen: React.FC = () => {
           accessible={false}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
-            const senderLabel = item.sender === 'user' ? "Sua mensagem" : "Acessivision";
-            const imageDescription = item.imageUri ? "Contém imagem." : ""; 
-            const textContent = item.text ? String(item.text) : "";
-            const combinedLabel = [senderLabel, imageDescription, textContent].filter(Boolean).join(' ');
+            const senderLabel = item.sender === 'user' ? "Você" : "Acessivision";
+            const combinedLabel = `${senderLabel}. ${item.text || ''}`;
 
             return (
               <View
@@ -642,23 +587,6 @@ const ConversationScreen: React.FC = () => {
           onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
         />
 
-        {/* Indicador de escuta - posição absoluta ajustada pelo teclado */}
-        {micEnabled && recognizedText && (
-          <View style={[
-            styles.listeningIndicator, 
-            { 
-              backgroundColor: cores.barrasDeNavegacao,
-              bottom: keyboardHeight > 0 ? keyboardHeight + 90 : 90 
-            }
-          ]}>
-            <ActivityIndicator size="small" color={cores.texto} />
-            <Text style={[styles.listeningText, { color: cores.texto }]}>
-              "{recognizedText}"
-            </Text>
-          </View>
-        )}
-
-        {/* Container de input - posição absoluta ajustada pelo teclado */}
         <View 
           style={[
             styles.inputContainer, 
@@ -672,7 +600,7 @@ const ConversationScreen: React.FC = () => {
           <TouchableOpacity 
             onPress={handlePickImage}
             style={styles.imagePickerButton}
-            accessibilityLabel={activeImage ? 'Foto ativa. Toque para tirar uma nova foto' : 'Tirar foto'}
+            accessibilityLabel={activeImage ? 'Foto ativa' : 'Tirar foto'}
           >
             {activeImage ? (
               <Image source={{ uri: activeImage }} style={styles.activeImagePreview} />
@@ -683,7 +611,7 @@ const ConversationScreen: React.FC = () => {
 
           <TextInput
             style={[styles.input, { color: cores.texto, backgroundColor: cores.fundo }]}
-            placeholder="Escreva uma pergunta"
+            placeholder="Escreva ou fale uma pergunta"
             placeholderTextColor="#999"
             value={inputText}
             onChangeText={setInputText}
@@ -710,7 +638,7 @@ const ConversationScreen: React.FC = () => {
             disabled={isSending || micEnabled}
             style={styles.sendButton}
             accessibilityRole='button'
-            accessibilityLabel="Enviar mensagem"
+            accessibilityLabel="Enviar"
           >
             {isSending ? (
               <ActivityIndicator size="small" color={cores.texto} />
@@ -729,34 +657,20 @@ const ConversationScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  outerContainer: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
+  outerContainer: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
     gap: 12,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  flatList: {
-    flex: 1,
-  },
-  flatListContent: {
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    flexGrow: 1,
-  },
+  headerTitle: { fontSize: 20, fontWeight: '600' },
+  flatList: { flex: 1 },
+  flatListContent: { paddingHorizontal: 10, paddingTop: 10, flexGrow: 1 },
   messageBubble: {
     maxWidth: '85%',
     borderRadius: 16,
@@ -764,51 +678,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginVertical: 4,
   },
-  userBubble: { 
-    alignSelf: 'flex-end', 
-  },
-  apiBubble: { 
-    alignSelf: 'flex-start', 
-  },
-  messageText: { 
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  messageImage: {
-    width: 180,
-    height: 180,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  listeningIndicator: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-  },
-  listeningText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  userBubble: { alignSelf: 'flex-end' },
+  apiBubble: { alignSelf: 'flex-start' },
+  messageText: { fontSize: 16, lineHeight: 22 },
+  messageImage: { width: 180, height: 180, borderRadius: 12, marginBottom: 8 },
+  recordingText: { fontSize: 14, fontWeight: '500' },
   inputContainer: {
     position: 'absolute',
     left: 0,
     right: 0,
     flexDirection: 'row',
-    alignItems: 'flex-end', 
+    alignItems: 'flex-end',
     paddingHorizontal: 8,
     paddingVertical: 8,
     paddingBottom: Platform.OS === 'ios' ? 8 : 12,
     minHeight: 80,
     gap: 4,
   },
-  imagePickerButton: { 
+  imagePickerButton: {
     width: 90,
     height: 90,
     justifyContent: 'center',
@@ -819,13 +706,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#555',
   },
-  activeImagePreview: { 
-    width: 90,
-    height: 90,
-    borderRadius: 12,
-  },
-  input: { 
-    flex: 1, 
+  activeImagePreview: { width: 90, height: 90, borderRadius: 12 },
+  input: {
+    flex: 1,
     fontSize: 16,
     paddingHorizontal: 16,
     paddingVertical: 10,

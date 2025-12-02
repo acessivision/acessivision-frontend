@@ -4,6 +4,7 @@ import { useAudioSetup } from '../hooks/useAudioSetup';
 import { useSpeech } from '../hooks/useSpeech';
 import { useIntentHandler, VoiceState as IntentHandlerVoiceState } from '../hooks/useIntentHandler';
 import SpeechManager from '../utils/speechManager';
+import { useMicrophone } from './MicrophoneContext';
 
 type VoiceState = IntentHandlerVoiceState;
 
@@ -51,8 +52,11 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   const listenerRegisteredRef = useRef(false);
 
+  const { isMicrophoneEnabled } = useMicrophone();
+  
   const { speak, stopCurrentAudio, registerAudioPlayer, unregisterAudioPlayer } = useAudioSetup();
   
+  // ✅ CORREÇÃO: Passa o estado do toggle para o useSpeech
   const {
     isListening,
     recognizedText,
@@ -60,7 +64,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     startListening,
     stopListening,
   } = useSpeech({
-    enabled: true,
+    enabled: isMicrophoneEnabled, // ✅ Agora respeita o toggle!
     mode: 'global',
     onResult: (text: string) => {
       console.log('[VoiceContext] Global result received:', text);

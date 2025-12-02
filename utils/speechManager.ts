@@ -1,5 +1,8 @@
-// SpeechManager.ts - Corrigido para não gerar erros ao parar
-import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
+// ===================================================================
+// SpeechManager.ts - VERSÃO CORRIGIDA SEM LOOP DE ERRO
+// ===================================================================
+
+import { ExpoSpeechRecognitionModule, ExpoSpeechRecognitionNativeEventMap } from 'expo-speech-recognition';
 import * as Speech from 'expo-speech';
 
 type SpeechCallback = (text: string) => void;
@@ -27,17 +30,25 @@ class SpeechManager {
   
   private lastErrorTime: number = 0;
   private lastEndTime: number = 0;
+  private lastStartTime: number = 0;
   
-  // ✅ NOVO: Flag para saber se foi parado intencionalmente
   private intentionalStop = false;
+  private isInitializing = false;
+  private consecutiveErrors = 0;
   
   // Debounce
   private startTimeout: ReturnType<typeof setTimeout> | null = null;
   private stopTimeout: ReturnType<typeof setTimeout> | null = null;
+  private restartTimeout: ReturnType<typeof setTimeout> | null = null;
   
   private talkBackSpeakingCallback: ((isSpeaking: boolean) => void) | null = null;
   
-  private constructor() {}
+  // Subscriptions dos eventos nativos
+  private subscriptions: Array<{ remove: () => void }> = [];
+  
+  private constructor() {
+    this.setupNativeListeners();
+  }
   
   static getInstance(): SpeechManager {
     if (!SpeechManager.instance) {
@@ -47,15 +58,72 @@ class SpeechManager {
   }
   
   // ============================================
+  // SETUP DOS EVENT LISTENERS NATIVOS
+  // ============================================
+  private setupNativeListeners(): void {
+    console.log('[SpeechManager] 🎧 Configurando event listeners nativos');
+    
+    try {
+      // Listener para resultados (interim e final)
+      const resultSub = ExpoSpeechRecognitionModule.addListener(
+        'result',
+        (event: ExpoSpeechRecognitionNativeEventMap['result']) => {
+          console.log('[SpeechManager] 📥 Event received:', {
+            isFinal: event.isFinal,
+            results: event.results?.map(r => r.transcript)
+          });
+          
+          if (event.results && event.results.length > 0) {
+            const transcript = event.results[0].transcript;
+            
+            if (event.isFinal) {
+              console.log('[SpeechManager] ✅ FINAL result:', transcript);
+              this.handleResult(transcript, true);
+            }
+          }
+        }
+      );
+      
+      // Listener para fim do reconhecimento
+      const endSub = ExpoSpeechRecognitionModule.addListener(
+        'end',
+        () => {
+          console.log('[SpeechManager] 🏁 Recognition ended (native event)');
+          this.handleEnd();
+        }
+      );
+      
+      // Listener para erros
+      const errorSub = ExpoSpeechRecognitionModule.addListener('error', (event) => {
+          this.handleError(event.error);
+      });
+      
+      // Listener para início
+      const startSub = ExpoSpeechRecognitionModule.addListener('start', () => {
+          this.isInitializing = false;
+          this.consecutiveErrors = 0;
+      });
+      
+      this.subscriptions = [resultSub, endSub, errorSub, startSub];
+      console.log('[SpeechManager] ✅ Event listeners configurados com sucesso');
+      
+    } catch (error) {
+      console.error('[SpeechManager] ❌ Erro ao configurar listeners:', error);
+    }
+  }
+  
+  // ============================================
   // PERMISSÕES
   // ============================================
   async requestPermissions(): Promise<boolean> {
     try {
+      console.log('[SpeechManager] 🔑 Solicitando permissões...');
       const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       this.permissionGranted = granted;
+      console.log('[SpeechManager] Permissões:', granted ? '✅ Concedidas' : '❌ Negadas');
       return granted;
     } catch (error) {
-      console.error('[SpeechManager] Permission error:', error);
+      console.error('[SpeechManager] Erro ao solicitar permissões:', error);
       return false;
     }
   }
@@ -65,9 +133,9 @@ class SpeechManager {
   }
   
   // ============================================
-  // TTS
+  // TTS - SEM PAUSAR RECONHECIMENTO
   // ============================================
-  async speak(text: string, callback?: () => void, pauseRecognition: boolean = true): Promise<void> {
+  async speak(text: string, callback?: () => void, pauseRecognition: boolean = false): Promise<void> {
     console.log('[SpeechManager] 🔊 Speaking:', text);
     
     const normalizedText = text.toLowerCase().trim();
@@ -85,9 +153,13 @@ class SpeechManager {
       }
     });
     
-    const wasRecognizing = this.isRecognizing;
-    if (pauseRecognition && this.isRecognizing) {
-      console.log('[SpeechManager] ⏸️ Pausando reconhecimento');
+    // ✅ CRÍTICO: Não pausa reconhecimento por padrão
+    // Isso evita o loop de erro "client"
+    const wasEnabled = this.isEnabled;
+    const shouldPause = pauseRecognition && this.isRecognizing;
+    
+    if (shouldPause) {
+      console.log('[SpeechManager] ⏸️ Pausando reconhecimento para falar');
       await this.stopRecognition();
     }
     
@@ -110,9 +182,12 @@ class SpeechManager {
       
       if (cleanupTimeout) clearTimeout(cleanupTimeout);
       
-      if (pauseRecognition && wasRecognizing && this.isEnabled) {
-        console.log('[SpeechManager] ▶️ Retomando reconhecimento');
-        this.startRecognition('global');
+      // ✅ Só retoma se havia pausado
+      if (shouldPause && wasEnabled && this.isEnabled) {
+        console.log('[SpeechManager] ▶️ Retomando reconhecimento após fala');
+        setTimeout(() => {
+          this.startRecognition('global');
+        }, 300);
       }
       
       const cacheTime = normalizedText.length <= 10 ? 800 : 1200;
@@ -173,91 +248,80 @@ class SpeechManager {
   }
   
   // ============================================
-  // RECONHECIMENTO
+  // RECONHECIMENTO - COM PROTEÇÃO ANTI-LOOP
   // ============================================
   async startRecognition(mode: 'global' | 'local' = 'global', callback?: SpeechCallback): Promise<void> {
-    if (!this.permissionGranted) return;
-    
-    if (this.startTimeout) {
-      clearTimeout(this.startTimeout);
-      this.startTimeout = null;
-    }
-    
-    if (this.isRecognizing) {
-      console.log('[SpeechManager] ⚠️ Já está reconhecendo, forçando parada antes de reiniciar');
-      
-      // ✅ CRÍTICO: Para completamente antes de reiniciar
-      try {
-        ExpoSpeechRecognitionModule.stop();
-        this.isRecognizing = false;
-        await new Promise(resolve => setTimeout(resolve, 300)); // Aguarda parada completa
-      } catch (e) {
-        console.warn('[SpeechManager] Erro ao forçar parada:', e);
+    // ✅ CORREÇÃO 1: Auto-solicitar permissão se não tiver
+    if (!this.permissionGranted) {
+      console.log('[SpeechManager] ⚠️ Permissão faltando ao iniciar. Solicitando agora...');
+      const granted = await this.requestPermissions();
+      if (!granted) {
+        console.warn('[SpeechManager] 🚫 Permissão negada pelo usuário.');
+        return;
       }
     }
     
-    // ✅ Reset da flag de parada intencional
-    this.intentionalStop = false;
+    // ... (restante das verificações de debounce permanecem iguais)
+    if (this.isInitializing) return;
+    const now = Date.now();
+    if (now - this.lastStartTime < 500) return;
     
-    this.currentMode = mode;
-    if (mode === 'local' && callback) {
-      this.localCallback = callback;
+    if (this.isRecognizing) {
+      this.currentMode = mode;
+      if (mode === 'local' && callback) this.localCallback = callback;
+      if (mode === 'global') this.localCallback = null;
+      return; 
     }
+    
+    this.intentionalStop = false;
+    this.currentMode = mode;
+    this.isInitializing = true;
+    this.lastStartTime = now;
+    
+    if (mode === 'local' && callback) this.localCallback = callback;
     
     this.startTimeout = setTimeout(async () => {
       try {
-        console.log(`[SpeechManager] 🎤 Starting recognition (${mode})`);
+        // Stop preventivo
+        try { ExpoSpeechRecognitionModule.stop(); } catch (e) {}
         
         ExpoSpeechRecognitionModule.start({
           lang: 'pt-BR',
           interimResults: mode === 'local',
           continuous: true,
-          requiresOnDeviceRecognition: true,
+          requiresOnDeviceRecognition: false, 
           addsPunctuation: false,
           maxAlternatives: 1,
         });
         
         this.isRecognizing = true;
         this.isEnabled = true;
+        console.log(`[SpeechManager] 🎤 Engine Iniciada (${mode})`);
         
       } catch (error) {
-        console.error('[SpeechManager] Start error:', error);
+        console.error('[SpeechManager] ❌ Start falhou:', error);
         this.isRecognizing = false;
+        this.isInitializing = false;
       }
     }, 100);
   }
   
-  // ✅ Stop que NÃO desabilita o manager (para modo local)
   async stopRecognition(): Promise<void> {
-    if (this.startTimeout) {
-      clearTimeout(this.startTimeout);
-      this.startTimeout = null;
-    }
+    if (this.stopTimeout) clearTimeout(this.stopTimeout);
+    if (!this.isRecognizing && !this.isInitializing) return;
     
-    if (this.stopTimeout) {
-      clearTimeout(this.stopTimeout);
-      this.stopTimeout = null;
-    }
-    
-    if (!this.isRecognizing) return;
-    
-    // ✅ Marca como parada intencional
     this.intentionalStop = true;
+    this.isInitializing = false;
     
     this.stopTimeout = setTimeout(() => {
       try {
-        console.log('[SpeechManager] 🛑 Stopping recognition (intentional)');
         ExpoSpeechRecognitionModule.stop();
         this.isRecognizing = false;
         this.currentMode = null;
         this.localCallback = null;
-      } catch (error) {
-        console.error('[SpeechManager] Stop error:', error);
-      }
-    }, 100); // ✅ Delay para garantir que o Android processe
-    
-    // ✅ Aguarda um pouco para garantir que parou completamente
-    await new Promise(resolve => setTimeout(resolve, 200));
+        console.log('[SpeechManager] 🛑 Engine Parada');
+      } catch (error) {}
+    }, 100);
   }
   
   // ============================================
@@ -265,10 +329,12 @@ class SpeechManager {
   // ============================================
   addListener(callback: SpeechCallback): void {
     this.listeners.add(callback);
+    console.log('[SpeechManager] 👂 Listener adicionado. Total:', this.listeners.size);
   }
   
   removeListener(callback: SpeechCallback): void {
     this.listeners.delete(callback);
+    console.log('[SpeechManager] 🗑️ Listener removido. Total:', this.listeners.size);
   }
   
   // ============================================
@@ -306,11 +372,14 @@ class SpeechManager {
       }
     }
     
-    if (normalizedText === 'escutando' || normalizedText === 'escutando.') {
-      console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA (Exato):', normalizedText);
+    // Ignora prompt do sistema
+    const systemPrompts = ['escutando', 'processando', 'aguarde'];
+    if (systemPrompts.some(p => normalizedText.includes(p))) {
+      console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA:', normalizedText);
       return;
     }
 
+    // Ignora eco
     if (this.recentlySpoken.has(normalizedText)) {
       console.log('[SpeechManager] 🔇 IGNORANDO ECO EXATO:', text);
       return;
@@ -324,19 +393,23 @@ class SpeechManager {
       }
     }
     
-    console.log('[SpeechManager] ✅ Result (Aceito):', text);
+    console.log('[SpeechManager] ✅ Resultado aceito:', text);
     
+    // Modo local: chama callback específico
     if (this.currentMode === 'local' && this.localCallback) {
+      console.log('[SpeechManager] 📞 Chamando callback local');
       this.localCallback(text);
-      this.localCallback = null;
+      // ✅ NÃO limpa callback imediatamente em modo local contínuo
       return;
     }
     
+    // Modo global: notifica todos os listeners
+    console.log('[SpeechManager] 📢 Notificando', this.listeners.size, 'listeners');
     this.listeners.forEach(listener => {
       try {
         listener(text);
       } catch (error) {
-        console.error('[SpeechManager] Listener error:', error);
+        console.error('[SpeechManager] Erro em listener:', error);
       }
     });
   }
@@ -358,51 +431,76 @@ class SpeechManager {
   handleEnd(): void {
     const now = Date.now();
     
-    if (now - this.lastEndTime < 500) return;
+    // ✅ Proteção contra eventos duplicados
+    if (now - this.lastEndTime < 500) {
+      console.log('[SpeechManager] ⚠️ Evento end duplicado, ignorando');
+      return;
+    }
     this.lastEndTime = now;
     
-    if (!this.isRecognizing) return;
+    if (!this.isRecognizing) {
+      console.log('[SpeechManager] ℹ️ End event mas não estava reconhecendo');
+      return;
+    }
     
     const wasGlobal = this.currentMode === 'global';
     
     this.isRecognizing = false;
+    this.isInitializing = false;
     this.currentMode = null;
     this.localCallback = null;
     
-    // ✅ Só reinicia se NÃO foi parada intencional e está em modo global
+    // ✅ Só reinicia se for modo global, estiver habilitado, não estiver falando e não foi parada intencional
     if (this.isEnabled && !this.isSpeaking && wasGlobal && !this.intentionalStop) {
-      setTimeout(() => {
-        this.startRecognition('global');
-      }, 150);
+      console.log('[SpeechManager] 🔄 Agendando reinício automático');
+      
+      // ✅ Limpa timeout anterior se existir
+      if (this.restartTimeout) {
+        clearTimeout(this.restartTimeout);
+      }
+      
+      this.restartTimeout = setTimeout(() => {
+        if (this.isEnabled && !this.isSpeaking && !this.isRecognizing) {
+          console.log('[SpeechManager] 🔄 Executando reinício automático');
+          this.startRecognition('global');
+        }
+      }, 500);
     } else if (this.intentionalStop) {
       console.log('[SpeechManager] ℹ️ Parada intencional, não reiniciando');
-      this.intentionalStop = false; // Reset da flag
+      this.intentionalStop = false;
     }
   }
   
   handleError(error: string): void {
     const now = Date.now();
-    
-    if (now - this.lastErrorTime < 200) return;
+    if (now - this.lastErrorTime < 300) return;
     this.lastErrorTime = now;
     
-    // ✅ Se foi parada intencional, ignora o erro e não reinicia
-    if (this.intentionalStop) {
-      console.log('[SpeechManager] ℹ️ Erro após parada intencional, ignorando');
-      this.intentionalStop = false;
-      this.isRecognizing = false;
-      return;
+    // ✅ CORREÇÃO 2: Ignorar erros não fatais
+    // 'no-speech' = silêncio
+    // 'speech_timeout' = silêncio no iOS
+    // 'client' = cancelamento manual/conflito
+    if (error === 'no-speech' || error === 'speech_timeout' || error === 'client') {
+        console.log(`[SpeechManager] ⚠️ Erro não-fatal (${error}). Reiniciando silenciosamente...`);
+        
+        this.isRecognizing = false;
+        this.isInitializing = false;
+        
+        // Reinicia imediatamente se deveria estar ligado
+        if (this.isEnabled && !this.isSpeaking && !this.intentionalStop) {
+            setTimeout(() => this.startRecognition(this.currentMode || 'global'), 200);
+        }
+        return;
     }
     
-    if (!this.isRecognizing) return;
-    
+    // Erros reais (network, permissions, etc)
+    console.error('[SpeechManager] ❌ Erro Real:', error);
+    this.consecutiveErrors++;
     this.isRecognizing = false;
     
-    // ✅ Só reinicia se estiver habilitado e for modo global
-    if (this.isEnabled && !this.isSpeaking && this.currentMode === 'global') {
-      setTimeout(() => {
-        this.startRecognition('global');
-      }, 400);
+    if (this.isEnabled && !this.isSpeaking) {
+       const waitTime = Math.min(1000 * this.consecutiveErrors, 5000);
+       setTimeout(() => this.startRecognition('global'), waitTime);
     }
   }
   
@@ -410,24 +508,37 @@ class SpeechManager {
   // CONTROLE DE ESTADO
   // ============================================
   enable(): void {
-    console.log('[SpeechManager] ✅ Enabling');
+    console.log('[SpeechManager] ✅ Habilitando');
     this.isEnabled = true;
+    this.consecutiveErrors = 0;
     
-    if (!this.isSpeaking && !this.isRecognizing) {
-      this.startRecognition('global');
-    }
+    setTimeout(() => {
+      if (this.isEnabled && !this.isSpeaking && !this.isRecognizing && !this.isInitializing) {
+        console.log('[SpeechManager] 🎤 Auto-iniciando reconhecimento');
+        this.startRecognition('global');
+      }
+    }, 300);
   }
   
   disable(): void {
-    console.log('[SpeechManager] ❌ Disabling');
+    console.log('[SpeechManager] ❌ Desabilitando');
     this.isEnabled = false;
-    this.intentionalStop = true; // ✅ Marca como parada intencional
+    this.intentionalStop = true;
+    this.consecutiveErrors = 0;
     
-    if (this.isRecognizing) {
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+      this.restartTimeout = null;
+    }
+    
+    if (this.isRecognizing || this.isInitializing) {
       try {
         ExpoSpeechRecognitionModule.stop();
-      } catch (e) {}
+      } catch (e) {
+        console.error('[SpeechManager] Erro ao parar:', e);
+      }
       this.isRecognizing = false;
+      this.isInitializing = false;
     }
     this.currentMode = null;
     this.localCallback = null;
@@ -440,7 +551,25 @@ class SpeechManager {
       isEnabled: this.isEnabled,
       currentMode: this.currentMode,
       listenerCount: this.listeners.size,
+      permissionGranted: this.permissionGranted,
+      isInitializing: this.isInitializing,
+      consecutiveErrors: this.consecutiveErrors,
     };
+  }
+  
+  // ============================================
+  // CLEANUP
+  // ============================================
+  cleanup(): void {
+    console.log('[SpeechManager] 🧹 Limpando recursos');
+    
+    if (this.startTimeout) clearTimeout(this.startTimeout);
+    if (this.stopTimeout) clearTimeout(this.stopTimeout);
+    if (this.restartTimeout) clearTimeout(this.restartTimeout);
+    
+    this.subscriptions.forEach(sub => sub.remove());
+    this.subscriptions = [];
+    this.disable();
   }
 }
 

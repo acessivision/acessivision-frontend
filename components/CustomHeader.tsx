@@ -1,7 +1,3 @@
-// ===================================================================
-// CustomHeader.tsx - CORRIGIDO: Integração com MicrophoneContext
-// ===================================================================
-
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { 
   View, 
@@ -19,9 +15,9 @@ import { useAuth } from '../components/AuthContext';
 import { useSpeech } from '../hooks/useSpeech';
 import LogoutModal from '../components/LogoutModal';
 import { tutoriaisDasTelas } from '../utils/tutoriais';
-import { useTutorial } from '../components/TutorialContext'; // Ajuste o caminho se necessário
-// ✅ IMPORTANTE: Importar o contexto do microfone
+import { useTutorial } from '../components/TutorialContext';
 import { useMicrophone } from '../components/MicrophoneContext';
+import { useScreenReaderFocus } from '../hooks/useScreenReaderFocus';
 
 interface CustomHeaderProps {
   title: string;
@@ -41,6 +37,7 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     const pathname = usePathname();
     const { user, logout } = useAuth(); 
     const tituloRef = useRef(null);
+    useScreenReaderFocus(tituloRef);
 
     const [logoutModalVisible, setLogoutModalVisible] = useState(false);
     
@@ -62,15 +59,18 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     });
 
     const handleToggleMicrofone = () => {
-      // ✅ Alterna o estado GLOBAL do microfone
+      // ✅ Lê o estado ATUAL antes de alterá-lo
+      const estadoAtual = isMicrophoneEnabled;
+      
+      // Alterna o estado GLOBAL do microfone
       toggleGlobalMic();
       
-      // Feedback falado
-      if (isMicrophoneEnabled) {
-        // Estava ligado, vai desligar
+      // ✅ CORREÇÃO: Usa o estado capturado para dar o feedback correto
+      // Se estava ligado (true), agora vai desligar
+      if (estadoAtual) {
         speak("Microfone desativado.");
       } else {
-        // Estava desligado, vai ligar
+        // Se estava desligado (false), agora vai ligar
         speak("Microfone ativado.");
       }
     };
