@@ -9,6 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   logout: () => Promise<void>;
   loginWithGoogle: () => Promise<any>;
+  deleteAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   logout: async () => {},
   loginWithGoogle: async () => {},
+  deleteAccount: async () => {},
 });
 
 interface AuthProviderProps {
@@ -27,8 +29,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // 2. USE THE IMPORTED FUNCTION
-    const unsubscribe = onAuthStateChanged(auth(), async (firebaseUser: FirebaseAuthTypes.User | null) => { // <-- CHANGE HERE
+    const unsubscribe = onAuthStateChanged(auth(), async (firebaseUser: FirebaseAuthTypes.User | null) => {
       if (firebaseUser) {
         // Usuário está logado
         const userData = await authService.getCurrentUser();
@@ -42,14 +43,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             fotoPerfil: firebaseUser.photoURL || undefined,
           };
           setUser(newUser);
-          // Opcional: Salvar esses dados básicos no AsyncStorage aqui?
-          // await authService.saveUser(newUser); 
         }
       } else {
         // Usuário não está logado
         setUser(null);
-        // Opcional: Limpar dados do AsyncStorage aqui?
-        // await authService.clearUser();
       }
       setIsLoading(false);
     });
@@ -67,8 +64,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     await authService.logout();
   };
 
+  const deleteAccount = async () => {
+    try {
+      const result = await authService.deleteAccount();
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+      // Após exclusão, o onAuthStateChanged irá atualizar automaticamente o estado
+    } catch (error) {
+      console.error('[AuthContext] Erro ao excluir conta:', error);
+      throw error; // Repassa o erro para o componente tratar
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout, loginWithGoogle }}>
+    <AuthContext.Provider value={{ user, isLoading, logout, loginWithGoogle, deleteAccount }}>
       {children}
     </AuthContext.Provider>
   );

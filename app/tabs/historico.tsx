@@ -236,9 +236,6 @@ useEffect(() => {
   }
 }, [globalSpeech.recognizedText, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening]);
 
-  // ===================================================================
-  // PROCESSAR RECONHECIMENTO DE VOZ COM DEBOUNCE (dentro de modais)
-  // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim()) return;
 
@@ -282,7 +279,26 @@ useEffect(() => {
 
     // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
     if (modalVisible) {
-      // ✅ NOVO: Fluxo simplificado - vai direto para captura do título
+      // ✅ Etapa 1: Aguardando a palavra "título"
+      if (step === 'aguardandoPalavraTitulo') {
+        if (textoLower.includes('titulo') || textoLower.includes('título')) {
+          console.log('✅ Palavra "título" detectada, mudando para aguardar o título');
+          setStep('aguardandoTitulo');
+          setRecognizedText('');
+          tituloProcessadoRef.current = false;
+          
+          speak("Aguarde um momento e fale o título", () => {
+            startListening(true);
+          });
+          return;
+        } else {
+          console.log('⚠️ Aguardando palavra "título", recebeu:', textoAtual);
+          setRecognizedText('');
+          return;
+        }
+      }
+      
+      // ✅ Etapa 2: Capturando o título após palavra-chave
       if (step === 'aguardandoTitulo' && textoAtual && !tituloProcessadoRef.current) {
         console.log(`📝 Acumulando título: "${textoAtual}"`);
         
@@ -302,6 +318,8 @@ useEffect(() => {
           'por favor',
           'gravando título',
           'gravando titulo',
+          'escutando o título',
+          'fale e aguarde',
         ];
         
         const containsTTSPhrase = ttsBlacklist.some(phrase => 
@@ -340,7 +358,26 @@ useEffect(() => {
 
     // ===== FLUXO DE EDIÇÃO DE CONVERSA =====
     if (editModalVisible) {
-      // ✅ NOVO: Fluxo simplificado para edição também
+      // ✅ Etapa 1: Aguardando a palavra "título"
+      if (editStep === 'aguardandoPalavraTitulo') {
+        if (textoLower.includes('titulo') || textoLower.includes('título')) {
+          console.log('✅ [Edição] Palavra "título" detectada, mudando para aguardar o título');
+          setEditStep('aguardandoTitulo');
+          setRecognizedText('');
+          editTituloProcessadoRef.current = false;
+          
+          speak("Aguarde um momento e fale o novo título", () => {
+            startListening(true);
+          });
+          return;
+        } else {
+          console.log('⚠️ [Edição] Aguardando palavra "título", recebeu:', textoAtual);
+          setRecognizedText('');
+          return;
+        }
+      }
+      
+      // ✅ Etapa 2: Capturando o título após palavra-chave
       if (editStep === 'aguardandoTitulo' && textoAtual && !editTituloProcessadoRef.current) {
         console.log(`📝 [Edição] Acumulando título: "${textoAtual}"`);
         
@@ -360,6 +397,8 @@ useEffect(() => {
           'novo titulo',
           'gravando título',
           'gravando titulo',
+          'escutando o título',
+          'fale e aguarde',
         ];
         
         const containsTTSPhrase = ttsBlacklist.some(phrase => 
@@ -491,6 +530,7 @@ useEffect(() => {
       }
     }
   }, [recognizedText, step, editStep, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, searchStep]);
+
 
   // ✅ Cleanup dos timeouts
   useEffect(() => {
@@ -739,15 +779,16 @@ useEffect(() => {
     console.log('[Histórico] 🛑 Reconhecimento global pausado');
     
     setTituloInput('');
-    setStep('idle'); // ✅ MUDOU: inicia como idle
+    setStep('aguardandoPalavraTitulo'); // ✅ IMPORTANTE: Volta para aguardar palavra-chave
     setModalVisible(true);
     setIsSaving(false);
     setRecognizedText('');
     tituloProcessadoRef.current = false;
     
-    // ✅ NOVO: Não faz nada automaticamente, aguarda o usuário clicar no microfone
     setTimeout(() => {
-      console.log('[Histórico] ℹ️ Modal aberto, aguardando ação do usuário');
+      speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
+        startListening(true);
+      });
     }, 300);
   };
 
@@ -795,14 +836,15 @@ useEffect(() => {
     
     setConversaParaEditar({ id: conversationId, titulo });
     setEditTituloInput(titulo);
-    setEditStep('idle'); // ✅ MUDOU: inicia como idle
+    setEditStep('aguardandoPalavraTitulo'); // ✅ IMPORTANTE: Volta para aguardar palavra-chave
     setEditModalVisible(true);
     setRecognizedText('');
     editTituloProcessadoRef.current = false;
     
-    // ✅ NOVO: Não faz nada automaticamente
     setTimeout(() => {
-      console.log('[Histórico] ℹ️ Modal de edição aberto, aguardando ação do usuário');
+      speak("Por favor, digite o novo título ou diga 'título' para informá-lo por voz.", () => {
+        startListening(true);
+      });
     }, 300);
   };
 
@@ -1187,18 +1229,21 @@ useEffect(() => {
                 <TouchableOpacity 
                   style={styles.micButton}
                   onPress={() => {
-                    console.log('[Histórico] 🎤 Botão de microfone pressionado - iniciando gravação direta');
-                    setStep('aguardandoTitulo'); // ✅ NOVO: Vai direto para aguardar título
+                    console.log('[Histórico] 🎤 Botão de microfone pressionado');
+                    
+                    // Se já está aguardando palavra-chave, não faz nada
+                    if (step === 'aguardandoPalavraTitulo') {
+                      console.log('[Histórico] ⚠️ Já está aguardando palavra "título"');
+                      return;
+                    }
+                    
+                    // Reinicia o fluxo
+                    setStep('aguardandoPalavraTitulo');
                     setRecognizedText('');
                     tituloProcessadoRef.current = false;
                     
-                    isSpeakingRef.current = true;
-                    
-                    speak("Gravando título", () => {
-                      setTimeout(() => {
-                        isSpeakingRef.current = false;
-                        startListening(true);
-                      }, 500);
+                    speak("Diga 'título' para começar.", () => {
+                      startListening(true);
                     });
                   }}
                   disabled={isListening || isSaving}
@@ -1266,18 +1311,21 @@ useEffect(() => {
                 <TouchableOpacity 
                   style={styles.micButton}
                   onPress={() => {
-                    console.log('[Histórico] 🎤 [Edição] Botão de microfone pressionado - iniciando gravação direta');
-                    setEditStep('aguardandoTitulo'); // ✅ NOVO: Vai direto para aguardar título
+                    console.log('[Histórico] 🎤 [Edição] Botão de microfone pressionado');
+                    
+                    // Se já está aguardando palavra-chave, não faz nada
+                    if (editStep === 'aguardandoPalavraTitulo') {
+                      console.log('[Histórico] ⚠️ [Edição] Já está aguardando palavra "título"');
+                      return;
+                    }
+                    
+                    // Reinicia o fluxo
+                    setEditStep('aguardandoPalavraTitulo');
                     setRecognizedText('');
                     editTituloProcessadoRef.current = false;
                     
-                    isSpeakingRef.current = true;
-                    
-                    speak("Gravando novo título", () => {
-                      setTimeout(() => {
-                        isSpeakingRef.current = false;
-                        startListening(true);
-                      }, 500);
+                    speak("Diga 'título' para começar.", () => {
+                      startListening(true);
                     });
                   }}
                   disabled={isListening || isEditSaving}

@@ -341,7 +341,26 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         return;
         
       case 'excluir_conta':
-        speak("Iniciando exclusão de conta...", restartListeningAfterSpeak);
+        if (!user) {
+          speak("Você precisa estar logado para excluir sua conta.", restartListeningAfterSpeak);
+          return;
+        }
+        
+        // Se já está no menu, abre o modal diretamente
+        if (pathname === '/tabs/menu' || pathname === '/tabs/menu/') {
+          console.log('[Intent] Já está no menu, enviando intent pendente');
+          if (setPendingContext) {
+            setPendingContext({ mode: 'excluir_conta' });
+          }
+          speak("Abrindo confirmação de exclusão de conta.", restartListeningAfterSpeak);
+        } else {
+          // Navega para o menu e depois abre o modal
+          console.log('[Intent] Navegando para menu para excluir conta');
+          if (setPendingContext) {
+            setPendingContext({ mode: 'excluir_conta' });
+          }
+          await checkAndNavigate('/tabs/menu', "Indo para o menu.");
+        }
         return;
 
       case 'cadastro':

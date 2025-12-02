@@ -11,16 +11,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from './ThemeContext';
 import { useSpeech } from '../hooks/useSpeech';
 
-interface LogoutModalProps {
+interface DeleteAccountModalProps {
   visible: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
 }
 
-export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModalProps) {
+export default function DeleteAccountModal({ visible, onClose, onConfirm }: DeleteAccountModalProps) {
   const { cores, getFontSize } = useTheme();
   const [step, setStep] = useState<'idle' | 'aguardandoConfirmacao'>('idle');
-  const logoutTimeoutRef = useRef<any>(null);
+  const deleteTimeoutRef = useRef<any>(null);
 
   const { 
     speak, 
@@ -42,7 +42,7 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
       setRecognizedText('');
       
       setTimeout(() => {
-        speak("Você tem certeza que deseja sair da sua conta? Diga sim ou não.", () => {
+        speak("Você tem certeza que deseja excluir sua conta permanentemente? Esta ação não pode ser desfeita. Diga sim ou não.", () => {
           startListening(true);
         });
       }, 300);
@@ -59,19 +59,19 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
     const fala = recognizedText.toLowerCase().trim();
 
     // Ignora leituras de botões pelo TalkBack
-    const ignoredPhrases = ['cancelar botão', 'sair botão', 'excluir botão'];
+    const ignoredPhrases = ['cancelar botão', 'excluir botão', 'sair botão'];
     if (ignoredPhrases.includes(fala)) {
-      console.log('[LogoutModal] Ignorando leitura de botão:', fala);
+      console.log('[DeleteModal] Ignorando leitura de botão:', fala);
       setRecognizedText('');
       return;
     }
 
-    if (logoutTimeoutRef.current) {
-      clearTimeout(logoutTimeoutRef.current);
+    if (deleteTimeoutRef.current) {
+      clearTimeout(deleteTimeoutRef.current);
     }
 
-    logoutTimeoutRef.current = setTimeout(() => {
-      const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero', 'sair'];
+    deleteTimeoutRef.current = setTimeout(() => {
+      const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero', 'excluir'];
       const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
       
       const isConfirm = confirmWords.some(word => fala.includes(word));
@@ -80,18 +80,18 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
       if (isConfirm) {
         stopListening();
         setRecognizedText('');
-        speak("Confirmado. Saindo da conta.", async () => {
+        speak("Confirmado. Excluindo sua conta.", async () => {
           await handleConfirm();
         });
       } else if (isDeny) {
         stopListening();
         setRecognizedText('');
-        speak("Cancelado.", () => {
+        speak("Cancelado. Sua conta não foi excluída.", () => {
           handleClose();
         });
       } else {
         setRecognizedText('');
-        speak(`Não entendi. Você quer sair da conta? Diga sim ou não.`, () => {
+        speak(`Não entendi. Você deseja excluir sua conta permanentemente? Diga sim ou não.`, () => {
           startListening(true);
         });
       }
@@ -102,8 +102,8 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
   // Cleanup
   useEffect(() => {
     return () => {
-      if (logoutTimeoutRef.current) {
-        clearTimeout(logoutTimeoutRef.current);
+      if (deleteTimeoutRef.current) {
+        clearTimeout(deleteTimeoutRef.current);
       }
     };
   }, []);
@@ -112,9 +112,9 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
     stopSpeaking();
     stopListening();
     
-    if (logoutTimeoutRef.current) {
-      clearTimeout(logoutTimeoutRef.current);
-      logoutTimeoutRef.current = null;
+    if (deleteTimeoutRef.current) {
+      clearTimeout(deleteTimeoutRef.current);
+      deleteTimeoutRef.current = null;
     }
     
     setStep('idle');
@@ -125,9 +125,10 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
   const handleConfirm = async () => {
     try {
       await onConfirm();
-      await speak('Sucesso. Você saiu da sua conta.');
-    } catch (error) {
-      await speak('Erro. Não foi possível sair da conta.');
+      await speak('Sua conta foi excluída com sucesso.');
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Não foi possível excluir sua conta.';
+      await speak(`Erro. ${errorMessage}`);
     } finally {
       handleClose();
     }
@@ -137,12 +138,12 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
     stopSpeaking();
     stopListening();
     
-    if (logoutTimeoutRef.current) {
-      clearTimeout(logoutTimeoutRef.current);
-      logoutTimeoutRef.current = null;
+    if (deleteTimeoutRef.current) {
+      clearTimeout(deleteTimeoutRef.current);
+      deleteTimeoutRef.current = null;
     }
     
-    speak("Confirmado. Saindo da conta.", async () => {
+    speak("Confirmado. Excluindo sua conta.", async () => {
       await handleConfirm();
     });
   };
@@ -201,7 +202,7 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
       fontSize: getFontSize('medium'),
       fontWeight: '600',
     },
-    logoutButton: { 
+    deleteButton: { 
       flex: 1,
       paddingVertical: 12,
       borderRadius: 8,
@@ -209,7 +210,7 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
       alignItems: 'center',
       justifyContent: 'center',
     },
-    logoutButtonText: { 
+    deleteButtonText: { 
       color: '#fff',
       fontSize: getFontSize('medium'),
       fontWeight: '600',
@@ -263,14 +264,15 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
         />
         <View style={styles.modalContent}>
           <Ionicons 
-            name="log-out-outline" 
+            name="warning" 
             size={48} 
             color={cores.perigo} 
             style={{ marginBottom: 16 }}
           />
-          <Text style={styles.modalTitle}>Sair da Conta</Text>
+          <Text style={styles.modalTitle}>Excluir Conta</Text>
           <Text style={styles.modalMessage}>
-            Você tem certeza que deseja sair?
+            Tem certeza que deseja excluir sua conta permanentemente?{'\n\n'}
+            Esta ação não pode ser desfeita e todos os seus dados serão removidos.
           </Text>
 
           {isListening && (
@@ -303,11 +305,11 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.logoutButton}
+              style={styles.deleteButton}
               onPress={handleConfirmManual}
               accessibilityRole='button'
             >
-              <Text style={styles.logoutButtonText}>Sair</Text>
+              <Text style={styles.deleteButtonText}>Excluir</Text>
             </TouchableOpacity>
           </View>
         </View>

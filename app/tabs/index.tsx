@@ -97,6 +97,35 @@ const CameraScreen: React.FC = () => {
     mode: 'local',
   });
 
+  useEffect(() => {
+    if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending || isTutorialAtivo) return;
+    
+    const texto = globalSpeech.recognizedText.toLowerCase().trim();
+    
+    // 🚫 IGNORA frases que são claramente do leitor de tela
+    const ignorarFrases = [
+      'tirar foto botão',
+      'botão tirar foto',
+      'botão',
+      'image button',
+      'button',
+    ];
+    
+    const deveIgnorar = ignorarFrases.some(frase => texto === frase || texto.endsWith(' botão'));
+    
+    if (deveIgnorar) {
+      console.log('[Camera] 🚫 Ignorando frase do leitor de tela:', texto);
+      globalSpeech.setRecognizedText('');
+      return;
+    }
+    
+    // Processa apenas comandos válidos
+    if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
+      globalSpeech.setRecognizedText('');
+      takePictureForVoiceCommand(texto);
+    }
+  }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]);
+
   // ===================================================================
   // REINÍCIO FORÇADO PÓS-TTS (Mantido pois você disse que o toggle funciona com ele)
   // ===================================================================
@@ -116,15 +145,15 @@ const CameraScreen: React.FC = () => {
   }, [isFocused, isMicrophoneEnabled, isListening, isSpeaking, globalSpeech.isSpeaking, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
 
   // ✅ CORREÇÃO: Não processa comandos se tutorial estiver ativo
-  useEffect(() => {
-    if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
+  // useEffect(() => {
+  //   if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
     
-    const texto = globalSpeech.recognizedText.toLowerCase().trim();
-    if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
-      globalSpeech.setRecognizedText('');
-      takePictureForVoiceCommand(texto);
-    }
-  }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
+  //   const texto = globalSpeech.recognizedText.toLowerCase().trim();
+  //   if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
+  //     globalSpeech.setRecognizedText('');
+  //     takePictureForVoiceCommand(texto);
+  //   }
+  // }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
 
   useEffect(() => {
     console.log('[Camera] 📋 Parâmetros recebidos:', { conversaId, mode, autoTakePhoto });
@@ -185,7 +214,7 @@ const CameraScreen: React.FC = () => {
         if (!questionProcessadoRef.current && textoAtual) {
           questionProcessadoRef.current = true;
           stopListening();
-          speak(`Processando: ${textoAtual}`, () => processarPergunta(textoAtual));
+          speak('Processando:', () => processarPergunta(textoAtual));
         }
       }, 2000);
     }
@@ -207,7 +236,7 @@ const CameraScreen: React.FC = () => {
     questionProcessadoRef.current = false;
     setTimeout(() => {
       isSpeakingRef.current = true;
-      speak("Diga 'pergunta' para começar.", () => {
+      speak("Digite a pergunta ou fale: pergunta para enviar o que deseja saber sobre a foto.", () => {
         setTimeout(() => { isSpeakingRef.current = false; startListening(true); }, 500);
       });
     }, 500);
@@ -395,7 +424,7 @@ const CameraScreen: React.FC = () => {
             flash='auto'
           />
           <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.button} onPress={takePictureForButton} disabled={isSending || questionModalVisible}>
+            <TouchableOpacity style={styles.button} onPress={takePictureForButton} disabled={isSending || questionModalVisible} accessibilityRole="button" accessibilityLabel="Tirar Foto">
               <Image source={temaAplicado === "dark" ? require("../../assets/images/icone-camera-escuro.png") : require("../../assets/images/icone-camera-claro.png")} style={[styles.iconeCamera, (isSending || questionModalVisible) && { opacity: 0.5 }]} />
             </TouchableOpacity>
           </View>

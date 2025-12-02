@@ -1,24 +1,42 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   Image,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../components/ThemeContext';
 import { useAuth } from '../../components/AuthContext';
 import { useRouter } from 'expo-router';
+import { useVoiceCommands } from '../../components/VoiceCommandContext';
 import LogoutModal from '../../components/LogoutModal';
+import DeleteAccountModal from '../../components/DeleteAccountModal';
 
 export default function MenuScreen() {
   const router = useRouter();
   const { theme, cores, getFontSize, getIconSize, temaAplicado } = useTheme();
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
-  const { user, logout } = useAuth();
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const { user, logout, deleteAccount } = useAuth();
+  const { pendingIntent, clearPendingIntent } = useVoiceCommands();
+
+  // Processa intents pendentes (comandos de voz)
+  useEffect(() => {
+    if (pendingIntent) {
+      console.log('[Menu] Processing pending intent:', pendingIntent);
+      
+      if (pendingIntent === 'excluir_conta' && user) {
+        setDeleteModalVisible(true);
+        clearPendingIntent();
+      } else if (pendingIntent === 'fazer_logout' && user) {
+        setLogoutModalVisible(true);
+        clearPendingIntent();
+      }
+    }
+  }, [pendingIntent, user, clearPendingIntent]);
 
   const handleFazerLogin = () => {
     if (user) {
@@ -29,14 +47,23 @@ export default function MenuScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      'Excluir Conta',
-      'Tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Excluir', style: 'destructive' },
-      ]
-    );
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDeleteAccount = async () => {
+    try {
+      console.log('[Menu] Iniciando exclusão de conta...');
+      await deleteAccount();
+      
+      console.log('[Menu] Conta excluída, redirecionando para login...');
+      // Redireciona para tela de login após exclusão bem-sucedida
+      router.replace('/login');
+      
+    } catch (error: any) {
+      console.error('[Menu] Erro ao excluir conta:', error);
+      // O erro já é tratado pelo modal com feedback de voz
+      throw error; // Repassa o erro para o modal tratar
+    }
   };
 
   const handleLogout = async () => {
@@ -146,43 +173,49 @@ export default function MenuScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Conta</Text>
           <View style={styles.optionContainer}>
-            {user ? '' : <TouchableOpacity style={styles.option} onPress={handleFazerLogin}>
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="log-in-outline"
-                  size={getIconSize('small')}
-                  color={cores.icone}
-                />
-              </View>
-              <Text style={styles.optionText}>Fazer Login</Text>
-            </TouchableOpacity>}
+            {!user && (
+              <TouchableOpacity style={styles.option} onPress={handleFazerLogin}>
+                <View style={styles.optionIcon}>
+                  <Ionicons
+                    name="log-in-outline"
+                    size={getIconSize('small')}
+                    color={cores.icone}
+                  />
+                </View>
+                <Text style={styles.optionText}>Fazer Login</Text>
+              </TouchableOpacity>
+            )}
 
-            {user ? <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="warning-outline"
-                  size={getIconSize('small')}
-                  color={cores.perigo}
-                />
-              </View>
-              <Text style={[styles.optionText, styles.deleteText]}>
-                Excluir Conta
-              </Text>
-            </TouchableOpacity> : ''}
+            {user && (
+              <TouchableOpacity style={styles.option} onPress={handleDeleteAccount}>
+                <View style={styles.optionIcon}>
+                  <Ionicons
+                    name="warning-outline"
+                    size={getIconSize('small')}
+                    color={cores.perigo}
+                  />
+                </View>
+                <Text style={[styles.optionText, styles.deleteText]}>
+                  Excluir Conta
+                </Text>
+              </TouchableOpacity>
+            )}
 
-            {user ? <TouchableOpacity
-              style={[styles.option, styles.lastOption]}
-              onPress={handleLogout}
-            >
-              <View style={styles.optionIcon}>
-                <Ionicons
-                  name="exit-outline"
-                  size={getIconSize('small')}
-                  color={cores.icone}
-                />
-              </View>
-              <Text style={styles.optionText}>Sair</Text>
-            </TouchableOpacity> : ''}
+            {user && (
+              <TouchableOpacity
+                style={[styles.option, styles.lastOption]}
+                onPress={handleLogout}
+              >
+                <View style={styles.optionIcon}>
+                  <Ionicons
+                    name="exit-outline"
+                    size={getIconSize('small')}
+                    color={cores.icone}
+                  />
+                </View>
+                <Text style={styles.optionText}>Sair</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -200,9 +233,7 @@ export default function MenuScreen() {
               <View style={styles.optionIcon}>
                 <MaterialCommunityIcons name="history" color={cores.icone} size={getIconSize('small')} />
               </View>
-              <Text style={[styles.optionText]}>
-                Histórico
-              </Text>
+              <Text style={styles.optionText}>Histórico</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -227,6 +258,11 @@ export default function MenuScreen() {
         onConfirm={handleLogout}
       />
 
+      <DeleteAccountModal
+        visible={deleteModalVisible}
+        onClose={() => setDeleteModalVisible(false)}
+        onConfirm={confirmDeleteAccount}
+      />
     </View>
   );
 }

@@ -245,29 +245,128 @@ class AuthService {
   }
 
   // Deletar conta
-  async deleteAccount(uid: string): Promise<AuthResponse> {
+  async deleteAccount(): Promise<AuthResponse> {
     try {
-      const token = await this.getToken();
+      const currentUser = auth().currentUser;
       
-      const response = await fetch(`${API_URL}/auth/delete/${uid}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        await this.logout();
+      if (!currentUser) {
+        Speech.speak('Nenhum usuário está logado.', {
+          language: 'pt-BR',
+          rate: 0.85
+        });
+        return {
+          success: false,
+          message: 'Nenhum usuário está logado',
+        };
       }
 
-      return data;
-    } catch (error) {
-      console.error('Erro ao deletar conta:', error);
+      console.log('[AuthService] Excluindo conta do usuário:', currentUser.uid);
+      
+      try {
+        // Tenta excluir diretamente
+        await currentUser.delete();
+        
+        console.log('[AuthService] Conta excluída com sucesso');
+        
+        // Limpa dados locais
+        await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
+        
+        // Faz logout do Google também
+        try {
+          await GoogleSignin.signOut();
+        } catch (error) {
+          console.log('[AuthService] Usuário não estava logado com Google');
+        }
+        
+        Speech.speak('Conta excluída com sucesso.', {
+          language: 'pt-BR',
+          pitch: 1.0,
+          rate: 1.0
+        });
+        
+        return {
+          success: true,
+          message: 'Conta excluída com sucesso',
+        };
+        
+      } catch (deleteError: any) {
+        // Se o erro for que precisa re-autenticar
+        if (deleteError.code === 'auth/requires-recent-login') {
+          console.log('[AuthService] Requer re-autenticação. Tentando re-autenticar com Google...');
+          
+          try {
+            // Re-autentica com Google
+            await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+            const userInfo = await GoogleSignin.signIn();
+            const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
+
+            if (!idToken) {
+              throw new Error('Não foi possível obter o token do Google');
+            }
+
+            const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+            await currentUser.reauthenticateWithCredential(googleCredential);
+            
+            console.log('[AuthService] Re-autenticação bem-sucedida. Tentando excluir novamente...');
+            
+            // Tenta excluir novamente após re-autenticação
+            await currentUser.delete();
+            
+            console.log('[AuthService] Conta excluída com sucesso após re-autenticação');
+            
+            // Limpa dados locais
+            await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
+            
+            // Faz logout do Google
+            try {
+              await GoogleSignin.signOut();
+            } catch (error) {
+              console.log('[AuthService] Erro ao fazer logout do Google');
+            }
+            
+            // Speech.speak('Conta excluída com sucesso.', {
+            //   language: 'pt-BR',
+            //   pitch: 1.0,
+            //   rate: 1.0
+            // });
+            
+            return {
+              success: true,
+              message: 'Conta excluída com sucesso',
+            };
+            
+          } catch (reauthError: any) {
+            console.error('[AuthService] Erro ao re-autenticar:', reauthError);
+            
+            const mensagem = 'Não foi possível confirmar sua identidade. Tente fazer login novamente e depois excluir a conta.';
+            Speech.speak(mensagem, {
+              language: 'pt-BR',
+              rate: 0.85
+            });
+            
+            return {
+              success: false,
+              message: mensagem,
+            };
+          }
+        }
+        
+        // Outros erros
+        throw deleteError;
+      }
+      
+    } catch (error: any) {
+      console.error('[AuthService] Erro ao excluir conta:', error);
+      
+      const mensagem = 'Erro ao excluir conta. Tente novamente.';
+      Speech.speak(mensagem, {
+        language: 'pt-BR',
+        rate: 0.85
+      });
+      
       return {
         success: false,
-        message: 'Erro ao deletar conta',
+        message: error.message || 'Erro ao excluir conta',
       };
     }
   }

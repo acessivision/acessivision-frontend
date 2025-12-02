@@ -14,7 +14,9 @@ interface VoiceContextProps {
   voiceState: VoiceState;
   pendingSpokenText: string | null;
   pendingContext: NavigationContext | null;
+  pendingIntent: string | null; // ✅ ADICIONADO
   clearPending: () => void;
+  clearPendingIntent: () => void; // ✅ ADICIONADO
   setPendingContext: (context: NavigationContext | null) => void;
   registerAudioPlayer: (player: any) => void;
   unregisterAudioPlayer: () => void;
@@ -42,8 +44,8 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const { temaAplicado, mudaTema } = useTheme();
   const headerFocusCallbackRef = useRef<(() => void) | null>(null);
   const [pendingSpokenText, setPendingSpokenText] = useState<string | null>(null);
-  const [pendingContext, setPendingContext] = useState<NavigationContext | null>(null);
-  const [pendingIntent, setPendingIntent] = useState<string>('');
+  const [pendingContext, setPendingContextState] = useState<NavigationContext | null>(null);
+  const [pendingIntentInternal, setPendingIntentInternal] = useState<string>('');
   const [pendingOriginalText, setPendingOriginalText] = useState<string>('');
   
   const [voiceState, setVoiceState] = useState<VoiceState>('waiting_wake');
@@ -56,7 +58,6 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
   
   const { speak, stopCurrentAudio, registerAudioPlayer, unregisterAudioPlayer } = useAudioSetup();
   
-  // ✅ CORREÇÃO: Passa o estado do toggle para o useSpeech
   const {
     isListening,
     recognizedText,
@@ -64,7 +65,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     startListening,
     stopListening,
   } = useSpeech({
-    enabled: isMicrophoneEnabled, // ✅ Agora respeita o toggle!
+    enabled: isMicrophoneEnabled,
     mode: 'global',
     onResult: (text: string) => {
       console.log('[VoiceContext] Global result received:', text);
@@ -86,20 +87,42 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     headerFocusCallbackRef.current = focusFn;
   }, []);
 
+  // ✅ NOVO: Wrapper para setPendingContext que também define o pendingIntent
+  const setPendingContext = useCallback((context: NavigationContext | null) => {
+    console.log('[VoiceContext] Setting pending context:', context);
+    setPendingContextState(context);
+    
+    // Se o mode for um intent válido, define também o pendingIntent
+    if (context?.mode) {
+      console.log('[VoiceContext] Setting pending intent from context.mode:', context.mode);
+      setPendingIntentInternal(context.mode);
+    }
+  }, []);
+
+  // ✅ NOVO: Função para limpar apenas o pendingIntent
+  const clearPendingIntent = useCallback(() => {
+    console.log('[VoiceContext] Clearing pending intent');
+    setPendingIntentInternal('');
+    // Também limpa o mode do context se existir
+    if (pendingContext?.mode) {
+      setPendingContextState(prev => prev ? { ...prev, mode: undefined } : null);
+    }
+  }, [pendingContext]);
+
   const { executeIntent, getIntentDisplayName, processCommand, isBusyRef } = useIntentHandler({
-  speak,
-  temaAplicado,
-  mudaTema: mudaTema, 
-  startListening,
-  stopListening,
-  setVoiceState,
-  setRecognizedText,
-  onActivateMic: () => conversationCallbacksRef.current.onActivateMic?.(),
-  onTakePhoto: (q: string) => conversationCallbacksRef.current.onTakePhoto?.(q),
-  onOpenCamera: () => conversationCallbacksRef.current.onOpenCamera?.(),
-  onSendAudio: () => conversationCallbacksRef.current.onSendAudio?.(),
-  setPendingContext,
-});
+    speak,
+    temaAplicado,
+    mudaTema: mudaTema, 
+    startListening,
+    stopListening,
+    setVoiceState,
+    setRecognizedText,
+    onActivateMic: () => conversationCallbacksRef.current.onActivateMic?.(),
+    onTakePhoto: (q: string) => conversationCallbacksRef.current.onTakePhoto?.(q),
+    onOpenCamera: () => conversationCallbacksRef.current.onOpenCamera?.(),
+    onSendAudio: () => conversationCallbacksRef.current.onSendAudio?.(),
+    setPendingContext,
+  });
 
   const handleConfirmationResponse = useCallback((spokenText: string) => {
     const normalizedText = spokenText.toLowerCase().trim();
@@ -110,10 +133,10 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const isConfirm = confirmWords.some(word => normalizedText.includes(word));
     const isDeny = denyWords.some(word => normalizedText.includes(word));
     
-    if (isConfirm && pendingIntent) {
+    if (isConfirm && pendingIntentInternal) {
       speak("Confirmado! Executando...");
-      executeIntent(pendingIntent, pendingOriginalText, setPendingSpokenText, clearPending);
-      setPendingIntent('');
+      executeIntent(pendingIntentInternal, pendingOriginalText, setPendingSpokenText, clearPending);
+      setPendingIntentInternal('');
       setPendingOriginalText('');
       
       stopListening();
@@ -125,7 +148,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
     } else if (isDeny) {
       speak("Cancelado");
-      setPendingIntent('');
+      setPendingIntentInternal('');
       setPendingOriginalText('');
       
       stopListening();
@@ -137,14 +160,14 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }, 2500);
       
     } else {
-      const displayName = getIntentDisplayName(pendingIntent);
+      const displayName = getIntentDisplayName(pendingIntentInternal);
       speak(`Não entendi. Você quer ${displayName}? Diga sim ou não`);
     }
-  }, [pendingIntent, pendingOriginalText, executeIntent, stopListening, startListening, speak, getIntentDisplayName, isBusyRef, setRecognizedText]);
+  }, [pendingIntentInternal, pendingOriginalText, executeIntent, stopListening, startListening, speak, getIntentDisplayName, isBusyRef, setRecognizedText]);
 
   const clearPending = useCallback(() => {
     setPendingSpokenText(null);
-    setPendingContext(null);
+    setPendingContextState(null);
   }, []);
 
   const voiceStateRef = useRef(voiceState);
@@ -194,13 +217,11 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const currentState = voiceStateRef.current;
       console.log(`[VoiceContext] Processing FINAL: "${trimmedText}", State: ${currentState}`);
 
-      // ✅ NOVO: Detectar comando "enviar áudio" localmente em qualquer estado
       const textoLower = trimmedText.toLowerCase();
       if ((textoLower.includes('enviar') && textoLower.includes('áudio')) || 
           (textoLower.includes('enviar') && textoLower.includes('audio'))) {
         console.log('[VoiceContext] 🎙️ Comando "enviar áudio" detectado - chamando callback onSendAudio');
         
-        // Chama callback local se registrado (ConversationScreen)
         if (conversationCallbacksRef.current?.onSendAudio) {
           conversationCallbacksRef.current.onSendAudio();
           setRecognizedText('');
@@ -221,7 +242,7 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
           trimmedText,
           currentState,
           stopCurrentAudioRef.current,
-          setPendingIntent,
+          setPendingIntentInternal,
           setPendingOriginalText,
           setPendingSpokenText,
           clearPending
@@ -248,7 +269,9 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     voiceState,
     pendingSpokenText,
     pendingContext,
+    pendingIntent: pendingIntentInternal, // ✅ EXPOSTO
     clearPending,
+    clearPendingIntent, // ✅ EXPOSTO
     setPendingContext,
     registerAudioPlayer,
     unregisterAudioPlayer,
@@ -262,9 +285,11 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     voiceState,
     pendingSpokenText,
     pendingContext,
+    pendingIntentInternal,
     registerAudioPlayer,
     unregisterAudioPlayer,
     clearPending,
+    clearPendingIntent,
     stopListening,
     registerConversationCallbacks,
     unregisterConversationCallbacks,

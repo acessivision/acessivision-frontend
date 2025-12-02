@@ -127,7 +127,7 @@ export default function LoginScreen() {
       setRecognizedText('');
       stopListening();
       
-      speak("Clique em uma das contas que aparecerão na tela para fazer o login", () => {
+      speak("Clique em uma das contas que aparecerem na tela para fazer o login", () => {
         handleGoogleLogin();
       });
     }
