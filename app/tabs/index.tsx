@@ -23,6 +23,7 @@ import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import SpeechManager from '../../utils/speechManager';
 import { useMicrophone } from '../../components/MicrophoneContext';
+import { useTutorial } from '../../components/TutorialContext';
 
 interface Photo {
   uri: string;
@@ -68,8 +69,7 @@ const CameraScreen: React.FC = () => {
   
   const hasProcessedAutoPhotoRef = useRef(false);
   
-  // ⚠️ REMOVIDO: feedbackIntervalRef não é mais necessário
-  // const feedbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { isTutorialAtivo } = useTutorial();
   
   const isSpeakingRef = useRef(false);
 
@@ -80,7 +80,7 @@ const CameraScreen: React.FC = () => {
   // Hook GLOBAL: Mantém o motor vivo quando o modal está fechado
   // ✅ CORREÇÃO: Desliga automaticamente se estiver enviando (isSending)
   const globalSpeech = useSpeech({
-    enabled: isFocused && !questionModalVisible && !isSending,
+    enabled: isFocused && !questionModalVisible && !isSending && !isTutorialAtivo, // ✅ Adicionar condição
     mode: 'global',
   });
 
@@ -93,7 +93,7 @@ const CameraScreen: React.FC = () => {
     setRecognizedText,
     isSpeaking 
   } = useSpeech({
-    enabled: isFocused && questionModalVisible,
+    enabled: isFocused && questionModalVisible && !isTutorialAtivo, // ✅ Adicionar condição
     mode: 'local',
   });
 
@@ -101,7 +101,7 @@ const CameraScreen: React.FC = () => {
   // REINÍCIO FORÇADO PÓS-TTS (Mantido pois você disse que o toggle funciona com ele)
   // ===================================================================
   useEffect(() => {
-    if (!isFocused || questionModalVisible || isSending) return; // ✅ Adicionado isSending
+    if (!isFocused || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
 
     if (isMicrophoneEnabled && !isListening && !isSpeaking && !globalSpeech.isSpeaking) {
       const timeout = setTimeout(() => {
@@ -113,17 +113,18 @@ const CameraScreen: React.FC = () => {
       }, 500); 
       return () => clearTimeout(timeout);
     }
-  }, [isFocused, isMicrophoneEnabled, isListening, isSpeaking, globalSpeech.isSpeaking, questionModalVisible, isSending]);
+  }, [isFocused, isMicrophoneEnabled, isListening, isSpeaking, globalSpeech.isSpeaking, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
 
-  // ... (useEffects de Comandos Globais e Logs mantidos iguais) ...
+  // ✅ CORREÇÃO: Não processa comandos se tutorial estiver ativo
   useEffect(() => {
-    if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending) return;
+    if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
+    
     const texto = globalSpeech.recognizedText.toLowerCase().trim();
     if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
       globalSpeech.setRecognizedText('');
       takePictureForVoiceCommand(texto);
     }
-  }, [globalSpeech.recognizedText, questionModalVisible, isSending]);
+  }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
 
   useEffect(() => {
     console.log('[Camera] 📋 Parâmetros recebidos:', { conversaId, mode, autoTakePhoto });

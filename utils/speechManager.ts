@@ -289,7 +289,7 @@ class SpeechManager {
           lang: 'pt-BR',
           interimResults: mode === 'local',
           continuous: true,
-          requiresOnDeviceRecognition: false, 
+          requiresOnDeviceRecognition: true, 
           addsPunctuation: false,
           maxAlternatives: 1,
         });
@@ -346,22 +346,51 @@ class SpeechManager {
     const normalizedText = text.toLowerCase().trim();
     const now = Date.now();
     
-    // Filtros de duplicata
-    if (this.lastProcessedResult === normalizedText && 
+    // ✅ NOVO: Verifica se é APENAS palavras do sistema
+    const systemPrompts = ['escutando', 'processando', 'aguarde'];
+    
+    // Remove palavras do sistema para verificar o que sobra
+    let cleanedText = normalizedText;
+    systemPrompts.forEach(prompt => {
+      const regex = new RegExp(`\\b${prompt}\\b`, 'gi');
+      cleanedText = cleanedText.replace(regex, '').trim();
+    });
+    
+    // Remove múltiplos espaços que podem ter ficado
+    cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+    
+    // Se após remover as palavras do sistema não sobrou NADA, ignora completamente
+    if (!cleanedText) {
+      console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA:', normalizedText);
+      return;
+    }
+    
+    // Se sobrou algo, usa o texto limpo e continua o processamento
+    const textToProcess = cleanedText;
+    
+    if (textToProcess !== normalizedText) {
+      console.log('[SpeechManager] 🧹 Palavras do sistema removidas:', {
+        original: normalizedText,
+        limpo: textToProcess
+      });
+    }
+    
+    // Filtros de duplicata (agora usando o texto limpo)
+    if (this.lastProcessedResult === textToProcess && 
         (now - this.lastProcessedTime) < 1000) {
-      console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA:', text);
+      console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA:', textToProcess);
       return;
     }
     
-    const lastProcessed = this.processingResults.get(normalizedText);
+    const lastProcessed = this.processingResults.get(textToProcess);
     if (lastProcessed && (now - lastProcessed) < 2000) {
-      console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA (Mapa):', text);
+      console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA (Mapa):', textToProcess);
       return;
     }
     
-    this.lastProcessedResult = normalizedText;
+    this.lastProcessedResult = textToProcess;
     this.lastProcessedTime = now;
-    this.processingResults.set(normalizedText, now);
+    this.processingResults.set(textToProcess, now);
     
     if (this.processingResults.size > 20) {
       const oldestAllowed = now - 5000;
@@ -371,43 +400,35 @@ class SpeechManager {
         }
       }
     }
-    
-    // Ignora prompt do sistema
-    const systemPrompts = ['escutando', 'processando', 'aguarde'];
-    if (systemPrompts.some(p => normalizedText.includes(p))) {
-      console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA:', normalizedText);
-      return;
-    }
 
-    // Ignora eco
-    if (this.recentlySpoken.has(normalizedText)) {
-      console.log('[SpeechManager] 🔇 IGNORANDO ECO EXATO:', text);
+    // Ignora eco (usando texto limpo)
+    if (this.recentlySpoken.has(textToProcess)) {
+      console.log('[SpeechManager] 🔇 IGNORANDO ECO EXATO:', textToProcess);
       return;
     }
     
-    if (this.lastSpokenText && normalizedText.length < 20) {
-      const similarity = this.calculateSimilarity(normalizedText, this.lastSpokenText);
+    if (this.lastSpokenText && textToProcess.length < 20) {
+      const similarity = this.calculateSimilarity(textToProcess, this.lastSpokenText);
       if (similarity > 0.9) {
-        console.log('[SpeechManager] 🔇 IGNORANDO ECO SIMILAR:', text);
+        console.log('[SpeechManager] 🔇 IGNORANDO ECO SIMILAR:', textToProcess);
         return;
       }
     }
     
-    console.log('[SpeechManager] ✅ Resultado aceito:', text);
+    console.log('[SpeechManager] ✅ Resultado aceito:', textToProcess);
     
-    // Modo local: chama callback específico
+    // Modo local: chama callback específico com texto LIMPO
     if (this.currentMode === 'local' && this.localCallback) {
       console.log('[SpeechManager] 📞 Chamando callback local');
-      this.localCallback(text);
-      // ✅ NÃO limpa callback imediatamente em modo local contínuo
+      this.localCallback(textToProcess);
       return;
     }
     
-    // Modo global: notifica todos os listeners
+    // Modo global: notifica todos os listeners com texto LIMPO
     console.log('[SpeechManager] 📢 Notificando', this.listeners.size, 'listeners');
     this.listeners.forEach(listener => {
       try {
-        listener(text);
+        listener(textToProcess);
       } catch (error) {
         console.error('[SpeechManager] Erro em listener:', error);
       }

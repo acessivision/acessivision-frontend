@@ -22,9 +22,10 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [visivel, setVisivel] = useState(false);
   const [textoAtual, setTextoAtual] = useState('');
 
-  // ✅ Função para religar o microfone
   const retomarReconhecimento = () => {
     console.log('[Tutorial] 🏁 Finalizando tutorial e reativando microfone');
+    
+    // ✅ Primeiro fecha o modal
     setVisivel(false);
     setTextoAtual('');
     
@@ -34,7 +35,6 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         console.log('[Tutorial] 🎤 REABILITANDO microfone');
         SpeechManager.enable();
         
-        // ✅ Delay adicional para garantir que o áudio acabou
         setTimeout(() => {
           console.log('[Tutorial] 🎤 Iniciando reconhecimento global');
           SpeechManager.startRecognition('global');
@@ -45,7 +45,6 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }, 1000);
   };
 
-  // ✅ Função que inicia o tutorial
   const reproduzirTutorial = (texto: string) => {
     console.log('[Tutorial] 🎓 Iniciando tutorial');
     
@@ -56,54 +55,55 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       console.log('[Tutorial] 🔇 DESABILITANDO microfone para tutorial');
       SpeechManager.disable();
+      
+      // ✅ ADICIONAL: Para qualquer reconhecimento em andamento
+      SpeechManager.stopRecognition();
     } catch (e) {
       console.warn('[Tutorial] ⚠️ Erro ao pausar reconhecimento:', e);
     }
     
-    setTextoAtual(texto);
-    setVisivel(true);
+    // ✅ Aguarda um pouco antes de abrir o modal e falar
+    setTimeout(() => {
+      setTextoAtual(texto);
+      setVisivel(true);
 
-    // ✅ Inicia o TTS
-    Speech.speak(texto, {
-      language: 'pt-BR',
-      rate: 1.2, 
-      onDone: () => {
-        console.log('[Tutorial] ✅ Tutorial concluído (onDone)');
-        retomarReconhecimento();
-      }, 
-      onStopped: () => {
-        console.log('[Tutorial] 🛑 Tutorial interrompido (onStopped)');
-        // ✅ Só retoma se o modal ainda estava visível
-        if (visivel) {
-          retomarReconhecimento();
-        }
-      },
-      onError: (error) => {
-        console.error('[Tutorial] ❌ Erro no TTS:', error);
-        retomarReconhecimento();
-      }
-    });
+      // ✅ Inicia o TTS depois que o modal já está visível
+      setTimeout(() => {
+        Speech.speak(texto, {
+          language: 'pt-BR',
+          rate: 1.2, 
+          onDone: () => {
+            console.log('[Tutorial] ✅ Tutorial concluído (onDone)');
+            retomarReconhecimento();
+          }, 
+          onStopped: () => {
+            console.log('[Tutorial] 🛑 Tutorial interrompido (onStopped)');
+            if (visivel) {
+              retomarReconhecimento();
+            }
+          },
+          onError: (error) => {
+            console.error('[Tutorial] ❌ Erro no TTS:', error);
+            retomarReconhecimento();
+          }
+        });
+      }, 300);
+    }, 200);
   };
 
-  // ✅ Função que interrompe e fecha
   const pararTutorial = () => {
     console.log('[Tutorial] ⏹️ Parando tutorial manualmente');
     
-    // ✅ Para o TTS atual
     Speech.stop();
-    
-    // ✅ Fecha o modal visualmente
     setVisivel(false); 
     setTextoAtual('');
     
-    // ✅ Fala "fechado" e depois reativa o microfone
     setTimeout(() => {
       Speech.speak("Tutorial fechado", { 
         language: 'pt-BR',
         rate: 1.2,
         onDone: () => {
           console.log('[Tutorial] ✅ Feedback de fechamento concluído');
-          // ✅ Reativa microfone após delay menor (parada manual)
           setTimeout(() => {
             try {
               console.log('[Tutorial] 🎤 REABILITANDO microfone (parada manual)');
@@ -118,7 +118,6 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           }, 500);
         },
         onStopped: () => {
-          // ✅ Mesmo comportamento se for interrompido
           setTimeout(() => {
             try {
               SpeechManager.enable();
@@ -144,18 +143,15 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         visible={visivel}
         onRequestClose={pararTutorial}
       >
-        {/* ✅ TouchableWithoutFeedback para fechar ao tocar fora */}
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={pararTutorial}>
             <View style={styles.backgroundTouchable} />
           </TouchableWithoutFeedback>
           
-          {/* ✅ Conteúdo do modal (não recebe toques do fundo) */}
           <View style={styles.containerTexto}>
             <Text style={styles.titulo}>Reproduzindo Tutorial...</Text>
             <Text style={styles.instrucao}>Toque fora do cartão para fechar</Text>
             
-            {/* ✅ Card scrollável */}
             <View style={styles.cardTexto}>
               <ScrollView 
                 contentContainerStyle={styles.scrollContent}
@@ -204,7 +200,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '100%',
     maxHeight: '90%',
-    zIndex: 1, // ✅ Garante que fica acima do background
+    zIndex: 1,
   },
   titulo: {
     color: '#fff',

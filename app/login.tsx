@@ -1,4 +1,4 @@
-// app/login.tsx - ATUALIZADO COM COMANDO DE VOZ
+// app/login.tsx - COMANDO DE VOZ INTELIGENTE E FLEXÍVEL
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -19,8 +19,8 @@ import { Link, useRouter } from 'expo-router';
 import { useAuth } from '../components/AuthContext';
 import { useIsFocused } from '@react-navigation/native';
 import { useSpeech } from '../hooks/useSpeech';
-// ✅ 1. Importar Contexto do Microfone (igual ao histórico)
 import { useMicrophone } from '../components/MicrophoneContext';
+import { useTutorial } from '../components/TutorialContext'; // ✅ NOVO
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -29,20 +29,18 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const { loginWithGoogle, user, isLoading: isAuthLoading } = useAuth();
   
-  // ✅ 2. Pegar estado do microfone
   const { isMicrophoneEnabled } = useMicrophone();
+  const { isTutorialAtivo } = useTutorial(); // ✅ NOVO
 
   const isFocused = useIsFocused();
   
-  // ✅ 3. Hook configurado como 'global' para ouvir comandos
   const { 
     speak, 
     recognizedText, 
     setRecognizedText, 
     stopListening 
   } = useSpeech({
-    // Só escuta se a tela estiver focada E o microfone global estiver ligado
-    enabled: isFocused && isMicrophoneEnabled,
+    enabled: isFocused && isMicrophoneEnabled && !isTutorialAtivo, // ✅ Adicionar tutorial
     mode: 'global',
   });
   
@@ -87,37 +85,153 @@ export default function LoginScreen() {
   }, [isFocused]);
 
   // ===================================================================
-  // ✅ 4. DETECÇÃO DE COMANDO DE VOZ (Lógica Nova)
+  // ✅ DETECÇÃO DE COMANDO DE VOZ - INTELIGENTE E FLEXÍVEL
   // ===================================================================
   useEffect(() => {
-    // Se não tiver texto, ou se a tela não estiver focada, ou se já estiver carregando, ignora
-    if (!recognizedText.trim() || !isFocused || loading || isAuthLoading || user) return;
+    if (!recognizedText.trim() || !isFocused || loading || isAuthLoading || user || isTutorialAtivo) return;
 
     const textoAtual = recognizedText.trim();
     const textoLower = textoAtual.toLowerCase();
 
     console.log(`[Login] 🗣️ Texto reconhecido: "${textoAtual}"`);
 
-    // Palavras-chave: "google", "entrar", "login"
-    // Ex: "Entrar com Google", "Fazer login Google", "Google"
-    const querLogar = textoLower.includes('google') && 
-                     (textoLower.includes('entrar') || textoLower.includes('login') || textoLower.includes('fazer') || textoLower === 'google');
+    // ✅ BLACKLIST: Ignora frases do leitor de tela
+    const screenReaderBlacklist = [
+      'voltar para página anterior',
+      'voltar para a página anterior',
+      'retorna para a tela anterior',
+      'entrar com google botão',
+      'entrar com google botao',
+      'botão',
+      'botao',
+      'toque duas vezes',
+      'diga',
+    ];
+    
+    const isScreenReaderNoise = screenReaderBlacklist.some(phrase => 
+      textoLower.includes(phrase)
+    );
+    
+    if (isScreenReaderNoise) {
+      console.log('[Login] ⚠️ Ignorando ruído do leitor de tela:', textoAtual);
+      setRecognizedText('');
+      return;
+    }
+
+    // ✅ DETECÇÃO INTELIGENTE DE INTENÇÃO DE LOGIN
+    const querLogar = detectarIntencaoDeLogin(textoLower);
 
     if (querLogar) {
       console.log('[Login] 🎯 Comando de login detectado!');
       
-      // Limpa o texto para não disparar 2x
       setRecognizedText('');
-      
-      // Para de ouvir para não interferir no processo
       stopListening();
       
-      speak("Escolha uma conta na tela para fazer o login", () => {
+      speak("Clique em uma das contas que aparecerão na tela para fazer o login", () => {
         handleGoogleLogin();
       });
     }
 
-  }, [recognizedText, isFocused, loading, isAuthLoading, user]);
+  }, [recognizedText, isFocused, loading, isAuthLoading, user, isTutorialAtivo]);
+
+  // ===================================================================
+  // ✅ FUNÇÃO INTELIGENTE DE DETECÇÃO DE INTENÇÃO
+  // ===================================================================
+  const detectarIntencaoDeLogin = (texto: string): boolean => {
+    // Remove pontuações e espaços extras
+    const textoLimpo = texto
+      .replace(/[.,!?;:]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Palavras-chave relacionadas a login
+    const palavrasLogin = [
+      'entrar', 'entra', 'entro', 'entre',
+      'login', 'logar', 'loga', 'logo',
+      'fazer login', 'faz login',
+      'acessar', 'acessa', 'acesso',
+      'conectar', 'conecta', 'conecte',
+      'autenticar', 'autentica',
+      'iniciar sessão',
+      'log in', 'sign in',
+    ];
+
+    // Palavras relacionadas ao Google
+    const palavrasGoogle = [
+      'google',
+      'gugou', // pronúncia comum
+      'gogle',  // erro de dicção
+      'conta google',
+      'conta do google',
+      'gmail',
+      'email',
+    ];
+
+    // Palavras relacionadas a "usar" ou "com"
+    const palavrasConexao = [
+      'com', 'no', 'na', 'pelo', 'pela', 'usando', 'usa', 'use', 'via', 'através',
+    ];
+
+    // ✅ PADRÃO 1: Menção direta ao Google (mais simples)
+    // Ex: "Google", "Gmail", "Gugou"
+    const mencionaGoogle = palavrasGoogle.some(palavra => textoLimpo.includes(palavra));
+    
+    if (mencionaGoogle && textoLimpo.split(' ').length <= 3) {
+      // Se menciona Google e tem poucas palavras, provavelmente quer logar
+      console.log('[Login] ✅ Padrão 1: Menção direta ao Google');
+      return true;
+    }
+
+    // ✅ PADRÃO 2: Verbo de login + Google
+    // Ex: "Entrar com Google", "Login Google", "Fazer login no Gmail"
+    const temVerboLogin = palavrasLogin.some(palavra => textoLimpo.includes(palavra));
+    
+    if (temVerboLogin && mencionaGoogle) {
+      console.log('[Login] ✅ Padrão 2: Verbo de login + Google');
+      return true;
+    }
+
+    // ✅ PADRÃO 3: Verbo de login + palavra de conexão + Google
+    // Ex: "Entrar com o Google", "Login usando Gmail"
+    const temConexao = palavrasConexao.some(palavra => textoLimpo.includes(palavra));
+    
+    if (temVerboLogin && temConexao && mencionaGoogle) {
+      console.log('[Login] ✅ Padrão 3: Verbo + conexão + Google');
+      return true;
+    }
+
+    // ✅ PADRÃO 4: Frases comuns específicas
+    const frasesComuns = [
+      'quero entrar',
+      'quero logar',
+      'quero fazer login',
+      'quero acessar',
+      'vou entrar',
+      'vou logar',
+      'fazer o login',
+      'me loga',
+      'me conecta',
+      'loga eu',
+      'entra pra mim',
+      'faz o login',
+    ];
+
+    const contemFraseComum = frasesComuns.some(frase => textoLimpo.includes(frase));
+    
+    if (contemFraseComum && (mencionaGoogle || textoLimpo.split(' ').length <= 4)) {
+      console.log('[Login] ✅ Padrão 4: Frase comum de intenção');
+      return true;
+    }
+
+    // ✅ PADRÃO 5: Apenas verbo de login (na tela de login, contexto é claro)
+    // Ex: "Entrar", "Login", "Fazer login"
+    if (temVerboLogin && textoLimpo.split(' ').length <= 3 && !mencionaGoogle) {
+      console.log('[Login] ✅ Padrão 5: Apenas verbo de login (contexto claro)');
+      return true;
+    }
+
+    return false;
+  };
 
   // ===================================================================
   // Funções de navegação e login
@@ -154,7 +268,7 @@ export default function LoginScreen() {
   };
 
   // ===================================================================
-  // Estilos
+  // Estilos (mantidos iguais)
   // ===================================================================
   const styles = StyleSheet.create({
     header: {
@@ -232,9 +346,6 @@ export default function LoginScreen() {
 
   const isButtonDisabled = loading || isAuthLoading || !!user;
 
-  // ===================================================================
-  // Render
-  // ===================================================================
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -242,7 +353,7 @@ export default function LoginScreen() {
           style={styles.backButton} 
           onPress={handleGoBack}
           accessibilityRole='button'
-          accessibilityLabel='Voltar para página anterior'
+          accessibilityLabel='Voltar'
           accessibilityHint='Retorna para a tela anterior'
         >
           <View style={styles.backIcon}>
@@ -287,7 +398,7 @@ export default function LoginScreen() {
           onPress={handleGoogleLogin}
           disabled={isButtonDisabled}
           accessibilityLabel='Entrar com Google'
-          accessibilityHint={isButtonDisabled ? '' : 'Diga "Entrar com Google" ou toque duas vezes para fazer login'}
+          accessibilityHint={isButtonDisabled ? '' : 'Toque duas vezes para fazer login'}
           accessibilityRole="button"
         >
           <Image source={require('../assets/images/icone-google.png')} />

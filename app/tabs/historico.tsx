@@ -210,6 +210,11 @@ useEffect(() => {
 
   // ✅ Detectar comando "criar nova conversa"
   if (textoLower.includes('criar') && (textoLower.includes('conversa') || textoLower.includes('nova'))) {
+    if (textoLower.includes('botão')) {
+      console.log('[Histórico] ⚠️ Ignorando - é leitura do botão, não comando');
+      globalSpeech.setRecognizedText('');
+      return;
+    }
     console.log('✅ Comando "criar nova conversa" detectado');
     globalSpeech.setRecognizedText('');
     globalSpeech.stopListening();
@@ -231,286 +236,261 @@ useEffect(() => {
   }
 }, [globalSpeech.recognizedText, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening]);
 
-// ===================================================================
-// PROCESSAR RECONHECIMENTO DE VOZ COM DEBOUNCE (dentro de modais)
-// ===================================================================
-useEffect(() => {
-  if (!recognizedText.trim()) return;
+  // ===================================================================
+  // PROCESSAR RECONHECIMENTO DE VOZ COM DEBOUNCE (dentro de modais)
+  // ===================================================================
+  useEffect(() => {
+    if (!recognizedText.trim()) return;
 
-  const textoAtual = recognizedText.trim();
-  const textoLower = textoAtual.toLowerCase();
-  
-  console.log(`[Histórico] Step: ${step}, EditStep: ${editStep}, Texto: "${textoAtual}"`);
-
-  // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
-  if (modalVisible) {
-    if (step === 'aguardandoPalavraTitulo' && (textoLower.includes('título') || textoLower.includes('titulo'))) {
-      console.log("✅ Palavra 'título' detectada!");
-      
-      // ✅ NOVO: Ignora se ainda está falando
-      if (isSpeakingRef.current) {
-        console.log('⚠️ Ignorando - TTS ainda ativo');
-        setRecognizedText('');
-        return;
-      }
-      
-      setStep('aguardandoTitulo');
-      setRecognizedText('');
-      tituloProcessadoRef.current = false;
-      
-      if (tituloTimeoutRef.current) {
-        clearTimeout(tituloTimeoutRef.current);
-        tituloTimeoutRef.current = null;
-      }
-      
-      isSpeakingRef.current = true; // ✅ NOVO: Marca que está falando
-      
-      speak("Escutando o título. Fale e aguarde um momento.", () => {
-        setTimeout(() => {
-          isSpeakingRef.current = false;
-          startListening(true);
-        }, 500);
-      });
-      return;
-    }
-
-    if (step === 'aguardandoTitulo' && textoAtual && !tituloProcessadoRef.current) {
-      console.log(`📝 Acumulando título: "${textoAtual}"`);
-      
-      // ✅ NOVO: Ignora se ainda está falando
-      if (isSpeakingRef.current) {
-        console.log('⚠️ Ignorando acumulação - TTS ainda ativo');
-        setRecognizedText('');
-        return;
-      }
-      
-      // ✅ NOVO: Ignora se o texto contém frases do TTS
-      const ttsBlacklist = [
-        'escutando o título',
-        'fale e aguarde',
-        'digite o título',
-        'título para informá-lo',
-        'por favor',
-      ];
-      
-      const containsTTSPhrase = ttsBlacklist.some(phrase => 
-        textoLower.includes(phrase)
-      );
-      
-      if (containsTTSPhrase) {
-        console.log('⚠️ Ignorando - texto contém frase do TTS');
-        setRecognizedText('');
-        return;
-      }
-      
-      if (tituloTimeoutRef.current) {
-        clearTimeout(tituloTimeoutRef.current);
-      }
-      
-      tituloTimeoutRef.current = setTimeout(() => {
-        if (!tituloProcessadoRef.current && textoAtual) {
-          console.log(`✅ Título final capturado: "${textoAtual}"`);
-          tituloProcessadoRef.current = true;
-          stopListening();
-          
-          isSpeakingRef.current = true; // ✅ NOVO: Marca que está falando
-          
-          speak(`Criando conversa com título: ${textoAtual}`, () => {
-            setTimeout(() => {
-              isSpeakingRef.current = false;
-              criarConversaComTitulo(textoAtual);
-            }, 300);
-          });
-        }
-      }, 2000);
-      return;
-    }
-  }
-
-  // ===== FLUXO DE EDIÇÃO DE CONVERSA =====
-  if (editModalVisible) {
-    if (editStep === 'aguardandoPalavraTitulo' && (textoLower.includes('título') || textoLower.includes('titulo'))) {
-      console.log("✅ [Edição] Palavra 'título' detectada!");
-      
-      // ✅ NOVO: Ignora se ainda está falando
-      if (isSpeakingRef.current) {
-        console.log('⚠️ [Edição] Ignorando - TTS ainda ativo');
-        setRecognizedText('');
-        return;
-      }
-      
-      setEditStep('aguardandoTitulo');
-      setRecognizedText('');
-      editTituloProcessadoRef.current = false;
-      
-      if (editTituloTimeoutRef.current) {
-        clearTimeout(editTituloTimeoutRef.current);
-        editTituloTimeoutRef.current = null;
-      }
-      
-      isSpeakingRef.current = true;
-      
-      speak("Escutando o novo título. Fale e aguarde um momento.", () => {
-        setTimeout(() => {
-          isSpeakingRef.current = false;
-          startListening(true);
-        }, 500);
-      });
-      return;
-    }
-
-    if (editStep === 'aguardandoTitulo' && textoAtual && !editTituloProcessadoRef.current) {
-      console.log(`📝 [Edição] Acumulando título: "${textoAtual}"`);
-      
-      // ✅ NOVO: Ignora se ainda está falando
-      if (isSpeakingRef.current) {
-        console.log('⚠️ [Edição] Ignorando - TTS ainda ativo');
-        setRecognizedText('');
-        return;
-      }
-      
-      // ✅ NOVO: Blacklist de frases do TTS
-      const ttsBlacklist = [
-        'escutando',
-        'fale e aguarde',
-        'digite',
-        'novo título',
-        'título para informá-lo',
-      ];
-      
-      const containsTTSPhrase = ttsBlacklist.some(phrase => 
-        textoLower.includes(phrase)
-      );
-      
-      if (containsTTSPhrase) {
-        console.log('⚠️ [Edição] Ignorando - texto contém frase do TTS');
-        setRecognizedText('');
-        return;
-      }
-      
-      if (editTituloTimeoutRef.current) {
-        clearTimeout(editTituloTimeoutRef.current);
-      }
-      
-      editTituloTimeoutRef.current = setTimeout(() => {
-        if (!editTituloProcessadoRef.current && textoAtual) {
-          console.log(`✅ [Edição] Título final capturado: "${textoAtual}"`);
-          editTituloProcessadoRef.current = true;
-          stopListening();
-          
-          isSpeakingRef.current = true;
-          
-          speak(`Renomeando conversa para: ${textoAtual}`, () => {
-            setTimeout(() => {
-              isSpeakingRef.current = false;
-              renomearConversaComTitulo(textoAtual);
-            }, 300);
-          });
-        }
-      }, 2000);
-      return;
-    }
-  }
-
-
-  // ===== FLUXO DE EXCLUSÃO DE CONVERSA =====
-  if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
-    console.log(`🗑️ Processando resposta de exclusão: "${textoAtual}"`);
+    const textoAtual = recognizedText.trim();
+    const textoLower = textoAtual.toLowerCase();
     
-    if (confirmacaoTimeoutRef.current) {
-      clearTimeout(confirmacaoTimeoutRef.current);
-    }
+    console.log(`[Histórico] Step: ${step}, EditStep: ${editStep}, Texto: "${textoAtual}"`);
 
-    confirmacaoTimeoutRef.current = setTimeout(() => {
-      const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero'];
-      const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
-      
-      const isConfirm = confirmWords.some(word => textoLower.includes(word));
-      const isDeny = denyWords.some(word => textoLower.includes(word));
-      
-      if (isConfirm) {
-        console.log('✅ Confirmação de exclusão recebida');
-        stopListening();
-        setRecognizedText('');
-        speak("Confirmado. Excluindo conversa.", () => {
-          deletarDocumentosDaConversa(conversaParaExcluir.id);
-          setConversaParaExcluir(null);
-          setStep('idle');
-        });
-      } else if (isDeny) {
-        console.log('❌ Exclusão cancelada pelo usuário');
-        stopListening();
-        setRecognizedText('');
-        speak("Cancelado.", () => {
-          setConversaParaExcluir(null);
-          setStep('idle');
-        });
-      } else {
-        console.log('⚠️ Resposta não reconhecida, perguntando novamente');
-        setRecognizedText('');
-        speak(`Não entendi. Você quer excluir a conversa ${conversaParaExcluir.titulo}? Diga sim ou não.`, () => {
-          startListening(true);
-        });
-      }
-    }, 1500);
-    return;
-  }
-
-  // ===== FLUXO DE PESQUISA POR VOZ =====
-  if (isSearchListening && searchStep === 'aguardandoPesquisa') {
-    if (textoAtual && !searchProcessadoRef.current) {
-      console.log(`🔍 [Pesquisa] Acumulando termo: "${textoAtual}"`);
-      
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-      
-      searchTimeoutRef.current = setTimeout(() => {
-        if (!searchProcessadoRef.current && textoAtual) {
-          console.log(`✅ [Pesquisa] Termo final capturado: "${textoAtual}"`);
-          searchProcessadoRef.current = true;
-          stopListening();
-          
-          // Aplica o filtro de pesquisa
-          setSearchText(textoAtual);
-          setIsSearchListening(false);
-          setSearchStep('idle');
-          setRecognizedText('');
-          
-          // Aguarda um momento para o filtro ser aplicado antes de anunciar
-          setTimeout(() => {
-            const resultadosFiltrados = conversations.filter(conv => 
-              conv.titulo.toLowerCase().includes(textoAtual.toLowerCase())
-            );
-            
-            let mensagem = '';
-            
-            if (resultadosFiltrados.length === 0) {
-              mensagem = `Nenhuma conversa encontrada com título: ${textoAtual}`;
-            } else if (resultadosFiltrados.length === 1) {
-              mensagem = `Encontrado: ${resultadosFiltrados[0].titulo}. 1 de 1 na lista.`;
-            } else {
-              mensagem = `Encontrado: ${resultadosFiltrados[0].titulo}. 1 de ${resultadosFiltrados.length} na lista.`;
-            }
-            
-            console.log(`[Pesquisa] 📢 Anunciando: ${mensagem}`);
-            
-            speak(mensagem, () => {
-              // Reativa microfone global após pesquisa
-              setTimeout(() => {
-                if (wasListeningBeforeModalRef.current) {
-                  console.log('[Histórico] ✅ Reativando microfone global após pesquisa');
-                  globalSpeech.startListening(true);
-                }
-              }, 500);
-            });
-          }, 100);
-        }
-      }, 2000);
+    // ✅ BLACKLIST GLOBAL: Frases do leitor de tela e da UI
+    const screenReaderBlacklist = [
+      'gravar título',
+      'digite ou fale o título',
+      'titulo da conversa',
+      'nova conversa',
+      'salvar',
+      'cancelar',
+      'fechar',
+      'editar conversa',
+      'editar título',
+      'novo titulo',
+      'excluir conversa',
+      'confirmar exclusão',
+      'botão',
+      'campo de texto',
+      'microfone',
+      'aguardando título',
+      'ouvindo título',
+      'gravando título',
+      'criar nova conversa botão',
+    ];
+    
+    const isScreenReaderNoise = screenReaderBlacklist.some(phrase => 
+      textoLower.includes(phrase)
+    );
+    
+    if (isScreenReaderNoise) {
+      console.log('⚠️ Ignorando ruído do leitor de tela:', textoAtual);
+      setRecognizedText('');
       return;
     }
-  }
-}, [recognizedText, step, editStep, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, searchStep]);
+
+    // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
+    if (modalVisible) {
+      // ✅ NOVO: Fluxo simplificado - vai direto para captura do título
+      if (step === 'aguardandoTitulo' && textoAtual && !tituloProcessadoRef.current) {
+        console.log(`📝 Acumulando título: "${textoAtual}"`);
+        
+        if (isSpeakingRef.current) {
+          console.log('⚠️ Ignorando acumulação - TTS ainda ativo');
+          setRecognizedText('');
+          return;
+        }
+        
+        // ✅ Blacklist específica do TTS de título
+        const ttsBlacklist = [
+          'aguarde um momento',
+          'fale o título',
+          'fale o titulo',
+          'escutando',
+          'processando',
+          'por favor',
+          'gravando título',
+          'gravando titulo',
+        ];
+        
+        const containsTTSPhrase = ttsBlacklist.some(phrase => 
+          textoLower.includes(phrase)
+        );
+        
+        if (containsTTSPhrase) {
+          console.log('⚠️ Ignorando - texto contém frase do TTS');
+          setRecognizedText('');
+          return;
+        }
+        
+        if (tituloTimeoutRef.current) {
+          clearTimeout(tituloTimeoutRef.current);
+        }
+        
+        tituloTimeoutRef.current = setTimeout(() => {
+          if (!tituloProcessadoRef.current && textoAtual) {
+            console.log(`✅ Título final capturado: "${textoAtual}"`);
+            tituloProcessadoRef.current = true;
+            stopListening();
+            
+            isSpeakingRef.current = true;
+            
+            speak(`Criando conversa com título: ${textoAtual}`, () => {
+              setTimeout(() => {
+                isSpeakingRef.current = false;
+                criarConversaComTitulo(textoAtual);
+              }, 300);
+            });
+          }
+        }, 2000);
+        return;
+      }
+    }
+
+    // ===== FLUXO DE EDIÇÃO DE CONVERSA =====
+    if (editModalVisible) {
+      // ✅ NOVO: Fluxo simplificado para edição também
+      if (editStep === 'aguardandoTitulo' && textoAtual && !editTituloProcessadoRef.current) {
+        console.log(`📝 [Edição] Acumulando título: "${textoAtual}"`);
+        
+        if (isSpeakingRef.current) {
+          console.log('⚠️ [Edição] Ignorando - TTS ainda ativo');
+          setRecognizedText('');
+          return;
+        }
+        
+        const ttsBlacklist = [
+          'aguarde um momento',
+          'fale o novo título',
+          'fale o novo titulo',
+          'escutando',
+          'processando',
+          'novo título',
+          'novo titulo',
+          'gravando título',
+          'gravando titulo',
+        ];
+        
+        const containsTTSPhrase = ttsBlacklist.some(phrase => 
+          textoLower.includes(phrase)
+        );
+        
+        if (containsTTSPhrase) {
+          console.log('⚠️ [Edição] Ignorando - texto contém frase do TTS');
+          setRecognizedText('');
+          return;
+        }
+        
+        if (editTituloTimeoutRef.current) {
+          clearTimeout(editTituloTimeoutRef.current);
+        }
+        
+        editTituloTimeoutRef.current = setTimeout(() => {
+          if (!editTituloProcessadoRef.current && textoAtual) {
+            console.log(`✅ [Edição] Título final capturado: "${textoAtual}"`);
+            editTituloProcessadoRef.current = true;
+            stopListening();
+            
+            isSpeakingRef.current = true;
+            
+            speak(`Renomeando conversa para: ${textoAtual}`, () => {
+              setTimeout(() => {
+                isSpeakingRef.current = false;
+                renomearConversaComTitulo(textoAtual);
+              }, 300);
+            });
+          }
+        }, 2000);
+        return;
+      }
+    }
+
+    // ===== FLUXO DE EXCLUSÃO DE CONVERSA =====
+    if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
+      console.log(`🗑️ Processando resposta de exclusão: "${textoAtual}"`);
+      
+      if (confirmacaoTimeoutRef.current) {
+        clearTimeout(confirmacaoTimeoutRef.current);
+      }
+
+      confirmacaoTimeoutRef.current = setTimeout(() => {
+        const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero'];
+        const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
+        
+        const isConfirm = confirmWords.some(word => textoLower.includes(word));
+        const isDeny = denyWords.some(word => textoLower.includes(word));
+        
+        if (isConfirm) {
+          console.log('✅ Confirmação de exclusão recebida');
+          stopListening();
+          setRecognizedText('');
+          speak("Confirmado. Excluindo conversa.", () => {
+            deletarDocumentosDaConversa(conversaParaExcluir.id);
+            setConversaParaExcluir(null);
+            setStep('idle');
+          });
+        } else if (isDeny) {
+          console.log('❌ Exclusão cancelada pelo usuário');
+          stopListening();
+          setRecognizedText('');
+          speak("Cancelado.", () => {
+            setConversaParaExcluir(null);
+            setStep('idle');
+          });
+        } else {
+          console.log('⚠️ Resposta não reconhecida, perguntando novamente');
+          setRecognizedText('');
+          speak(`Não entendi. Você quer excluir a conversa ${conversaParaExcluir.titulo}? Diga sim ou não.`, () => {
+            startListening(true);
+          });
+        }
+      }, 1500);
+      return;
+    }
+
+    // ===== FLUXO DE PESQUISA POR VOZ =====
+    if (isSearchListening && searchStep === 'aguardandoPesquisa') {
+      if (textoAtual && !searchProcessadoRef.current) {
+        console.log(`🔍 [Pesquisa] Acumulando termo: "${textoAtual}"`);
+        
+        if (searchTimeoutRef.current) {
+          clearTimeout(searchTimeoutRef.current);
+        }
+        
+        searchTimeoutRef.current = setTimeout(() => {
+          if (!searchProcessadoRef.current && textoAtual) {
+            console.log(`✅ [Pesquisa] Termo final capturado: "${textoAtual}"`);
+            searchProcessadoRef.current = true;
+            stopListening();
+            
+            setSearchText(textoAtual);
+            setIsSearchListening(false);
+            setSearchStep('idle');
+            setRecognizedText('');
+            
+            setTimeout(() => {
+              const resultadosFiltrados = conversations.filter(conv => 
+                conv.titulo.toLowerCase().includes(textoAtual.toLowerCase())
+              );
+              
+              let mensagem = '';
+              
+              if (resultadosFiltrados.length === 0) {
+                mensagem = `Nenhuma conversa encontrada com título: ${textoAtual}`;
+              } else if (resultadosFiltrados.length === 1) {
+                mensagem = `Encontrado: ${resultadosFiltrados[0].titulo}. 1 de 1 na lista.`;
+              } else {
+                mensagem = `Encontrado: ${resultadosFiltrados[0].titulo}. 1 de ${resultadosFiltrados.length} na lista.`;
+              }
+              
+              console.log(`[Pesquisa] 📢 Anunciando: ${mensagem}`);
+              
+              speak(mensagem, () => {
+                setTimeout(() => {
+                  if (wasListeningBeforeModalRef.current) {
+                    console.log('[Histórico] ✅ Reativando microfone global após pesquisa');
+                    globalSpeech.startListening(true);
+                  }
+                }, 500);
+              });
+            }, 100);
+          }
+        }, 2000);
+        return;
+      }
+    }
+  }, [recognizedText, step, editStep, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, searchStep]);
 
   // ✅ Cleanup dos timeouts
   useEffect(() => {
@@ -554,31 +534,6 @@ useEffect(() => {
     }
   }, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, shouldListenLocally]);
 
-  // ===================================================================
-  // EDITAR CONVERSA
-  // ===================================================================
-  const editarConversa = (conversationId: string, titulo: string) => {
-    if (!user) return;
-
-    console.log(`✏️ Iniciando edição da conversa: ${titulo}`);
-    
-    wasListeningBeforeModalRef.current = globalSpeech.isListening;
-    globalSpeech.stopListening();
-    
-    setConversaParaEditar({ id: conversationId, titulo });
-    setEditTituloInput(titulo);
-    setEditStep('aguardandoPalavraTitulo');
-    setEditModalVisible(true);
-    setRecognizedText('');
-    editTituloProcessadoRef.current = false;
-    
-    setTimeout(() => {
-      speak(`Editando conversa: ${titulo}. Digite o novo título ou diga 'título' para informá-lo por voz.`, () => {
-        startListening(true);
-      });
-    }, 300);
-  };
-
   const renomearConversaComTitulo = async (novoTitulo: string) => {
     if (!user || !conversaParaEditar) return;
 
@@ -615,35 +570,6 @@ useEffect(() => {
 
   const renomearConversaManual = () => {
     renomearConversaComTitulo(editTituloInput);
-  };
-
-  const fecharEditModal = () => {
-    console.log('[Histórico] 🚪 Fechando modal de edição');
-    stopSpeaking();
-    stopListening();
-    
-    setEditModalVisible(false);
-    setConversaParaEditar(null);
-    setEditTituloInput('');
-    setEditStep('idle');
-    setIsEditSaving(false);
-    setRecognizedText('');
-    editTituloProcessadoRef.current = false;
-    isSpeakingRef.current = false; // ✅ NOVO: Reset
-    
-    if (editTituloTimeoutRef.current) {
-      clearTimeout(editTituloTimeoutRef.current);
-      editTituloTimeoutRef.current = null;
-    }
-    
-    setShouldListenLocally(false);
-    
-    setTimeout(() => {
-      if (wasListeningBeforeModalRef.current) {
-        console.log('[Histórico] ✅ Reativando microfone global após fechar modal de edição');
-        globalSpeech.startListening(true);
-      }
-    }, 500);
   };
 
   // ===================================================================
@@ -813,26 +739,16 @@ useEffect(() => {
     console.log('[Histórico] 🛑 Reconhecimento global pausado');
     
     setTituloInput('');
-    setStep('aguardandoPalavraTitulo');
+    setStep('idle'); // ✅ MUDOU: inicia como idle
     setModalVisible(true);
     setIsSaving(false);
     setRecognizedText('');
     tituloProcessadoRef.current = false;
     
+    // ✅ NOVO: Não faz nada automaticamente, aguarda o usuário clicar no microfone
     setTimeout(() => {
-      console.log('[Histórico] 🔊 Falando instrução após pausar reconhecimento');
-      isSpeakingRef.current = true; // ✅ NOVO: Marca que está falando
-      
-      speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
-        console.log('[Histórico] 🎤 Iniciando escuta local após falar');
-        
-        // ✅ NOVO: Aguarda um pouco antes de reativar escuta
-        setTimeout(() => {
-          isSpeakingRef.current = false;
-          startListening(true);
-        }, 500);
-      });
-    }, 500);
+      console.log('[Histórico] ℹ️ Modal aberto, aguardando ação do usuário');
+    }, 300);
   };
 
   const fecharModal = () => {
@@ -856,13 +772,65 @@ useEffect(() => {
     
     setShouldListenLocally(false);
     
-    // ✅ Reativa global APENAS se a tela ainda estiver focada
     setTimeout(() => {
       if (isScreenFocused && wasListeningBeforeModalRef.current) {
         console.log('[Histórico] ✅ Reativando microfone global (tela focada)');
         globalSpeech.startListening(false);
       } else if (!isScreenFocused) {
         console.log('[Histórico] ⏭️ Tela não focada, não reativando global');
+      }
+    }, 500);
+  };
+
+  // ===================================================================
+  // EDITAR CONVERSA
+  // ===================================================================
+  const editarConversa = (conversationId: string, titulo: string) => {
+    if (!user) return;
+
+    console.log(`✏️ Iniciando edição da conversa: ${titulo}`);
+    
+    wasListeningBeforeModalRef.current = globalSpeech.isListening;
+    globalSpeech.stopListening();
+    
+    setConversaParaEditar({ id: conversationId, titulo });
+    setEditTituloInput(titulo);
+    setEditStep('idle'); // ✅ MUDOU: inicia como idle
+    setEditModalVisible(true);
+    setRecognizedText('');
+    editTituloProcessadoRef.current = false;
+    
+    // ✅ NOVO: Não faz nada automaticamente
+    setTimeout(() => {
+      console.log('[Histórico] ℹ️ Modal de edição aberto, aguardando ação do usuário');
+    }, 300);
+  };
+
+  const fecharEditModal = () => {
+    console.log('[Histórico] 🚪 Fechando modal de edição');
+    stopSpeaking();
+    stopListening();
+    
+    setEditModalVisible(false);
+    setConversaParaEditar(null);
+    setEditTituloInput('');
+    setEditStep('idle');
+    setIsEditSaving(false);
+    setRecognizedText('');
+    editTituloProcessadoRef.current = false;
+    isSpeakingRef.current = false;
+    
+    if (editTituloTimeoutRef.current) {
+      clearTimeout(editTituloTimeoutRef.current);
+      editTituloTimeoutRef.current = null;
+    }
+    
+    setShouldListenLocally(false);
+    
+    setTimeout(() => {
+      if (wasListeningBeforeModalRef.current) {
+        console.log('[Histórico] ✅ Reativando microfone global após fechar modal de edição');
+        globalSpeech.startListening(true);
       }
     }, 500);
   };
@@ -1186,7 +1154,10 @@ useEffect(() => {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Nova Conversa</Text>
-              <TouchableOpacity style={styles.closeButton} onPress={fecharModal} disabled={isSaving}>
+              <TouchableOpacity style={styles.closeButton} onPress={fecharModal} disabled={isSaving} 
+                accessibilityRole='button' 
+                accessibilityLabel='fechar diálogo para criar conversa'
+              >
                 <Ionicons name="close" size={getIconSize('medium')} color={cores.texto} />
               </TouchableOpacity>
             </View>
@@ -1202,7 +1173,7 @@ useEffect(() => {
               </View>
             )}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Título da Conversa</Text>
+              <Text style={styles.label} accessibilityRole='text'>Título da Conversa</Text>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.input}
@@ -1215,10 +1186,30 @@ useEffect(() => {
                 />
                 <TouchableOpacity 
                   style={styles.micButton}
-                  onPress={() => { setStep('aguardandoPalavraTitulo'); setRecognizedText(''); tituloProcessadoRef.current = false; speak("Diga 'título' para começar", () => { startListening(true); }); }}
+                  onPress={() => {
+                    console.log('[Histórico] 🎤 Botão de microfone pressionado - iniciando gravação direta');
+                    setStep('aguardandoTitulo'); // ✅ NOVO: Vai direto para aguardar título
+                    setRecognizedText('');
+                    tituloProcessadoRef.current = false;
+                    
+                    isSpeakingRef.current = true;
+                    
+                    speak("Gravando título", () => {
+                      setTimeout(() => {
+                        isSpeakingRef.current = false;
+                        startListening(true);
+                      }, 500);
+                    });
+                  }}
                   disabled={isListening || isSaving}
+                  accessibilityRole='button'
+                  accessibilityLabel='Gravar título'
                 >
-                  <Ionicons name={isListening ? "mic" : "mic-outline"} size={getIconSize('medium')} color={cores.fundo} />
+                  <Ionicons 
+                    name={isListening ? "mic" : "mic-outline"} 
+                    size={getIconSize('medium')} 
+                    color={cores.texto}
+                  />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1274,10 +1265,30 @@ useEffect(() => {
                 />
                 <TouchableOpacity 
                   style={styles.micButton}
-                  onPress={() => { setEditStep('aguardandoPalavraTitulo'); setRecognizedText(''); editTituloProcessadoRef.current = false; speak("Diga 'título' para começar", () => { startListening(true); }); }}
+                  onPress={() => {
+                    console.log('[Histórico] 🎤 [Edição] Botão de microfone pressionado - iniciando gravação direta');
+                    setEditStep('aguardandoTitulo'); // ✅ NOVO: Vai direto para aguardar título
+                    setRecognizedText('');
+                    editTituloProcessadoRef.current = false;
+                    
+                    isSpeakingRef.current = true;
+                    
+                    speak("Gravando novo título", () => {
+                      setTimeout(() => {
+                        isSpeakingRef.current = false;
+                        startListening(true);
+                      }, 500);
+                    });
+                  }}
                   disabled={isListening || isEditSaving}
+                  accessibilityRole='button'
+                  accessibilityLabel='Gravar novo título'
                 >
-                  <Ionicons name={isListening ? "mic" : "mic-outline"} size={getIconSize('medium')} color={cores.fundo} />
+                  <Ionicons 
+                    name={isListening ? "mic" : "mic-outline"} 
+                    size={getIconSize('medium')} 
+                    color={cores.fundo} 
+                  />
                 </TouchableOpacity>
               </View>
             </View>

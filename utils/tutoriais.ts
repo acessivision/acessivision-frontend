@@ -19,7 +19,7 @@ export const tutoriaisDasTelas: Record<string, string> = {
       '/conversa': `Esta é a tela de conversa. Todas as mensagens enviadas aqui ficam salvas caso queira fazer uma consulta depois. 
       Você pode enviar uma nova foto, usando os comandos de voz. O AcessiVision vai abrir a câmera, tirar uma foto e salvar a resposta automaticamente. 
       Você pode também usar o botão no canto inferior esquerdo para abrir a tela da câmera. As fotos tiradas vão ficar salvas nessa conversa. 
-      Você também pode enviar uma nova mensagem, sem enviar uma nova foto. O AcessiVision irá responder à mensagem usando a útlima foto salva na conversa. 
+      Você também pode enviar uma nova mensagem, sem enviar uma nova foto. O AcessiVision irá responder à mensagem usando a última foto salva na conversa. 
       Para enviar uma mensagem, você pode digita-la na barra localizada ao centro inferior da tela. Ou, 
       pode falar o comando: enviar áudio. E o AcessiVision irá gravar o áudio que quiser mandar.`,
     };
