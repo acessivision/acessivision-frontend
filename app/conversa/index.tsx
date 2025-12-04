@@ -186,14 +186,25 @@ const ConversationScreen: React.FC = () => {
             return '';
           }
           
-          // Desliga microfone e envia
+          // Desliga microfone local e para o reconhecimento
           setMicEnabled(false);
           stopListening();
           setRecognizedText('');
           
-          // Envia após um pequeno delay
+          // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL após envio
           setTimeout(() => {
             enviarMensagem(textoParaEnviar);
+            
+            // ✅ Aguarda 1.5s e reinicia o reconhecimento GLOBAL
+            setTimeout(() => {
+              console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após envio automático');
+              enableGlobalMic();
+              
+              // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
+              setTimeout(() => {
+                SpeechManager.startRecognition('global');
+              }, 300);
+            }, 1500);
           }, 100);
           
           return ''; // Limpa input
@@ -215,7 +226,7 @@ const ConversationScreen: React.FC = () => {
         clearTimeout(silenceTimeoutRef.current);
       }
     };
-  }, [micEnabled, isScreenFocused, activeImage, speak, stopListening]);
+  }, [micEnabled, isScreenFocused, activeImage, speak, stopListening, enableGlobalMic]);
 
   const toggleMicrophone = useCallback(() => {
     if (!globalMicEnabled) {
@@ -237,6 +248,18 @@ const ConversationScreen: React.FC = () => {
       if (silenceTimeoutRef.current) {
         clearTimeout(silenceTimeoutRef.current);
       }
+      
+      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL
+      setTimeout(() => {
+        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após desativação manual');
+        enableGlobalMic();
+        
+        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
+        setTimeout(() => {
+          SpeechManager.startRecognition('global');
+        }, 300);
+      }, 500);
+      
       speak('Microfone desativado.');
     } else {
       setMicEnabled(true);
@@ -247,7 +270,7 @@ const ConversationScreen: React.FC = () => {
         SpeechManager.startRecognition('local');
       });
     }
-  }, [micEnabled, activeImage, globalMicEnabled, speak, stopListening, setRecognizedText]);
+  }, [micEnabled, activeImage, globalMicEnabled, speak, stopListening, setRecognizedText, enableGlobalMic]);
 
   useEffect(() => {
     if (isScreenFocused && conversaId) {
@@ -341,10 +364,21 @@ const ConversationScreen: React.FC = () => {
       setActiveImage(null);
       setMicEnabled(false);
       setInputText('');
+      
+      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL ao sair
+      setTimeout(() => {
+        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL ao sair da conversa');
+        enableGlobalMic();
+        
+        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
+        setTimeout(() => {
+          SpeechManager.startRecognition('global');
+        }, 300);
+      }, 500);
     } else {
       console.log('[Conversa] 🟢 Tela ganhou foco');
     }
-  }, [isScreenFocused]);
+  }, [isScreenFocused, enableGlobalMic]);
 
   useEffect(() => {
     if (!conversaId || !isScreenFocused) return;
@@ -521,6 +555,17 @@ const ConversationScreen: React.FC = () => {
       speak('Erro ao enviar mensagem.');
     } finally {
       setIsSending(false);
+      
+      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL
+      setTimeout(() => {
+        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após envio da mensagem');
+        enableGlobalMic();
+        
+        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
+        setTimeout(() => {
+          SpeechManager.startRecognition('global');
+        }, 300);
+      }, 1500);
     }
   };
 
