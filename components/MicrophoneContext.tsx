@@ -1,4 +1,4 @@
-// MicrophoneContext.tsx - SOLUÇÃO SIMPLES E CLARA
+// MicrophoneContext.tsx - INICIA AUTOMATICAMENTE
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import SpeechManager from '../utils/speechManager';
 
@@ -12,16 +12,20 @@ interface MicrophoneContextType {
 const MicrophoneContext = createContext<MicrophoneContextType | undefined>(undefined);
 
 export const MicrophoneProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // ✅ SOLUÇÃO: Sempre começa DESLIGADO
-  // O usuário decide quando quer ativar via toggle
-  const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(false);
+  // ✅ CORRIGIDO: Começa LIGADO por padrão
+  const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(true);
 
-  // ✅ Garante que o SpeechManager também comece desligado
+  // ✅ Inicializa o SpeechManager já ATIVADO
   useEffect(() => {
-    console.log('[MicrophoneContext] 🎬 Inicializando');
-    SpeechManager.disable();
-    SpeechManager.requestPermissions();
+    console.log('[MicrophoneContext] 🎬 Inicializando com microfone LIGADO');
     
+    // Aguarda um pouco para garantir que as permissões foram solicitadas
+    const initTimer = setTimeout(() => {
+      SpeechManager.enable();
+      console.log('[MicrophoneContext] ✅ Microfone ativado automaticamente');
+    }, 500);
+
+    return () => clearTimeout(initTimer);
   }, []);
 
   const toggleMicrophone = useCallback(() => {
@@ -34,12 +38,22 @@ export const MicrophoneProvider: React.FC<{ children: ReactNode }> = ({ children
       } else {
         SpeechManager.disable();
       }
+      
       return novoEstado;
     });
   }, []);
 
-  const enableMicrophone = () => {}; 
-  const disableMicrophone = () => {};
+  const enableMicrophone = useCallback(() => {
+    console.log('[Context] ✅ Ativando microfone manualmente');
+    setIsMicrophoneEnabled(true);
+    SpeechManager.enable();
+  }, []);
+
+  const disableMicrophone = useCallback(() => {
+    console.log('[Context] ❌ Desativando microfone manualmente');
+    setIsMicrophoneEnabled(false);
+    SpeechManager.disable();
+  }, []);
 
   return (
     <MicrophoneContext.Provider
