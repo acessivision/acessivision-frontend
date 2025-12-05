@@ -57,6 +57,7 @@ const CameraScreen: React.FC = () => {
 
   const mode = modeFromUrl || pendingContext?.mode;
   const conversaId = conversaIdFromUrl || pendingContext?.conversaId;
+  const conversaTitulo = typeof params.conversaTitulo === 'string' ? params.conversaTitulo : undefined;
   
   const [capturedPhoto, setCapturedPhoto] = useState<Photo | null>(null);
   const [isSending, setIsSending] = useState(false);
@@ -241,29 +242,50 @@ const CameraScreen: React.FC = () => {
   const processarPerguntaManual = () => processarPergunta(questionInput);
 
   // ===================================================================
-  // ✅ UPLOAD CORRIGIDO COM API NAMESPACED
-  // ===================================================================
-  const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
-    if (isSending) {
-      console.log('[Camera] ⚠️ Upload já em andamento - Ignorando');
-      return;
-    }
+// ✅ UPLOAD CORRIGIDO COM FEEDBACK SONORO COMPLETO
+// ===================================================================
+const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
+  if (isSending) {
+    console.log('[Camera] ⚠️ Upload já em andamento - Ignorando');
+    return;
+  }
+  
+  console.log('[Camera] 🚀 Iniciando upload e processamento');
+  setIsSending(true);
+  stopListening();
+
+  try {
+    // ✅ Fala "Processando" sem bloquear
+    console.log('[Camera] 🔊 Falando: Processando');
+    speak("Processando").catch(err => console.log('[Camera] ❌ TTS erro:', err));
+
+    if (!photo.base64) throw new Error('Foto não contém base64.');
+
+    // ✅ Feedback periódico enquanto aguarda resposta da API
+    const feedbackInterval = setInterval(() => {
+      speak("Ainda processando").catch(err => console.log('[Camera] ❌ TTS erro:', err));
+    }, 8000); // A cada 8 segundos informa que ainda está processando
     
-    console.log('[Camera] 🚀 Iniciando upload e processamento');
-    setIsSending(true);
-    stopListening();
-
+    // ✅ Timeout de 1 minuto
+    const timeoutId = setTimeout(() => {
+      clearInterval(feedbackInterval);
+      throw new Error('TIMEOUT');
+    }, 60000); // 60 segundos
+    
+    console.log('[Camera] 📤 Enviando para servidor...');
+    
     try {
-      await speak("Processando");
-
-      if (!photo.base64) throw new Error('Foto não contém base64.');
-
-      console.log('[Camera] 📤 Enviando para servidor...');
       const response = await fetch(SERVER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({ image: photo.base64, prompt: prompt }),
       });
+      
+      // ✅ Para o feedback periódico e timeout quando recebe resposta
+      clearInterval(feedbackInterval);
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) throw new Error('Erro do servidor');
 
       if (!response.ok) throw new Error('Erro do servidor');
 
@@ -272,24 +294,23 @@ const CameraScreen: React.FC = () => {
       const description = result.description;
       if (!description) throw new Error("A resposta do servidor não continha uma descrição.");
 
-      console.log('[Camera] ✅ Resposta recebida do servidor');
+        console.log('[Camera] ✅ Resposta recebida do servidor');
 
       if (mode === 'chat' && conversaId) {
-        await speak("Resposta recebida. Salvando.");
+        // ✅ Fala "Resposta recebida. Salvando." sem bloquear
+        console.log('[Camera] 🔊 Falando: Resposta recebida. Salvando.');
+        speak("Resposta recebida. Salvando.").catch(err => console.log('[Camera] ❌ TTS erro:', err));
         
         console.log('[Camera] 💾 Salvando no Firebase Storage...');
         
-        // ✅ CORRIGIDO: Usando API namespaced do React Native Firebase
         const filename = `photo-${Date.now()}.jpg`;
         const storageRef = storage().ref(`conversas/${conversaId}/${filename}`);
         
-        // Faz upload do URI da foto diretamente
         await storageRef.putFile(photo.uri);
         const url = await storageRef.getDownloadURL();
 
         console.log('[Camera] 📝 Salvando mensagens no Firestore...');
 
-        // ✅ CORRIGIDO: Usando API namespaced do Firestore
         const conversaRef = firestore()
           .collection('conversas')
           .doc(conversaId);
@@ -319,7 +340,6 @@ const CameraScreen: React.FC = () => {
         clearPending();
         hasProcessedAutoPhotoRef.current = false;
         
-        // ✅ IMPORTANTE: Limpa os parâmetros antes de navegar
         router.setParams({
           autoTakePhoto: undefined,
           question: undefined,
@@ -331,27 +351,42 @@ const CameraScreen: React.FC = () => {
             pathname: '/conversa',
             params: { 
               conversaId, 
-              titulo: 'Conversa', 
+              titulo: conversaTitulo || 'Conversa', 
               speakLastMessage: 'true', 
               timestamp: Date.now().toString() 
             }
           });
         }, 100);
       } else {
+        // ✅ Lê a descrição no modo não-chat
         await speak(description);
       }
-
-    } catch (error) {
-      console.error('[Camera] ❌ Erro no upload:', error);
-      await speak("Erro ao processar.");
-      Alert.alert("Erro no Upload", error instanceof Error ? error.message : "Erro desconhecido");
-    } finally {
-      console.log('[Camera] 🏁 Finalizando upload');
-      setCapturedPhoto(null);
-      setIsSending(false); 
-      hasProcessedAutoPhotoRef.current = false;
+    } catch (fetchError) {
+      // ✅ Para o feedback em caso de erro no fetch
+      clearInterval(feedbackInterval);
+      clearTimeout(timeoutId);
+      throw fetchError;
     }
-  };
+
+  } catch (error) {
+    console.error('[Camera] ❌ Erro no upload:', error);
+    
+    // ✅ Mensagem específica para timeout
+    if (error instanceof Error && error.message === 'TIMEOUT') {
+      speak("Tempo esgotado. A operação demorou muito. Tente novamente.").catch(err => console.log('[Camera] TTS erro:', err));
+      Alert.alert("Tempo Esgotado", "A operação demorou mais de 1 minuto. Por favor, tente novamente.");
+    } else {
+      speak("Erro ao processar.").catch(err => console.log('[Camera] TTS erro:', err));
+      Alert.alert("Erro no Upload", error instanceof Error ? error.message : "Erro desconhecido");
+    }
+    
+  } finally {
+    console.log('[Camera] 🏁 Finalizando upload');
+    setCapturedPhoto(null);
+    setIsSending(false); 
+    hasProcessedAutoPhotoRef.current = false;
+  }
+};
 
   const takePictureForVoiceCommand = async (spokenText: string) => {
     if (isSending || !cameraRef.current || !isCameraReady) {

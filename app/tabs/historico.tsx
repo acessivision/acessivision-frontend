@@ -74,7 +74,7 @@ const HistoryScreen: React.FC = () => {
   const deleteModalTitleRef = useRef(null);
 
   const isFocused = useIsFocused();
-  const screenTitle = 'Histórico de Conversas';
+  // const screenTitle = 'Histórico de Conversas';
 
   const [shouldListenLocally, setShouldListenLocally] = useState(false);
 
@@ -104,14 +104,14 @@ const HistoryScreen: React.FC = () => {
     mode: 'global',
   });
 
-  useEffect(() => {
-    if (isFocused) {
-      const timer = setTimeout(() => {
-        AccessibilityInfo.announceForAccessibility(screenTitle);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [isFocused, screenTitle]);
+  // useEffect(() => {
+  //   if (isFocused) {
+  //     const timer = setTimeout(() => {
+  //       AccessibilityInfo.announceForAccessibility(screenTitle);
+  //     }, 500);
+  //     return () => clearTimeout(timer);
+  //   }
+  // }, [isFocused, screenTitle]);
 
   // ===================================================================
   // BUSCAR CONVERSAS DO FIRESTORE

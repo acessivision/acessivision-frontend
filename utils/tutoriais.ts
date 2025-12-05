@@ -25,11 +25,9 @@ export const tutoriaisDasTelas: Record<string, string> = {
     };
 
 export const tutorialGeral = `Bem-vindo ao AcessiVision. Este aplicativo pode ser controlado por voz e ou por um leitor de tela. 
-As telas possuem o cabeçalho composto por: botão para mudar o tema, botão para ativar e desativar o microfone do aplicativo, título da tela, botão para o tutorial da tela,
-botão para fazer login ou para sair da conta.
+As telas possuem o cabeçalho composto por: botão para mudar o tema, botão para ativar e desativar o microfone do aplicativo, título da tela, botão para o tutorial da tela, botão para fazer login ou para sair da conta.
 As telas são: 
 Câmera, Login, Histórico e Menu. Para navegar, basta dizer a palavra de ativação: 'Escuta': esperar pela resposta: 'Escutando': e dizer o comando. 
-Por exemplo: 'Abre o menu', ou: 'Vai para a câmera'. O AcessiVision é flexível. Você pode pedir para mudar o tema, sair da conta, ou pedir por um tutorial a 
-qualquer momento. 
+Por exemplo: 'Abre o menu', ou: 'Vai para a câmera'. O AcessiVision é flexível. Você pode pedir para mudar o tema, sair da conta, ou pedir por um tutorial a qualquer momento. 
 Para saber o que fazer em uma tela específica, diga algo como: 'Escuta... Me explica essa tela'.
 Caso queira usar os comandos de voz do leitor de tela, você deve desativar o microfone do aplicativo, usando o botão localizado no cabeçalho.`

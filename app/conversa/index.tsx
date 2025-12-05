@@ -144,7 +144,7 @@ const ConversationScreen: React.FC = () => {
   }, [speakLastMessage, isScreenFocused]);
 
   // ===================================================================
-  // ✅ LISTENER LOCAL - Atualiza input e detecta silêncio
+  // ✅ LISTENER LOCAL - Atualiza input com resultados INTERIM
   // ===================================================================
   useEffect(() => {
     if (!micEnabled || !isScreenFocused) return;
@@ -157,19 +157,17 @@ const ConversationScreen: React.FC = () => {
       const normalizedText = text.trim();
       if (!normalizedText) return;
 
-      // ✅ Atualiza o input diretamente
-      setInputText(prev => {
-        const newText = prev ? `${prev} ${normalizedText}` : normalizedText;
-        console.log('[Conversa] 📝 Texto no input:', newText);
-        return newText;
-      });
+      // ✅ OTIMIZADO: Substitui texto completo ao invés de concatenar
+      // Isso funciona melhor com resultados interim
+      setInputText(normalizedText);
+      console.log('[Conversa] 📝 Texto no input:', normalizedText);
 
       // ✅ Cancela timeout anterior e cria novo
       if (silenceTimeoutRef.current) {
         clearTimeout(silenceTimeoutRef.current);
       }
 
-      // ✅ Após 3 segundos de silêncio, envia automaticamente
+      // ✅ Após 2 segundos de silêncio (reduzido de 3), envia automaticamente
       silenceTimeoutRef.current = setTimeout(() => {
         console.log('[Conversa] ⏰ Silêncio detectado - Enviando automaticamente');
         
@@ -196,7 +194,7 @@ const ConversationScreen: React.FC = () => {
           
           return ''; // Limpa input
         });
-      }, SILENCE_TIMEOUT);
+      }, 2000); // ✅ Reduzido de 3000ms para 2000ms
     };
 
     localListenerRef.current = localListener;
@@ -328,12 +326,13 @@ const ConversationScreen: React.FC = () => {
       params: {
         mode: 'chat',
         conversaId: conversaId,
+        conversaTitulo: titulo,
         autoTakePhoto: 'true',
         question: question,
         timestamp: Date.now().toString()
       }
     });
-  }, [conversaId, router]);
+  }, [conversaId, titulo, router]);
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
@@ -437,6 +436,7 @@ const ConversationScreen: React.FC = () => {
       params: {
         mode: 'chat',
         conversaId: conversaId,
+        conversaTitulo: titulo,
         timestamp: Date.now().toString()
       }
     });

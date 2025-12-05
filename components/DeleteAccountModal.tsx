@@ -21,6 +21,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
   const { cores, getFontSize } = useTheme();
   const [step, setStep] = useState<'idle' | 'aguardandoConfirmacao'>('idle');
   const deleteTimeoutRef = useRef<any>(null);
+  const isSpeakingRef = useRef(false); // ✅ Controla se está falando
 
   const { 
     speak, 
@@ -28,6 +29,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     stopListening,
     stopSpeaking,
     isListening,
+    isSpeaking,
     recognizedText,
     setRecognizedText 
   } = useSpeech({
@@ -40,28 +42,44 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     if (visible) {
       setStep('aguardandoConfirmacao');
       setRecognizedText('');
+      isSpeakingRef.current = false;
       
       setTimeout(() => {
-        speak("Você tem certeza que deseja excluir sua conta permanentemente? Esta ação não pode ser desfeita. Diga sim ou não.", () => {
-          startListening(true);
+        isSpeakingRef.current = true; // ✅ Marca que está falando
+        speak("Você tem certeza que deseja excluir sua conta permanentemente? Esta ação não pode ser desfeita. Diga confirmar para excluir ou cancelar para voltar.", () => {
+          isSpeakingRef.current = false; // ✅ Terminou de falar
+          setTimeout(() => {
+            startListening(true);
+          }, 500); // ✅ Aguarda 500ms antes de ativar microfone
         });
       }, 300);
     } else {
       setStep('idle');
       setRecognizedText('');
+      isSpeakingRef.current = false;
     }
   }, [visible]);
 
-  // Processa resposta de voz
+  // ✅ Processa resposta de voz (SOMENTE quando não está falando)
   useEffect(() => {
-    if (!recognizedText.trim() || step !== 'aguardandoConfirmacao') return;
+    if (!recognizedText.trim() || step !== 'aguardandoConfirmacao' || isSpeakingRef.current || isSpeaking) {
+      return;
+    }
 
     const fala = recognizedText.toLowerCase().trim();
 
     // Ignora leituras de botões pelo TalkBack
-    const ignoredPhrases = ['cancelar botão', 'excluir botão', 'sair botão'];
+    const ignoredPhrases = ['cancelar botão', 'excluir botão', 'sair botão', 'confirmar botão'];
     if (ignoredPhrases.includes(fala)) {
       console.log('[DeleteModal] Ignorando leitura de botão:', fala);
+      setRecognizedText('');
+      return;
+    }
+
+    // ✅ Ignora se contém palavras do próprio prompt do TTS
+    const ttsWords = ['você tem certeza', 'permanentemente', 'não pode ser desfeita', 'diga confirmar', 'diga cancelar'];
+    if (ttsWords.some(word => fala.includes(word))) {
+      console.log('[DeleteModal] ⚠️ Ignorando echo do TTS:', fala);
       setRecognizedText('');
       return;
     }
@@ -71,8 +89,8 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     }
 
     deleteTimeoutRef.current = setTimeout(() => {
-      const confirmWords = ['sim', 'confirmo', 'confirmar', 'isso', 'exato', 'certo', 'ok', 'yes', 'pode', 'quero', 'excluir'];
-      const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'errado', 'no', 'negativo', 'nunca'];
+      const confirmWords = ['confirmo', 'confirmar', 'excluir', 'deletar', 'apagar'];
+      const denyWords = ['não', 'nao', 'cancelar', 'cancel', 'voltar', 'negativo'];
       
       const isConfirm = confirmWords.some(word => fala.includes(word));
       const isDeny = denyWords.some(word => fala.includes(word));
@@ -80,24 +98,32 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
       if (isConfirm) {
         stopListening();
         setRecognizedText('');
+        isSpeakingRef.current = true;
         speak("Confirmado. Excluindo sua conta.", async () => {
+          isSpeakingRef.current = false;
           await handleConfirm();
         });
       } else if (isDeny) {
         stopListening();
         setRecognizedText('');
+        isSpeakingRef.current = true;
         speak("Cancelado. Sua conta não foi excluída.", () => {
+          isSpeakingRef.current = false;
           handleClose();
         });
       } else {
         setRecognizedText('');
-        speak(`Não entendi. Você deseja excluir sua conta permanentemente? Diga sim ou não.`, () => {
-          startListening(true);
+        isSpeakingRef.current = true;
+        speak(`Não entendi. Diga confirmar para excluir sua conta ou cancelar para voltar.`, () => {
+          isSpeakingRef.current = false;
+          setTimeout(() => {
+            startListening(true);
+          }, 500);
         });
       }
     }, 1500);
 
-  }, [recognizedText, step, visible]);
+  }, [recognizedText, step, visible, isSpeaking]);
 
   // Cleanup
   useEffect(() => {
@@ -119,16 +145,21 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     
     setStep('idle');
     setRecognizedText('');
+    isSpeakingRef.current = false;
     onClose();
   };
 
   const handleConfirm = async () => {
     try {
       await onConfirm();
+      isSpeakingRef.current = true;
       await speak('Sua conta foi excluída com sucesso.');
+      isSpeakingRef.current = false;
     } catch (error: any) {
       const errorMessage = error?.message || 'Não foi possível excluir sua conta.';
+      isSpeakingRef.current = true;
       await speak(`Erro. ${errorMessage}`);
+      isSpeakingRef.current = false;
     } finally {
       handleClose();
     }
@@ -143,7 +174,9 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
       deleteTimeoutRef.current = null;
     }
     
+    isSpeakingRef.current = true;
     speak("Confirmado. Excluindo sua conta.", async () => {
+      isSpeakingRef.current = false;
       await handleConfirm();
     });
   };
@@ -275,7 +308,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
             Esta ação não pode ser desfeita e todos os seus dados serão removidos.
           </Text>
 
-          {isListening && (
+          {isListening && !isSpeakingRef.current && (
             <View style={styles.listeningIndicator}>
               <ActivityIndicator size="small" color={cores.texto} />
               <Text style={styles.listeningText}>
@@ -284,7 +317,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
             </View>
           )}
 
-          {recognizedText && (
+          {recognizedText && !isSpeakingRef.current && (
             <View style={styles.recognizedTextBox}>
               <Text style={styles.recognizedTextLabel}>
                 Você disse:
