@@ -1,4 +1,4 @@
-// app/(conversa)/_layout.tsx - SIMPLIFICADO
+// app/conversa/_layout.tsx
 
 import { Stack } from 'expo-router';
 import { View, LayoutChangeEvent } from 'react-native';

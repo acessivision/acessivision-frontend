@@ -108,12 +108,6 @@ function LayoutWithVoiceUI() {
               ),
             }}
           />
-          <Tabs.Screen
-            name="conversa"
-            options={{
-              href: null,
-            }}
-          />
         </Tabs>
       </View>
     </View>

@@ -1,8 +1,9 @@
+//app/_layout
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../components/ThemeContext';
 import { VoiceCommandProvider } from '../components/VoiceCommandContext';
-import { TutorialProvider } from '../components/TutorialContext'; // <--- IMPORTADO
+import { TutorialProvider } from '../components/TutorialContext';
 import * as NavigationBar from 'expo-navigation-bar';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider } from '../components/AuthContext';
@@ -10,42 +11,39 @@ import { Platform } from 'react-native';
 import React, { useEffect, useState } from 'react';
 import { SplashScreen } from 'expo-router';
 import SpeechManager from '../utils/speechManager';
-import { MicrophoneProvider } from '../components/MicrophoneContext'; // ✅ NOVO
+import { MicrophoneProvider } from '../components/MicrophoneContext';
 
 function ThemedSystemBars() {
   const { temaAplicado } = useTheme();
-
+  
   useEffect(() => {
     if (Platform.OS === 'android') {
-      const setupFullscreen = async () => {
+      const setupNavigationBar = async () => {
         try {
-          await NavigationBar.setVisibilityAsync('hidden');
-          await NavigationBar.setBackgroundColorAsync('#00000000');
-          await NavigationBar.setBehaviorAsync('overlay-swipe');
+          // ✅ ÚNICA API SUPORTADA com edge-to-edge: setButtonStyleAsync
           await NavigationBar.setButtonStyleAsync(
             temaAplicado === 'dark' ? 'light' : 'dark'
           );
         } catch (error) {
-          console.error('[Layout] Erro ao configurar fullscreen:', error);
+          console.error('[Layout] Erro ao configurar barra de navegação:', error);
         }
       };
-      setupFullscreen();
+      setupNavigationBar();
     }
   }, [temaAplicado]);
-
+  
   return null;
 }
 
 export default function RootLayout() {
   const [permissionsReady, setPermissionsReady] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
-
+  
   useEffect(() => {
     async function prepareApp() {
       try {
         const granted = await SpeechManager.requestPermissions();
         setPermissionGranted(granted);
-        
         if (!granted) {
           console.error("Permissão de microfone negada!");
         }
@@ -56,14 +54,13 @@ export default function RootLayout() {
         SplashScreen.hideAsync();
       }
     }
-
     prepareApp();
   }, []);
-
+  
   if (!permissionsReady) {
     return null;
   }
-
+  
   return (
     <AuthProvider>
       <ThemeProvider>

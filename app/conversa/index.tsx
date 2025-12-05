@@ -191,21 +191,8 @@ const ConversationScreen: React.FC = () => {
           stopListening();
           setRecognizedText('');
           
-          // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL após envio
-          setTimeout(() => {
-            enviarMensagem(textoParaEnviar);
-            
-            // ✅ Aguarda 1.5s e reinicia o reconhecimento GLOBAL
-            setTimeout(() => {
-              console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após envio automático');
-              enableGlobalMic();
-              
-              // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
-              setTimeout(() => {
-                SpeechManager.startRecognition('global');
-              }, 300);
-            }, 1500);
-          }, 100);
+          // ✅ Envia mensagem e reinicia reconhecimento global
+          enviarMensagem(textoParaEnviar);
           
           return ''; // Limpa input
         });
@@ -249,18 +236,17 @@ const ConversationScreen: React.FC = () => {
         clearTimeout(silenceTimeoutRef.current);
       }
       
-      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL
-      setTimeout(() => {
-        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após desativação manual');
-        enableGlobalMic();
-        
-        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
+      speak('Microfone desativado.', () => {
+        // ✅ Reinicia reconhecimento global após desativar mic local
         setTimeout(() => {
-          SpeechManager.startRecognition('global');
-        }, 300);
-      }, 500);
-      
-      speak('Microfone desativado.');
+          console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após desativação manual');
+          enableGlobalMic();
+          
+          setTimeout(() => {
+            SpeechManager.startRecognition('global');
+          }, 300);
+        }, 500);
+      });
     } else {
       setMicEnabled(true);
       setRecognizedText('');
@@ -365,12 +351,11 @@ const ConversationScreen: React.FC = () => {
       setMicEnabled(false);
       setInputText('');
       
-      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL ao sair
+      // ✅ Reinicia reconhecimento global ao sair
       setTimeout(() => {
-        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL ao sair da conversa');
+        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL ao sair');
         enableGlobalMic();
         
-        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
         setTimeout(() => {
           SpeechManager.startRecognition('global');
         }, 300);
@@ -549,23 +534,22 @@ const ConversationScreen: React.FC = () => {
         timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
+      // ✅ Aguarda resposta da API terminar antes de reiniciar reconhecimento
+      setTimeout(() => {
+        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após resposta da API');
+        enableGlobalMic();
+        
+        setTimeout(() => {
+          SpeechManager.startRecognition('global');
+        }, 300);
+      }, 2000);
+
     } catch (error) {
       console.error('Erro ao enviar:', error);
       Alert.alert('Erro', 'Não foi possível enviar a mensagem.');
       speak('Erro ao enviar mensagem.');
     } finally {
       setIsSending(false);
-      
-      // ✅ CORRIGIDO: Reiniciar reconhecimento GLOBAL
-      setTimeout(() => {
-        console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após envio da mensagem');
-        enableGlobalMic();
-        
-        // ✅ CRÍTICO: Reiniciar o SpeechManager no modo global
-        setTimeout(() => {
-          SpeechManager.startRecognition('global');
-        }, 300);
-      }, 1500);
     }
   };
 

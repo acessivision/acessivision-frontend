@@ -77,10 +77,8 @@ const CameraScreen: React.FC = () => {
   // CONFIGURAÇÃO DE VOZ
   // ===================================================================
 
-  // Hook GLOBAL: Mantém o motor vivo quando o modal está fechado
-  // ✅ CORREÇÃO: Desliga automaticamente se estiver enviando (isSending)
   const globalSpeech = useSpeech({
-    enabled: isFocused && !questionModalVisible && !isSending && !isTutorialAtivo, // ✅ Adicionar condição
+    enabled: isFocused && !questionModalVisible && !isSending && !isTutorialAtivo,
     mode: 'global',
   });
 
@@ -93,7 +91,7 @@ const CameraScreen: React.FC = () => {
     setRecognizedText,
     isSpeaking 
   } = useSpeech({
-    enabled: isFocused && questionModalVisible && !isTutorialAtivo, // ✅ Adicionar condição
+    enabled: isFocused && questionModalVisible && !isTutorialAtivo,
     mode: 'local',
   });
 
@@ -102,7 +100,6 @@ const CameraScreen: React.FC = () => {
     
     const texto = globalSpeech.recognizedText.toLowerCase().trim();
     
-    // 🚫 IGNORA frases que são claramente do leitor de tela
     const ignorarFrases = [
       'tirar foto botão',
       'botão tirar foto',
@@ -119,18 +116,14 @@ const CameraScreen: React.FC = () => {
       return;
     }
     
-    // Processa apenas comandos válidos
     if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
       globalSpeech.setRecognizedText('');
       takePictureForVoiceCommand(texto);
     }
   }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]);
 
-  // ===================================================================
-  // REINÍCIO FORÇADO PÓS-TTS (Mantido pois você disse que o toggle funciona com ele)
-  // ===================================================================
   useEffect(() => {
-    if (!isFocused || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
+    if (!isFocused || questionModalVisible || isSending || isTutorialAtivo) return;
 
     if (isMicrophoneEnabled && !isListening && !isSpeaking && !globalSpeech.isSpeaking) {
       const timeout = setTimeout(() => {
@@ -142,58 +135,33 @@ const CameraScreen: React.FC = () => {
       }, 500); 
       return () => clearTimeout(timeout);
     }
-  }, [isFocused, isMicrophoneEnabled, isListening, isSpeaking, globalSpeech.isSpeaking, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
-
-  // ✅ CORREÇÃO: Não processa comandos se tutorial estiver ativo
-  // useEffect(() => {
-  //   if (!globalSpeech.recognizedText.trim() || questionModalVisible || isSending || isTutorialAtivo) return; // ✅ Adicionar condição
-    
-  //   const texto = globalSpeech.recognizedText.toLowerCase().trim();
-  //   if (texto.includes('tirar foto') || texto.includes('capturar') || texto.includes('fotografar')) {
-  //     globalSpeech.setRecognizedText('');
-  //     takePictureForVoiceCommand(texto);
-  //   }
-  // }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]); // ✅ Adicionar dependência
+  }, [isFocused, isMicrophoneEnabled, isListening, isSpeaking, globalSpeech.isSpeaking, questionModalVisible, isSending, isTutorialAtivo]);
 
   useEffect(() => {
     console.log('[Camera] 📋 Parâmetros recebidos:', { conversaId, mode, autoTakePhoto });
   }, [conversaIdFromUrl, modeFromUrl, pendingContext]);
 
-  // ... (Auto Take Photo mantido igual) ...
-  useEffect(() => {
-    if (!isFocused) return;
-    if (autoTakePhoto && question && !isSending && !hasProcessedAutoPhotoRef.current) {
-      if (isCameraReady) {
-        hasProcessedAutoPhotoRef.current = true;
-        const timeoutId = setTimeout(() => {
-          if (!isFocused) return;
-          takePictureForVoiceCommand(question);
-        }, 500);
-        return () => clearTimeout(timeoutId);
-      }
-    }
-  }, [isFocused, autoTakePhoto, question, isSending, isCameraReady]);
-
-  useEffect(() => {
-    if (!isFocused) return;
-    if (isCameraReady && autoTakePhoto && question && !hasProcessedAutoPhotoRef.current && !isSending) {
-      hasProcessedAutoPhotoRef.current = true;
-      const timeoutId = setTimeout(() => {
-        if (!isFocused) return;
-        takePictureForVoiceCommand(question);
-      }, 500);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [isFocused, isCameraReady, autoTakePhoto, question, isSending]);
-
+  // ✅ CORRIGIDO: Previne loop de auto-foto
   useEffect(() => {
     if (!isFocused) {
       hasProcessedAutoPhotoRef.current = false;
       setIsCameraReady(false);
+      return;
     }
-  }, [isFocused]);
+    
+    if (autoTakePhoto && question && !isSending && !hasProcessedAutoPhotoRef.current && isCameraReady) {
+      console.log('[Camera] 📸 Auto-foto detectada - Processando UMA VEZ');
+      hasProcessedAutoPhotoRef.current = true;
+      
+      const timeoutId = setTimeout(() => {
+        if (!isFocused) return;
+        takePictureForVoiceCommand(question);
+      }, 500);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isFocused, autoTakePhoto, question, isSending, isCameraReady]);
 
-  // ... (Reconhecimento no Modal mantido igual) ...
   useEffect(() => {
     if (!recognizedText.trim() || !questionModalVisible) return;
     const textoAtual = recognizedText.trim();
@@ -222,12 +190,10 @@ const CameraScreen: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      // ✅ Removido feedbackIntervalRef do cleanup
       if (questionModalTimeoutRef.current) clearTimeout(questionModalTimeoutRef.current);
     };
   }, []);
 
-  // ... (Funções do Modal mantidas iguais) ...
   const abrirQuestionModal = () => {
     setQuestionInput('');
     setQuestionStep('aguardandoPalavraPergunta');
@@ -275,23 +241,24 @@ const CameraScreen: React.FC = () => {
   const processarPerguntaManual = () => processarPergunta(questionInput);
 
   // ===================================================================
-  // ✅ UPLOAD CORRIGIDO (SEM LOOP INFINITO)
+  // ✅ UPLOAD CORRIGIDO COM API NAMESPACED
   // ===================================================================
   const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
-    if (isSending) return;
+    if (isSending) {
+      console.log('[Camera] ⚠️ Upload já em andamento - Ignorando');
+      return;
+    }
     
-    // 1. Marca como enviando e PARA o listener explicitamente
+    console.log('[Camera] 🚀 Iniciando upload e processamento');
     setIsSending(true);
     stopListening();
 
     try {
-      // 2. Fala APENAS UMA VEZ. Não usamos setInterval.
-      // O SpeechManager vai ignorar a palavra "Processando", mas 
-      // como stopListening foi chamado, o microfone deve ficar desligado de qualquer forma.
       await speak("Processando");
 
       if (!photo.base64) throw new Error('Foto não contém base64.');
 
+      console.log('[Camera] 📤 Enviando para servidor...');
       const response = await fetch(SERVER_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
@@ -305,56 +272,105 @@ const CameraScreen: React.FC = () => {
       const description = result.description;
       if (!description) throw new Error("A resposta do servidor não continha uma descrição.");
 
+      console.log('[Camera] ✅ Resposta recebida do servidor');
+
       if (mode === 'chat' && conversaId) {
         await speak("Resposta recebida. Salvando.");
+        
+        console.log('[Camera] 💾 Salvando no Firebase Storage...');
+        
+        // ✅ CORRIGIDO: Usando API namespaced do React Native Firebase
         const filename = `photo-${Date.now()}.jpg`;
-        const ref = storage().ref(`conversas/${conversaId}/${filename}`);
-        await ref.putFile(photo.uri);
-        const url = await ref.getDownloadURL();
+        const storageRef = storage().ref(`conversas/${conversaId}/${filename}`);
+        
+        // Faz upload do URI da foto diretamente
+        await storageRef.putFile(photo.uri);
+        const url = await storageRef.getDownloadURL();
 
-        await firestore().collection('conversas').doc(conversaId).collection('mensagens').add({
-            sender: 'user', text: prompt, imageUri: url, timestamp: firestore.FieldValue.serverTimestamp()
+        console.log('[Camera] 📝 Salvando mensagens no Firestore...');
+
+        // ✅ CORRIGIDO: Usando API namespaced do Firestore
+        const conversaRef = firestore()
+          .collection('conversas')
+          .doc(conversaId);
+        
+        const mensagensRef = conversaRef.collection('mensagens');
+
+        await mensagensRef.add({
+          sender: 'user',
+          text: prompt,
+          imageUri: url,
+          timestamp: firestore.FieldValue.serverTimestamp()
         });
-        await firestore().collection('conversas').doc(conversaId).collection('mensagens').add({
-            sender: 'api', text: description, imageUri: null, timestamp: firestore.FieldValue.serverTimestamp()
+
+        await mensagensRef.add({
+          sender: 'api',
+          text: description,
+          imageUri: null,
+          timestamp: firestore.FieldValue.serverTimestamp()
         });
-        await firestore().collection('conversas').doc(conversaId).update({
-            dataAlteracao: firestore.FieldValue.serverTimestamp()
+
+        await conversaRef.update({
+          dataAlteracao: firestore.FieldValue.serverTimestamp()
         });
     
+        console.log('[Camera] ✅ Tudo salvo com sucesso!');
+        
         clearPending();
         hasProcessedAutoPhotoRef.current = false;
         
-        router.replace({
-          pathname: '/conversa',
-          params: { conversaId, titulo: 'Conversa', speakLastMessage: 'true', timestamp: Date.now().toString() }
+        // ✅ IMPORTANTE: Limpa os parâmetros antes de navegar
+        router.setParams({
+          autoTakePhoto: undefined,
+          question: undefined,
+          timestamp: undefined
         });
+        
+        setTimeout(() => {
+          router.replace({
+            pathname: '/conversa',
+            params: { 
+              conversaId, 
+              titulo: 'Conversa', 
+              speakLastMessage: 'true', 
+              timestamp: Date.now().toString() 
+            }
+          });
+        }, 100);
       } else {
         await speak(description);
       }
 
     } catch (error) {
+      console.error('[Camera] ❌ Erro no upload:', error);
       await speak("Erro ao processar.");
       Alert.alert("Erro no Upload", error instanceof Error ? error.message : "Erro desconhecido");
     } finally {
-      // 3. Limpeza Final
+      console.log('[Camera] 🏁 Finalizando upload');
       setCapturedPhoto(null);
-      
-      // ✅ Ao definir isSending = false, o hook 'globalSpeech'
-      // vai detectar a mudança e reativar o SpeechManager automaticamente 
-      // (graças ao 'enabled: ... && !isSending')
       setIsSending(false); 
       hasProcessedAutoPhotoRef.current = false;
     }
   };
 
-  // ... (Funções de Captura mantidas iguais) ...
   const takePictureForVoiceCommand = async (spokenText: string) => {
-    if (isSending || !cameraRef.current || !isCameraReady) return;
+    if (isSending || !cameraRef.current || !isCameraReady) {
+      console.log('[Camera] ⚠️ Não pode tirar foto:', { isSending, hasCamera: !!cameraRef.current, isCameraReady });
+      return;
+    }
+    
+    console.log('[Camera] 📸 Tirando foto por comando de voz');
+    
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, base64: true });
-      if (photo) await handleUploadAndProcess(photo, spokenText);
-    } catch (e) { Alert.alert("Erro", "Erro ao capturar."); }
+      if (photo) {
+        console.log('[Camera] ✅ Foto capturada, iniciando upload');
+        await handleUploadAndProcess(photo, spokenText);
+      }
+    } catch (e) { 
+      console.error('[Camera] ❌ Erro ao capturar:', e);
+      Alert.alert("Erro", "Erro ao capturar."); 
+    }
   };
 
   const takePictureForButton = async () => {
@@ -369,13 +385,12 @@ const CameraScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isFocused && pendingSpokenText) {
+    if (isFocused && pendingSpokenText && !hasProcessedAutoPhotoRef.current) {
       takePictureForVoiceCommand(pendingSpokenText);
       if (mode !== 'chat') clearPending();
     }
   }, [isFocused, pendingSpokenText, mode]);
 
-  // ... (Estilos e Render mantidos iguais) ...
   const styles = StyleSheet.create({
     container: { flex: 1, justifyContent: "center" },
     message: { textAlign: "center", paddingBottom: 10, fontSize: 16, paddingHorizontal: 20 },
