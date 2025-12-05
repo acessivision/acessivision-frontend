@@ -1,5 +1,5 @@
 // ===================================================================
-// SpeechManager.ts - VERSÃO CORRIGIDA SEM LOOP DE ERRO
+// SpeechManager.ts - VERSÃO OTIMIZADA PARA VELOCIDADE
 // ===================================================================
 
 import { ExpoSpeechRecognitionModule, ExpoSpeechRecognitionNativeEventMap } from 'expo-speech-recognition';
@@ -22,6 +22,10 @@ class SpeechManager {
   // Controle de eco
   private recentlySpoken: Set<string> = new Set();
   private lastSpokenText: string | null = null;
+  
+  // ✅ NOVO: Controle de resultados interim para modo local
+  private lastInterimText: string = '';
+  private interimTimeout: ReturnType<typeof setTimeout> | null = null;
   
   // Controle de duplicatas
   private lastProcessedResult: string | null = null;
@@ -64,18 +68,19 @@ class SpeechManager {
     console.log('[SpeechManager] 🎧 Configurando event listeners nativos');
     
     try {
-      // Listener para resultados (interim e final)
+      // ✅ OTIMIZADO: Listener para resultados (processa interim E final)
       const resultSub = ExpoSpeechRecognitionModule.addListener(
         'result',
         (event: ExpoSpeechRecognitionNativeEventMap['result']) => {
-          console.log('[SpeechManager] 📥 Event received:', {
-            isFinal: event.isFinal,
-            results: event.results?.map(r => r.transcript)
-          });
-          
           if (event.results && event.results.length > 0) {
             const transcript = event.results[0].transcript;
             
+            // ✅ Modo LOCAL: Processa resultados interim imediatamente
+            if (this.currentMode === 'local' && !event.isFinal) {
+              this.handleInterimResult(transcript);
+            }
+            
+            // Final results sempre são processados
             if (event.isFinal) {
               console.log('[SpeechManager] ✅ FINAL result:', transcript);
               this.handleResult(transcript, true);
@@ -109,6 +114,44 @@ class SpeechManager {
       
     } catch (error) {
       console.error('[SpeechManager] ❌ Erro ao configurar listeners:', error);
+    }
+  }
+  
+  // ============================================
+  // ✅ NOVO: PROCESSAMENTO DE RESULTADOS INTERIM
+  // ============================================
+  private handleInterimResult(text: string): void {
+    if (!text.trim()) return;
+    
+    const normalizedText = text.toLowerCase().trim();
+    
+    // Remove palavras do sistema
+    const systemPrompts = ['escutando', 'processando', 'aguarde'];
+    let cleanedText = normalizedText;
+    systemPrompts.forEach(prompt => {
+      const regex = new RegExp(`\\b${prompt}\\b`, 'gi');
+      cleanedText = cleanedText.replace(regex, '').trim();
+    });
+    cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+    
+    if (!cleanedText) return;
+    
+    // Ignora eco
+    if (this.recentlySpoken.has(cleanedText)) return;
+    
+    // ✅ CRÍTICO: Envia resultados interim imediatamente para callback local
+    if (this.currentMode === 'local' && this.localCallback) {
+      // Limpa timeout anterior
+      if (this.interimTimeout) {
+        clearTimeout(this.interimTimeout);
+      }
+      
+      // Se mudou significativamente, envia imediatamente
+      if (cleanedText !== this.lastInterimText) {
+        console.log('[SpeechManager] ⚡ Interim result:', cleanedText);
+        this.lastInterimText = cleanedText;
+        this.localCallback(cleanedText);
+      }
     }
   }
   
@@ -153,8 +196,6 @@ class SpeechManager {
       }
     });
     
-    // ✅ CRÍTICO: Não pausa reconhecimento por padrão
-    // Isso evita o loop de erro "client"
     const wasEnabled = this.isEnabled;
     const shouldPause = pauseRecognition && this.isRecognizing;
     
@@ -182,7 +223,6 @@ class SpeechManager {
       
       if (cleanupTimeout) clearTimeout(cleanupTimeout);
       
-      // ✅ Só retoma se havia pausado
       if (shouldPause && wasEnabled && this.isEnabled) {
         console.log('[SpeechManager] ▶️ Retomando reconhecimento após fala');
         setTimeout(() => {
@@ -248,10 +288,9 @@ class SpeechManager {
   }
   
   // ============================================
-  // RECONHECIMENTO - COM PROTEÇÃO ANTI-LOOP
+  // ✅ RECONHECIMENTO OTIMIZADO
   // ============================================
   async startRecognition(mode: 'global' | 'local' = 'global', callback?: SpeechCallback): Promise<void> {
-    // ✅ CORREÇÃO 1: Auto-solicitar permissão se não tiver
     if (!this.permissionGranted) {
       console.log('[SpeechManager] ⚠️ Permissão faltando ao iniciar. Solicitando agora...');
       const granted = await this.requestPermissions();
@@ -261,7 +300,6 @@ class SpeechManager {
       }
     }
     
-    // ... (restante das verificações de debounce permanecem iguais)
     if (this.isInitializing) return;
     const now = Date.now();
     if (now - this.lastStartTime < 500) return;
@@ -277,6 +315,7 @@ class SpeechManager {
     this.currentMode = mode;
     this.isInitializing = true;
     this.lastStartTime = now;
+    this.lastInterimText = '';
     
     if (mode === 'local' && callback) this.localCallback = callback;
     
@@ -285,13 +324,18 @@ class SpeechManager {
         // Stop preventivo
         try { ExpoSpeechRecognitionModule.stop(); } catch (e) {}
         
+        // ✅ OTIMIZADO: Configurações para velocidade máxima
         ExpoSpeechRecognitionModule.start({
           lang: 'pt-BR',
-          interimResults: mode === 'local',
-          continuous: true,
+          interimResults: mode === 'local', // Interim APENAS no modo local
+          continuous: mode === 'global', // Continuous APENAS no modo global
           requiresOnDeviceRecognition: true, 
           addsPunctuation: false,
           maxAlternatives: 1,
+          // ✅ NOVO: Configurações iOS para reduzir delay
+          ...(mode === 'local' && {
+            contextualStrings: [], // Remove contexto desnecessário
+          }),
         });
         
         this.isRecognizing = true;
@@ -303,15 +347,18 @@ class SpeechManager {
         this.isRecognizing = false;
         this.isInitializing = false;
       }
-    }, 100);
+    }, 50); // ✅ Reduzido de 100ms para 50ms
   }
   
   async stopRecognition(): Promise<void> {
     if (this.stopTimeout) clearTimeout(this.stopTimeout);
+    if (this.interimTimeout) clearTimeout(this.interimTimeout);
+    
     if (!this.isRecognizing && !this.isInitializing) return;
     
     this.intentionalStop = true;
     this.isInitializing = false;
+    this.lastInterimText = '';
     
     this.stopTimeout = setTimeout(() => {
       try {
@@ -321,7 +368,7 @@ class SpeechManager {
         this.localCallback = null;
         console.log('[SpeechManager] 🛑 Engine Parada');
       } catch (error) {}
-    }, 100);
+    }, 50); // ✅ Reduzido de 100ms para 50ms
   }
   
   // ============================================
@@ -338,7 +385,7 @@ class SpeechManager {
   }
   
   // ============================================
-  // PROCESSAMENTO DE RESULTADOS
+  // PROCESSAMENTO DE RESULTADOS FINAIS
   // ============================================
   handleResult(text: string, isFinal: boolean): void {
     if (!isFinal || !text.trim()) return;
@@ -346,26 +393,22 @@ class SpeechManager {
     const normalizedText = text.toLowerCase().trim();
     const now = Date.now();
     
-    // ✅ NOVO: Verifica se é APENAS palavras do sistema
+    // Verifica se é APENAS palavras do sistema
     const systemPrompts = ['escutando', 'processando', 'aguarde'];
     
-    // Remove palavras do sistema para verificar o que sobra
     let cleanedText = normalizedText;
     systemPrompts.forEach(prompt => {
       const regex = new RegExp(`\\b${prompt}\\b`, 'gi');
       cleanedText = cleanedText.replace(regex, '').trim();
     });
     
-    // Remove múltiplos espaços que podem ter ficado
     cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
     
-    // Se após remover as palavras do sistema não sobrou NADA, ignora completamente
     if (!cleanedText) {
       console.log('[SpeechManager] 🔇 IGNORANDO PROMPT DO SISTEMA:', normalizedText);
       return;
     }
     
-    // Se sobrou algo, usa o texto limpo e continua o processamento
     const textToProcess = cleanedText;
     
     if (textToProcess !== normalizedText) {
@@ -375,7 +418,7 @@ class SpeechManager {
       });
     }
     
-    // Filtros de duplicata (agora usando o texto limpo)
+    // Filtros de duplicata
     if (this.lastProcessedResult === textToProcess && 
         (now - this.lastProcessedTime) < 1000) {
       console.log('[SpeechManager] 🔇 IGNORANDO DUPLICATA:', textToProcess);
@@ -401,7 +444,7 @@ class SpeechManager {
       }
     }
 
-    // Ignora eco (usando texto limpo)
+    // Ignora eco
     if (this.recentlySpoken.has(textToProcess)) {
       console.log('[SpeechManager] 🔇 IGNORANDO ECO EXATO:', textToProcess);
       return;
@@ -417,14 +460,14 @@ class SpeechManager {
     
     console.log('[SpeechManager] ✅ Resultado aceito:', textToProcess);
     
-    // Modo local: chama callback específico com texto LIMPO
+    // Modo local: chama callback específico
     if (this.currentMode === 'local' && this.localCallback) {
-      console.log('[SpeechManager] 📞 Chamando callback local');
+      console.log('[SpeechManager] 📞 Chamando callback local (final)');
       this.localCallback(textToProcess);
       return;
     }
     
-    // Modo global: notifica todos os listeners com texto LIMPO
+    // Modo global: notifica todos os listeners
     console.log('[SpeechManager] 📢 Notificando', this.listeners.size, 'listeners');
     this.listeners.forEach(listener => {
       try {
@@ -452,7 +495,6 @@ class SpeechManager {
   handleEnd(): void {
     const now = Date.now();
     
-    // ✅ Proteção contra eventos duplicados
     if (now - this.lastEndTime < 500) {
       console.log('[SpeechManager] ⚠️ Evento end duplicado, ignorando');
       return;
@@ -470,12 +512,11 @@ class SpeechManager {
     this.isInitializing = false;
     this.currentMode = null;
     this.localCallback = null;
+    this.lastInterimText = '';
     
-    // ✅ Só reinicia se for modo global, estiver habilitado, não estiver falando e não foi parada intencional
     if (this.isEnabled && !this.isSpeaking && wasGlobal && !this.intentionalStop) {
       console.log('[SpeechManager] 🔄 Agendando reinício automático');
       
-      // ✅ Limpa timeout anterior se existir
       if (this.restartTimeout) {
         clearTimeout(this.restartTimeout);
       }
@@ -485,7 +526,7 @@ class SpeechManager {
           console.log('[SpeechManager] 🔄 Executando reinício automático');
           this.startRecognition('global');
         }
-      }, 500);
+      }, 300); // ✅ Reduzido de 500ms para 300ms
     } else if (this.intentionalStop) {
       console.log('[SpeechManager] ℹ️ Parada intencional, não reiniciando');
       this.intentionalStop = false;
@@ -497,24 +538,19 @@ class SpeechManager {
     if (now - this.lastErrorTime < 300) return;
     this.lastErrorTime = now;
     
-    // ✅ CORREÇÃO 2: Ignorar erros não fatais
-    // 'no-speech' = silêncio
-    // 'speech_timeout' = silêncio no iOS
-    // 'client' = cancelamento manual/conflito
     if (error === 'no-speech' || error === 'speech_timeout' || error === 'client') {
         console.log(`[SpeechManager] ⚠️ Erro não-fatal (${error}). Reiniciando silenciosamente...`);
         
         this.isRecognizing = false;
         this.isInitializing = false;
+        this.lastInterimText = '';
         
-        // Reinicia imediatamente se deveria estar ligado
         if (this.isEnabled && !this.isSpeaking && !this.intentionalStop) {
             setTimeout(() => this.startRecognition(this.currentMode || 'global'), 200);
         }
         return;
     }
     
-    // Erros reais (network, permissions, etc)
     console.error('[SpeechManager] ❌ Erro Real:', error);
     this.consecutiveErrors++;
     this.isRecognizing = false;
@@ -546,10 +582,16 @@ class SpeechManager {
     this.isEnabled = false;
     this.intentionalStop = true;
     this.consecutiveErrors = 0;
+    this.lastInterimText = '';
     
     if (this.restartTimeout) {
       clearTimeout(this.restartTimeout);
       this.restartTimeout = null;
+    }
+    
+    if (this.interimTimeout) {
+      clearTimeout(this.interimTimeout);
+      this.interimTimeout = null;
     }
     
     if (this.isRecognizing || this.isInitializing) {
@@ -587,6 +629,7 @@ class SpeechManager {
     if (this.startTimeout) clearTimeout(this.startTimeout);
     if (this.stopTimeout) clearTimeout(this.stopTimeout);
     if (this.restartTimeout) clearTimeout(this.restartTimeout);
+    if (this.interimTimeout) clearTimeout(this.interimTimeout);
     
     this.subscriptions.forEach(sub => sub.remove());
     this.subscriptions = [];
