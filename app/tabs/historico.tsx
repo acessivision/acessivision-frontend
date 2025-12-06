@@ -228,7 +228,7 @@ useEffect(() => {
       tituloProcessadoRef.current = false;
       
       setTimeout(() => {
-        speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
+        speak("Por favor, digite o título ou diga. 'título'. para informá-lo por voz.", () => {
           startListening(true);
         });
       }, 300);
@@ -281,14 +281,30 @@ useEffect(() => {
     if (modalVisible) {
       // ✅ Etapa 1: Aguardando a palavra "título"
       if (step === 'aguardandoPalavraTitulo') {
-        if (textoLower.includes('titulo') || textoLower.includes('título')) {
+        // ✅ Ignora se ainda está falando
+        if (isSpeakingRef.current) {
+          console.log('⚠️ Ignorando - TTS ainda ativo');
+          setRecognizedText('');
+          return;
+        }
+        
+        // ✅ Aceita variações da palavra "título"
+        const tituloVariations = ['titulo', 'título', 'dítulo', 'ditulo', 'titu', 'it'];
+        const containsTitulo = tituloVariations.some(v => textoLower.includes(v));
+        
+        if (containsTitulo) {
           console.log('✅ Palavra "título" detectada, mudando para aguardar o título');
           setStep('aguardandoTitulo');
           setRecognizedText('');
           tituloProcessadoRef.current = false;
           
+          stopListening();
+          isSpeakingRef.current = true;
           speak("Aguarde um momento e fale o título", () => {
-            startListening(true);
+            isSpeakingRef.current = false;
+            setTimeout(() => {
+              startListening(true);
+            }, 500);
           });
           return;
         } else {
@@ -360,14 +376,30 @@ useEffect(() => {
     if (editModalVisible) {
       // ✅ Etapa 1: Aguardando a palavra "título"
       if (editStep === 'aguardandoPalavraTitulo') {
-        if (textoLower.includes('titulo') || textoLower.includes('título')) {
+        // ✅ Ignora se ainda está falando
+        if (isSpeakingRef.current) {
+          console.log('⚠️ [Edição] Ignorando - TTS ainda ativo');
+          setRecognizedText('');
+          return;
+        }
+        
+        // ✅ Aceita variações da palavra "título"
+        const tituloVariations = ['titulo', 'título', 'dítulo', 'ditulo', 'titu', 'it'];
+        const containsTitulo = tituloVariations.some(v => textoLower.includes(v));
+        
+        if (containsTitulo) {
           console.log('✅ [Edição] Palavra "título" detectada, mudando para aguardar o título');
           setEditStep('aguardandoTitulo');
           setRecognizedText('');
           editTituloProcessadoRef.current = false;
           
+          stopListening();
+          isSpeakingRef.current = true;
           speak("Aguarde um momento e fale o novo título", () => {
-            startListening(true);
+            isSpeakingRef.current = false;
+            setTimeout(() => {
+              startListening(true);
+            }, 500);
           });
           return;
         } else {
@@ -621,16 +653,32 @@ useEffect(() => {
     console.log(`🗑️ Iniciando fluxo de exclusão por voz para: ${titulo}`);
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     
-    setConversaParaExcluir({ id: conversationId, titulo });
+    globalSpeech.stopListening();
+    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
+    
     setStep('aguardandoConfirmacaoExclusao');
     setRecognizedText('');
+    isSpeakingRef.current = false; // ✅ Reset do flag
     
+    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal
     setTimeout(() => {
-      speak(`Tem certeza que deseja excluir a conversa ${titulo}? Diga sim ou não.`, () => {
-        startListening(true);
-      });
+      setConversaParaExcluir({ id: conversationId, titulo });
+      
+      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
+      setTimeout(() => {
+        isSpeakingRef.current = true; // ✅ Marca que está falando
+        speak(`Tem certeza que deseja excluir a conversa ${titulo}? Diga sim ou não.`, () => {
+          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
+          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          setTimeout(() => {
+            console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (exclusão)');
+            startListening(true);
+          }, 800);
+        });
+      }, 500);
     }, 300);
   };
+
 
   const deletarDocumentosDaConversa = async (conversationId: string) => {
     if (!user) return;
@@ -776,19 +824,32 @@ useEffect(() => {
     console.log(`[Histórico] 🎤 Estado do microfone antes: ${wasListeningBeforeModalRef.current ? 'ATIVO' : 'INATIVO'}`);
     
     globalSpeech.stopListening();
+    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
     console.log('[Histórico] 🛑 Reconhecimento global pausado');
     
     setTituloInput('');
-    setStep('aguardandoPalavraTitulo'); // ✅ IMPORTANTE: Volta para aguardar palavra-chave
-    setModalVisible(true);
+    setStep('aguardandoPalavraTitulo');
     setIsSaving(false);
     setRecognizedText('');
     tituloProcessadoRef.current = false;
+    isSpeakingRef.current = false; // ✅ Reset do flag
     
+    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal (dá tempo do global parar)
     setTimeout(() => {
-      speak("Por favor, digite o título ou diga 'título' para informá-lo por voz.", () => {
-        startListening(true);
-      });
+      setModalVisible(true);
+      
+      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
+      setTimeout(() => {
+        isSpeakingRef.current = true; // ✅ Marca que está falando
+        speak("Por favor, digite o título ou diga. 'título'. para informá-lo por voz.", () => {
+          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
+          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          setTimeout(() => {
+            console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS');
+            startListening(true);
+          }, 800);
+        });
+      }, 500);
     }, 300);
   };
 
@@ -833,18 +894,31 @@ useEffect(() => {
     
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     globalSpeech.stopListening();
+    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
     
     setConversaParaEditar({ id: conversationId, titulo });
     setEditTituloInput(titulo);
-    setEditStep('aguardandoPalavraTitulo'); // ✅ IMPORTANTE: Volta para aguardar palavra-chave
-    setEditModalVisible(true);
+    setEditStep('aguardandoPalavraTitulo');
     setRecognizedText('');
     editTituloProcessadoRef.current = false;
+    isSpeakingRef.current = false; // ✅ Reset do flag
     
+    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal
     setTimeout(() => {
-      speak("Por favor, digite o novo título ou diga 'título' para informá-lo por voz.", () => {
-        startListening(true);
-      });
+      setEditModalVisible(true);
+      
+      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
+      setTimeout(() => {
+        isSpeakingRef.current = true; // ✅ Marca que está falando
+        speak("Por favor, digite o novo título ou diga. 'título'. para informá-lo por voz.", () => {
+          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
+          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          setTimeout(() => {
+            console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (edição)');
+            startListening(true);
+          }, 800);
+        });
+      }, 500);
     }, 300);
   };
 
@@ -904,18 +978,31 @@ useEffect(() => {
     console.log('[Histórico] 🎤 Ativando microfone de pesquisa');
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     globalSpeech.stopListening();
+    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
     
-    setIsSearchListening(true);
     setSearchStep('aguardandoPesquisa');
     setRecognizedText('');
     searchProcessadoRef.current = false;
+    isSpeakingRef.current = false; // ✅ Reset do flag
     
+    // ✅ CRÍTICO: Aguarda 300ms antes de ativar o estado
     setTimeout(() => {
-      speak("Microfone de pesquisa ativado. Fale o termo de busca.", () => {
-        startListening(true);
-      });
+      setIsSearchListening(true);
+      
+      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
+      setTimeout(() => {
+        isSpeakingRef.current = true; // ✅ Marca que está falando
+        speak("Microfone de pesquisa ativado. Fale o termo de busca.", () => {
+          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
+          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          setTimeout(() => {
+            console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (pesquisa)');
+            startListening(true);
+          }, 800);
+        });
+      }, 500);
     }, 300);
-  }, [globalSpeech.isListening, globalSpeech.stopListening, speak, startListening, setRecognizedText]);
+  }, [globalSpeech.isListening, globalSpeech.stopListening, speak, startListening, setRecognizedText, stopSpeaking]);
 
   const deactivateSearchMicrophone = useCallback(() => {
     console.log('[Histórico] 🔇 Desativando microfone de pesquisa');

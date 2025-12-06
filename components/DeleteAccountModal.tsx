@@ -46,7 +46,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
       
       setTimeout(() => {
         isSpeakingRef.current = true; // ✅ Marca que está falando
-        speak("Você tem certeza que deseja excluir sua conta permanentemente? Esta ação não pode ser desfeita. Diga confirmar para excluir ou cancelar para voltar.", () => {
+        speak("Você tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita. Diga confirmar para excluir ou cancelar para voltar.", () => {
           isSpeakingRef.current = false; // ✅ Terminou de falar
           setTimeout(() => {
             startListening(true);
@@ -77,7 +77,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     }
 
     // ✅ Ignora se contém palavras do próprio prompt do TTS
-    const ttsWords = ['você tem certeza', 'permanentemente', 'não pode ser desfeita', 'diga confirmar', 'diga cancelar'];
+    const ttsWords = ['você tem certeza', 'não pode ser desfeita', 'diga confirmar', 'diga cancelar'];
     if (ttsWords.some(word => fala.includes(word))) {
       console.log('[DeleteModal] ⚠️ Ignorando echo do TTS:', fala);
       setRecognizedText('');
@@ -304,7 +304,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
           />
           <Text style={styles.modalTitle}>Excluir Conta</Text>
           <Text style={styles.modalMessage}>
-            Tem certeza que deseja excluir sua conta permanentemente?{'\n\n'}
+            Tem certeza que deseja excluir sua conta?{'\n\n'}
             Esta ação não pode ser desfeita e todos os seus dados serão removidos.
           </Text>
 

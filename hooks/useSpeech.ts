@@ -1,4 +1,4 @@
-// hooks/useSpeech.ts - Versão Definitiva (Subscriber + Persistência)
+// hooks/useSpeech.ts - VERSÃO CORRIGIDA (Não inicia automaticamente no modo local)
 import { useState, useEffect, useCallback, useRef } from 'react';
 import SpeechManager from '../utils/speechManager';
 import { useMicrophone } from '../components/MicrophoneContext'; 
@@ -49,29 +49,36 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
   // 2. CONTROLE DO MOTOR (Ligar/Desligar)
   // ============================================
   useEffect(() => {
+    // ✅ CRÍTICO: Modo LOCAL não inicia automaticamente
+    // Ele só inicia quando startListening() é chamado explicitamente
+    if (mode === 'local') {
+      console.log('[useSpeech] ℹ️ Modo local - aguardando startListening() explícito');
+      // Cleanup para modo local
+      return () => {
+        if (enabled) {
+          const state = SpeechManager.getState();
+          if (state.isRecognizing && state.currentMode === 'local') {
+            console.log('[useSpeech] 🧹 Cleanup: parando reconhecimento local');
+            SpeechManager.stopRecognition();
+          }
+        }
+      };
+    }
+    
+    // ✅ Daqui pra baixo, mode só pode ser 'global'
     const shouldBeRunning = enabled && isMicrophoneEnabled;
     
     if (shouldBeRunning) {
       const state = SpeechManager.getState();
-      // ✅ Se deve estar rodando, inicia
       if (!state.isRecognizing && !state.isSpeaking) {
-         console.log(`[useSpeech] 🎤 Iniciando reconhecimento (${mode})`);
-         SpeechManager.startRecognition(mode);
+         console.log(`[useSpeech] 🎤 Iniciando reconhecimento (global)`);
+         SpeechManager.startRecognition('global');
       }
-    } 
-    // ✅ CRÍTICO: NÃO para o motor automaticamente!
-    // Apenas quando o componente desmontar (cleanup abaixo)
+    }
     
+    // Cleanup para modo global (não faz nada)
     return () => {
-      // ✅ Cleanup: Só para se ERA ESTE hook que estava controlando
-      if (mode === 'local' && enabled) {
-        const state = SpeechManager.getState();
-        if (state.isRecognizing && state.currentMode === 'local') {
-          console.log('[useSpeech] 🧹 Cleanup: parando reconhecimento local');
-          SpeechManager.stopRecognition();
-        }
-      }
-      // ✅ Modo global NÃO para ao desmontar - deixa para outros usarem
+      // Modo global NÃO para ao desmontar - deixa para outros usarem
     };
   }, [enabled, mode, isMicrophoneEnabled]);
 
@@ -105,6 +112,7 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
         console.log('[useSpeech] Bloqueado pelo Master Switch');
         return;
     }
+    console.log(`[useSpeech] 🎤 startListening chamado explicitamente (mode: ${localMode ? 'local' : mode})`);
     SpeechManager.startRecognition(localMode ? 'local' : mode);
   }, [mode]);
   
