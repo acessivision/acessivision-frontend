@@ -62,10 +62,10 @@ const ConversationScreen: React.FC = () => {
   const lastMessageCountRef = useRef<number>(0);
   const localListenerRef = useRef<((text: string) => void) | null>(null);
 
-  const { disableMicrophone: disableGlobalMic, enableMicrophone: enableGlobalMic } = useMicrophone();
-
   const { 
-    isMicrophoneEnabled: globalMicEnabled
+    isMicrophoneEnabled: globalMicEnabled,
+    disableMicrophone: disableGlobalMic, 
+    enableMicrophone: enableGlobalMic 
   } = useMicrophone();
 
   const { 
@@ -238,7 +238,6 @@ const ConversationScreen: React.FC = () => {
         // ✅ Reinicia reconhecimento global após desativar mic local
         setTimeout(() => {
           console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após desativação manual');
-          enableGlobalMic();
           
           setTimeout(() => {
             SpeechManager.startRecognition('global');
@@ -254,7 +253,7 @@ const ConversationScreen: React.FC = () => {
         SpeechManager.startRecognition('local');
       });
     }
-  }, [micEnabled, activeImage, globalMicEnabled, speak, stopListening, setRecognizedText, enableGlobalMic]);
+  }, [micEnabled, activeImage, globalMicEnabled, speak, stopListening, setRecognizedText]);
 
   useEffect(() => {
     if (isScreenFocused && conversaId) {
