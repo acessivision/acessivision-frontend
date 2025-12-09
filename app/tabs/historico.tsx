@@ -800,6 +800,10 @@ useEffect(() => {
           pathname: '/conversa',
           params: { conversaId: newConversationRef.id, titulo: tituloFinal }
         });
+        // ✅ CRÍTICO: Reset após navegação bem-sucedida
+        setTimeout(() => {
+          isNavigatingToConversaRef.current = false;
+        }, 1000);
       }, 500);
 
     } catch (error) {
