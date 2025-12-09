@@ -16,7 +16,8 @@ export const tutoriaisDasTelas: Record<string, string> = {
       Se preferir, use o botão de tirar foto, localizado um pouco abaixo do centro da tela, digite e envie sua pergunta. 
       Aguarde alguns segundos para a obter a resposta.`,
 
-      '/conversa': `Esta é a tela de conversa. Todas as mensagens enviadas aqui ficam salvas caso queira fazer uma consulta depois. 
+      '/conversa': `Esta é a tela de conversa. Você pode falar: "Voltar" para voltar para o histórico. 
+      Todas as mensagens enviadas aqui ficam salvas caso queira fazer uma consulta depois. 
       Você pode enviar uma nova foto, usando os comandos de voz. O AcessiVision vai abrir a câmera, tirar uma foto e salvar a resposta automaticamente. 
       Você pode também usar o botão no canto inferior esquerdo para abrir a tela da câmera. As fotos tiradas vão ficar salvas nessa conversa. 
       Você também pode enviar uma nova mensagem, sem enviar uma nova foto. O AcessiVision irá responder à mensagem usando a última foto salva na conversa. 
@@ -30,4 +31,6 @@ As telas são:
 Câmera, Login, Histórico e Menu. Para navegar, basta dizer a palavra de ativação: 'Escuta': esperar pela resposta: 'Escutando': e dizer o comando. 
 Por exemplo: 'Abre o menu', ou: 'Vai para a câmera'. O AcessiVision é flexível. Você pode pedir para mudar o tema, sair da conta, ou pedir por um tutorial a qualquer momento. 
 Para saber o que fazer em uma tela específica, diga algo como: 'Escuta... Me explica essa tela'.
+Você pode também usar o comando de voz: "Voltar"
+para voltar para a tela anterior.
 Caso queira usar os comandos de voz do leitor de tela, você deve desativar o microfone do aplicativo, usando o botão localizado no cabeçalho.`

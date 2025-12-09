@@ -449,9 +449,19 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       /^silêncio\b/,
       /^quieto\b/
     ];
+
+    const backPatterns = [
+      /^voltar\b/,
+      /^volta\b/,
+      /^retornar\b/,
+      /^retorna\b/,
+      /\bvoltar\b/,
+      /\bvolta\b/
+    ];
     
     const isWakeWord = wakePatterns.some(pattern => pattern.test(lowerText));
     const isStopCommand = stopPatterns.some(pattern => pattern.test(lowerText));
+    const isBackCommand = backPatterns.some(pattern => pattern.test(lowerText));
     
     if (isWakeWord) {
       console.log('[Voice] ✅ Wake word detected:', trimmedText);
@@ -501,6 +511,35 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       setRecognizedText("");
       return;
     }
+
+    if (isBackCommand) {
+    console.log('[Voice] ⬅️ Back command detected:', trimmedText);
+    lastProcessedCommandRef.current = trimmedText;
+    lastProcessedTimeRef.current = now;
+    
+    // Para qualquer áudio tocando
+    if (stopCurrentAudio) stopCurrentAudio();
+    
+    // Navega para trás
+    if (router.canGoBack()) {
+      speak("Voltando.", () => {
+        router.back();
+        // Reseta o estado após navegação
+        setTimeout(() => {
+          isBusyRef.current = false;
+          setVoiceState("waiting_wake");
+          setRecognizedText("");
+        }, 600); // Aguarda navegação completar
+      });
+    } else {
+      speak("Não é possível voltar.", () => {
+        isBusyRef.current = false;
+        setVoiceState("waiting_wake");
+        setRecognizedText("");
+      });
+    }
+    return;
+  }
     
     if (isBusyRef.current) {
       return console.log('[Voice] Busy, skipping command:', trimmedText);
