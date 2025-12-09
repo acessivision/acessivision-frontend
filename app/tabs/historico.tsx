@@ -1043,55 +1043,308 @@ useEffect(() => {
   // ESTILOS
   // ===================================================================
   const styles = StyleSheet.create({
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: cores.fundo },
-    loginMessage: { fontSize: 18, textAlign: 'center', color: cores.texto },
-    container: { flex: 1, backgroundColor: cores.fundo },
-    searchContainer: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: cores.barrasDeNavegacao, borderBottomWidth: 1, borderBottomColor: 'rgba(255, 255, 255, 0.1)' },
-    searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: cores.fundo, borderRadius: 8, borderWidth: 1, borderColor: cores.texto, paddingHorizontal: 12 },
-    searchInput: { flex: 1, paddingVertical: 10, paddingHorizontal: 8, fontSize: getFontSize('medium'), color: cores.texto },
-    searchIcon: { marginRight: 8 },
-    searchMicButton: { padding: 8 },
-    clearButton: { padding: 4 },
-    listContainer: { flex: 1, padding: 16 },
-    item: { padding: 16, marginBottom: 8, borderRadius: 8, backgroundColor: cores.barrasDeNavegacao, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    itemContent: { flex: 1, marginRight: 12 },
-    itemText: { fontSize: getFontSize('medium'), color: cores.texto, fontWeight: '500' },
-    itemDateText: { fontSize: getFontSize('small'), color: cores.texto || '#888', marginTop: 4 },
-    itemActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    editButton: { padding: 8, margin: -8, marginRight: 4 },
-    deleteButton: { padding: 8, margin: -8 },
-    emptyMessage: { fontSize: getFontSize('medium'), textAlign: 'center', marginTop: 40, color: cores.texto },
-    createButton: { backgroundColor: cores.barrasDeNavegacao, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 25, margin: 16, alignItems: 'center', justifyContent: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
-    createButtonText: { color: cores.texto, fontSize: getFontSize('medium'), fontWeight: 'bold' },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    modalContent: { backgroundColor: cores.fundo, borderRadius: 20, padding: 28, width: '100%', maxWidth: 500, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: getFontSize('large'), fontWeight: 'bold', color: cores.texto },
-    closeButton: { padding: 4 },
-    inputContainer: { marginBottom: 20 },
-    label: { fontSize: getFontSize('medium'), color: cores.texto, marginBottom: 8, fontWeight: '500' },
-    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: cores.texto },
-    input: { flex: 1, paddingHorizontal: 16, paddingVertical: 12, fontSize: getFontSize('medium'), color: '#000' },
-    micButton: { padding: 12, marginRight: 4 },
-    listeningIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: cores.fundo, borderRadius: 8, marginBottom: 16 },
-    listeningText: { marginLeft: 8, color: cores.texto, fontSize: getFontSize('medium'), fontWeight: '500' },
-    modalActions: { flexDirection: 'row', gap: 12 },
-    cancelButton: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: cores.texto, alignItems: 'center' },
-    cancelButtonText: { color: cores.texto, fontSize: getFontSize('medium'), fontWeight: '600' },
-    saveButton: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: cores.texto, alignItems: 'center', justifyContent: 'center' },
-    saveButtonText: { color: cores.fundo, fontSize: getFontSize('medium'), fontWeight: '600' },
-    savingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, backgroundColor: cores.texto, borderRadius: 8, marginTop: 12 },
-    savingText: { marginLeft: 8, color: cores.fundo, fontSize: getFontSize('medium'), fontWeight: '500' },
-    deleteOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20, zIndex: 1000 },
-    deleteModal: { backgroundColor: cores.fundo, borderRadius: 20, padding: 32, width: '100%', maxWidth: 500, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
-    deleteTitle: { fontSize: getFontSize('large'), fontWeight: 'bold', marginBottom: 16, textAlign: 'center' },
-    deleteMessage: { fontSize: getFontSize('medium'), textAlign: 'center', marginBottom: 8, lineHeight: 24 },
-    recognizedTextBox: { padding: 12, borderRadius: 8, width: '100%' },
-    recognizedTextLabel: { fontSize: getFontSize('small'), fontWeight: '600', marginBottom: 4 },
-    recognizedTextContent: { fontSize: getFontSize('medium'), fontStyle: 'italic' },
-    deleteButtonsContainer: { flexDirection: 'row', marginTop: 20, gap: 12, width: '100%' },
-    deleteActionButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, borderWidth: 2, borderColor: cores.texto, alignItems: 'center', justifyContent: 'center' },
-    deleteActionText: { fontSize: getFontSize('medium'), fontWeight: '600', textAlign: 'center', color: '#000' },
+    centered: { 
+      flex: 1, 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      padding: 20, 
+      backgroundColor: cores.fundo 
+    },
+    loginMessage: { 
+      fontSize: 18, 
+      textAlign: 'center', 
+      color: cores.texto 
+    },
+    container: { 
+      flex: 1, 
+      backgroundColor: cores.fundo 
+    },
+    searchContainer: { 
+      paddingHorizontal: 16, 
+      paddingVertical: 12, 
+      backgroundColor: cores.barrasDeNavegacao, 
+      borderBottomWidth: 1, 
+      borderBottomColor: 'rgba(255, 255, 255, 0.1)' 
+    },
+    searchWrapper: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      backgroundColor: cores.fundo, 
+      borderRadius: 8, 
+      borderWidth: 1, 
+      borderColor: cores.texto, 
+      paddingHorizontal: 12 
+    },
+    searchInput: { 
+      flex: 1, 
+      paddingVertical: 10, 
+      paddingHorizontal: 8, 
+      fontSize: getFontSize('medium'), 
+      color: cores.texto 
+    },
+    searchIcon: { 
+      marginRight: 8 
+    },
+    searchMicButton: { 
+      padding: 8 
+    },
+    clearButton: { 
+      padding: 4 
+    },
+    listContainer: { 
+      padding: 16, 
+      paddingBottom: 8 
+    },
+    item: { 
+      padding: 16, 
+      marginBottom: 8, 
+      borderRadius: 8, 
+      backgroundColor: cores.barrasDeNavegacao, 
+      flexDirection: 'row', 
+      justifyContent: 'space-between', 
+      alignItems: 'center' 
+    },
+    itemContent: { 
+      flex: 1, 
+      marginRight: 12 
+    },
+    itemText: { 
+      fontSize: getFontSize('medium'), 
+      color: cores.texto, 
+      fontWeight: '500' 
+    },
+    itemDateText: {
+      fontSize: getFontSize('small'), 
+      color: cores.texto || '#888', 
+      marginTop: 4 
+    },
+    itemActions: { 
+      flexDirection: 'row', alignItems: 'center', gap: 4 },
+    editButton: { 
+      padding: 8, 
+      margin: -8, 
+      marginRight: 4 
+    },
+    deleteButton: { 
+      padding: 8, 
+      margin: -8 
+    },
+    emptyMessage: { 
+      fontSize: getFontSize('medium'), 
+      textAlign: 'center', 
+      marginTop: 40, 
+      color: cores.texto 
+    },
+    createButton: { 
+      backgroundColor: cores.barrasDeNavegacao, 
+      paddingVertical: 14, 
+      paddingHorizontal: 20, 
+      borderRadius: 25, 
+      margin: 16,
+      marginBottom: 24,
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      shadowColor: "#000", 
+      shadowOffset: { width: 0, height: 2 }, 
+      shadowOpacity: 0.25, 
+      shadowRadius: 3.84, 
+      elevation: 5 
+    },
+    createButtonText: { 
+      color: cores.texto, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: 'bold' 
+    },
+    modalOverlay: { 
+      flex: 1, 
+      backgroundColor: 'rgba(0,0,0,0.7)', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      padding: 20 
+    },
+    modalContent: { 
+      backgroundColor: cores.fundo, 
+      borderRadius: 20, 
+      padding: 28, width: '100%', 
+      maxWidth: 500, shadowColor: "#000", 
+      shadowOffset: { width: 0, height: 4 }, 
+      shadowOpacity: 0.3, 
+      shadowRadius: 5, 
+      elevation: 8 
+    },
+    modalHeader: { 
+      flexDirection: 'row', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      marginBottom: 20 
+    },
+    modalTitle: { 
+      fontSize: getFontSize('large'), 
+      fontWeight: 'bold', 
+      color: cores.texto 
+    },
+    closeButton: { 
+      padding: 4 
+
+    },
+    inputContainer: { 
+      marginBottom: 20 
+
+    },
+    label: { 
+      fontSize: getFontSize('medium'),
+      color: cores.texto, 
+      marginBottom: 8, 
+      fontWeight: '500' 
+    },
+    inputWrapper: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      backgroundColor: '#fff', 
+      borderRadius: 8, 
+      borderWidth: 1, 
+      borderColor: cores.texto 
+    },
+    input: { 
+      flex: 1, 
+      paddingHorizontal: 16, 
+      paddingVertical: 12, 
+      fontSize: getFontSize('medium'), 
+      color: '#000' 
+    },
+    micButton: { 
+      padding: 12, 
+      marginRight: 4 
+    },
+    listeningIndicator: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      paddingVertical: 12, 
+      backgroundColor: cores.fundo, 
+      borderRadius: 8, 
+      marginBottom: 16 
+    },
+    listeningText: { 
+      marginLeft: 8, 
+      color: cores.texto, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '500' 
+    },
+    modalActions: { 
+      flexDirection: 'row', 
+      gap: 12 
+    },
+    cancelButton: { 
+      flex: 1, 
+      paddingVertical: 12, 
+      borderRadius: 8, 
+      borderWidth: 1, 
+      borderColor: cores.texto, 
+      alignItems: 'center' 
+    },
+    cancelButtonText: { 
+      color: cores.texto, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '600' 
+    },
+    saveButton: { 
+      flex: 1, 
+      paddingVertical: 12, 
+      borderRadius: 8, 
+      backgroundColor: cores.texto, 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    },
+    saveButtonText: { 
+      color: cores.fundo, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '600' 
+    },
+    savingIndicator: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      paddingVertical: 16, 
+      backgroundColor: cores.texto, 
+      borderRadius: 8, 
+      marginTop: 12 
+    },
+    savingText: { 
+      marginLeft: 8, 
+      color: cores.fundo, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '500' 
+    },
+    deleteOverlay: { 
+      ...StyleSheet.absoluteFillObject, 
+      backgroundColor: 'rgba(0,0,0,0.8)', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      padding: 20, 
+      zIndex: 1000 
+    },
+    deleteModal: { 
+      backgroundColor: cores.fundo, 
+      borderRadius: 20, 
+      padding: 32, 
+      width: '100%', 
+      maxWidth: 500, 
+      alignItems: 'center', 
+      shadowColor: "#000", 
+      shadowOffset: { width: 0, height: 4 }, 
+      shadowOpacity: 0.3, 
+      shadowRadius: 5, 
+      elevation: 8 
+    },
+    deleteTitle: { 
+      fontSize: getFontSize('large'), 
+      fontWeight: 'bold', 
+      marginBottom: 16, 
+      textAlign: 'center' 
+    },
+    deleteMessage: { 
+      fontSize: getFontSize('medium'), 
+      textAlign: 'center', 
+      marginBottom: 8, 
+      lineHeight: 24 
+    },
+    recognizedTextBox: { 
+      padding: 12, 
+      borderRadius: 8, 
+      width: '100%' 
+    },
+    recognizedTextLabel: { 
+      fontSize: getFontSize('small'), 
+      fontWeight: '600', 
+      marginBottom: 4 
+    },
+    recognizedTextContent: { 
+      fontSize: getFontSize('medium'), 
+      fontStyle: 'italic' 
+    },
+    deleteButtonsContainer: { 
+      flexDirection: 'row', 
+      marginTop: 20, 
+      gap: 12, 
+      width: '100%' 
+    },
+    deleteActionButton: { 
+      flex: 1, 
+      paddingVertical: 12, 
+      paddingHorizontal: 16, 
+      borderRadius: 8, 
+      borderWidth: 2, 
+      borderColor: cores.texto, 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    },
+    deleteActionText: { 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '600', 
+      textAlign: 'center', 
+      color: '#000' 
+    },
   });
 
   // ===================================================================
@@ -1118,123 +1371,130 @@ useEffect(() => {
   const editAguardandoPalavraTitulo = editStep === 'aguardandoPalavraTitulo';
 
   return (
-    <View style={[styles.container, { flex: 1 }]}>
-      {/* BARRA DE PESQUISA */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchWrapper}>
-          <Ionicons name="search" size={getIconSize('medium')} color={cores.texto} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Pesquisar conversas..."
-            placeholderTextColor="#999"
-            value={searchText}
-            onChangeText={(text) => {
-              setSearchText(text);
-              if (isSearchListening) {
-                setIsSearchListening(false);
-                setSearchStep('idle');
-                stopListening();
-                searchProcessadoRef.current = false;
-              }
-            }}
-            autoCorrect={false}
-            accessibilityLabel="Pesquisar conversas"
-            editable={!isSearchListening}
-          />
-          {searchText.length > 0 && !isSearchListening && (
-            <TouchableOpacity style={styles.clearButton} onPress={() => setSearchText('')} accessible={true} accessibilityLabel="Limpar pesquisa" accessibilityRole="button">
-              <Ionicons name="close-circle" size={getIconSize('medium')} color={cores.texto} />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity 
-            style={styles.searchMicButton} 
-            onPress={toggleSearchMicrophone}
-            accessible={true} 
-            accessibilityLabel={isSearchListening ? "Desativar microfone de pesquisa" : "Pesquisar por voz"} 
-            accessibilityRole="button"
-          >
-            <Ionicons 
-              name={isSearchListening ? "mic" : "mic-outline"} 
-              size={getIconSize('medium')} 
-              color={isSearchListening ? '#FF453A' : cores.texto} 
-            />
+  <View style={styles.container}>
+    {/* BARRA DE PESQUISA */}
+    <View style={styles.searchContainer}>
+      <View style={styles.searchWrapper}>
+        <Ionicons name="search" size={getIconSize('medium')} color={cores.texto} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Pesquisar conversas..."
+          placeholderTextColor="#999"
+          value={searchText}
+          onChangeText={(text) => {
+            setSearchText(text);
+            if (isSearchListening) {
+              setIsSearchListening(false);
+              setSearchStep('idle');
+              stopListening();
+              searchProcessadoRef.current = false;
+            }
+          }}
+          autoCorrect={false}
+          accessibilityLabel="Pesquisar conversas"
+          editable={!isSearchListening}
+        />
+        {searchText.length > 0 && !isSearchListening && (
+          <TouchableOpacity style={styles.clearButton} onPress={() => setSearchText('')} accessible={true} accessibilityLabel="Limpar pesquisa" accessibilityRole="button">
+            <Ionicons name="close-circle" size={getIconSize('medium')} color={cores.texto} />
           </TouchableOpacity>
-        </View>
-        {isSearchListening && (
-          <View style={[styles.listeningIndicator, { marginTop: 8 }]}>
-            <ActivityIndicator size="small" color={cores.texto} />
-            <Text style={styles.listeningText}>
-              {recognizedText ? `"${recognizedText}"` : 'Ouvindo termo de busca...'}
-            </Text>
-          </View>
         )}
-      </View>
-
-      {/* LISTA DE CONVERSAS */}
-      <View style={{ flex: 1 }}>
-        {filteredConversations.length > 0 ? (
-          <FlatList
-            data={filteredConversations}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContainer}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                onPress={() => router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } })}
-                style={styles.item}
-                accessibilityLabel={`Conversa: ${toTitleCase(item.titulo || 'Sem título')}. Alterado em: ${item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando'}.`}
-                accessibilityActions={[
-                  { name: 'activate', label: 'Abrir Conversa' },
-                  { name: 'magicTap', label: 'Editar Conversa' },
-                  { name: 'delete', label: 'Excluir Conversa' }
-                ]}
-                onAccessibilityAction={(event) => {
-                  const actionName = event.nativeEvent.actionName;
-                  if (actionName === 'activate') {
-                    router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } });
-                  } else if (actionName === 'magicTap') {
-                    editarConversa(item.id, item.titulo);
-                  } else if (actionName === 'delete') {
-                    excluirConversa(item.id, item.titulo);
-                  }
-                }}
-              >
-                <View style={styles.itemContent}>
-                  <Text style={styles.itemText}>{String(toTitleCase(item.titulo || 'Sem título'))}</Text>
-                  <Text style={styles.itemDateText}>Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}</Text>
-                </View>
-                <View style={styles.itemActions}>
-                  <TouchableOpacity 
-                    style={styles.editButton} 
-                    onPress={(e) => { e.stopPropagation(); editarConversa(item.id, item.titulo); }}
-                    accessible={true}
-                    accessibilityLabel='Editar Título'
-                    accessibilityRole='button'
-                  >
-                    <MaterialIcons name="edit" size={getIconSize('medium')} color={cores.texto} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.deleteButton} 
-                    onPress={(e) => { e.stopPropagation(); excluirConversa(item.id, item.titulo); }}
-                    accessible={true}
-                    accessibilityLabel='Excluir Conversa'
-                    accessibilityRole='button'
-                  >
-                    <Ionicons name="trash-outline" size={getIconSize('medium')} color={cores.perigo} />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            )}
+        <TouchableOpacity 
+          style={styles.searchMicButton} 
+          onPress={toggleSearchMicrophone}
+          accessible={true} 
+          accessibilityLabel={isSearchListening ? "Desativar microfone de pesquisa" : "Pesquisar por voz"} 
+          accessibilityRole="button"
+        >
+          <Ionicons 
+            name={isSearchListening ? "mic" : "mic-outline"} 
+            size={getIconSize('medium')} 
+            color={isSearchListening ? '#FF453A' : cores.texto} 
           />
-        ) : (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={styles.emptyMessage}>{searchText.length > 0 ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa salva ainda'}</Text>
-          </View>
-        )}
-
-        <TouchableOpacity style={styles.createButton} onPress={abrirModal} accessibilityRole='button' accessibilityLabel="Criar nova conversa">
-          <Text style={styles.createButtonText}>Criar Nova Conversa</Text>
         </TouchableOpacity>
       </View>
+      {isSearchListening && (
+        <View style={[styles.listeningIndicator, { marginTop: 8 }]}>
+          <ActivityIndicator size="small" color={cores.texto} />
+          <Text style={styles.listeningText}>
+            {recognizedText ? `"${recognizedText}"` : 'Ouvindo termo de busca...'}
+          </Text>
+        </View>
+      )}
+    </View>
+
+    {/* LISTA DE CONVERSAS */}
+    {filteredConversations.length > 0 ? (
+      <FlatList
+        data={filteredConversations}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContainer}
+        style={{ flex: 1 }}
+        renderItem={({ item }) => (
+          <TouchableOpacity 
+            onPress={() => router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } })}
+            style={styles.item}
+            accessibilityLabel={`Conversa: ${toTitleCase(item.titulo || 'Sem título')}. Alterado em: ${item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando'}.`}
+            accessibilityActions={[
+              { name: 'activate', label: 'Abrir Conversa' },
+              { name: 'magicTap', label: 'Editar Conversa' },
+              { name: 'delete', label: 'Excluir Conversa' }
+            ]}
+            onAccessibilityAction={(event) => {
+              const actionName = event.nativeEvent.actionName;
+              if (actionName === 'activate') {
+                router.push({ pathname: '/conversa', params: { conversaId: item.id, titulo: item.titulo } });
+              } else if (actionName === 'magicTap') {
+                editarConversa(item.id, item.titulo);
+              } else if (actionName === 'delete') {
+                excluirConversa(item.id, item.titulo);
+              }
+            }}
+          >
+            <View style={styles.itemContent}>
+              <Text style={styles.itemText}>{String(toTitleCase(item.titulo || 'Sem título'))}</Text>
+              <Text style={styles.itemDateText}>Alterado em: {String(item.dataAlteracao?.toDate?.()?.toLocaleString?.() || 'Carregando...')}</Text>
+            </View>
+            <View style={styles.itemActions}>
+              <TouchableOpacity 
+                style={styles.editButton} 
+                onPress={(e) => { e.stopPropagation(); editarConversa(item.id, item.titulo); }}
+                accessible={true}
+                accessibilityLabel='Editar Título'
+                accessibilityRole='button'
+              >
+                <MaterialIcons name="edit" size={getIconSize('medium')} color={cores.texto} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.deleteButton} 
+                onPress={(e) => { e.stopPropagation(); excluirConversa(item.id, item.titulo); }}
+                accessible={true}
+                accessibilityLabel='Excluir Conversa'
+                accessibilityRole='button'
+              >
+                <Ionicons name="trash-outline" size={getIconSize('medium')} color={cores.perigo} />
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        )}
+      />
+    ) : (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={styles.emptyMessage}>
+          {searchText.length > 0 ? 'Nenhuma conversa encontrada' : 'Nenhuma conversa salva ainda'}
+        </Text>
+      </View>
+    )}
+
+    {/* BOTÃO FIXO - SEMPRE VISÍVEL */}
+    <TouchableOpacity 
+      style={styles.createButton} 
+      onPress={abrirModal} 
+      accessibilityRole='button' 
+      accessibilityLabel="Criar nova conversa"
+    >
+      <Text style={styles.createButtonText}>Criar Nova Conversa</Text>
+    </TouchableOpacity>
 
       {/* OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {conversaParaExcluir && aguardandoConfirmacao && (
