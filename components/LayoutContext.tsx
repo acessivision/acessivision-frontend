@@ -1,4 +1,3 @@
-// components/LayoutContext.tsx
 import React, { createContext, useState, useContext, ReactNode } from 'react';
 
 interface LayoutContextProps {
@@ -9,7 +8,7 @@ interface LayoutContextProps {
 const LayoutContext = createContext<LayoutContextProps | undefined>(undefined);
 
 export const LayoutProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [headerHeight, setHeaderHeight] = useState(60); // Default fallback height
+  const [headerHeight, setHeaderHeight] = useState(60);
 
   return (
     <LayoutContext.Provider value={{ headerHeight, setHeaderHeight }}>

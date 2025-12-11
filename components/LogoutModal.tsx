@@ -35,7 +35,6 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
     mode: 'local',
   });
 
-  // Reset quando abre/fecha
   useEffect(() => {
     if (visible) {
       setStep('aguardandoConfirmacao');
@@ -52,13 +51,11 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
     }
   }, [visible]);
 
-  // Processa resposta de voz
   useEffect(() => {
     if (!recognizedText.trim() || step !== 'aguardandoConfirmacao') return;
 
     const fala = recognizedText.toLowerCase().trim();
 
-    // Ignora leituras de botões pelo TalkBack
     const ignoredPhrases = ['cancelar botão', 'sair botão', 'excluir botão'];
     if (ignoredPhrases.includes(fala)) {
       console.log('[LogoutModal] Ignorando leitura de botão:', fala);
@@ -99,7 +96,6 @@ export default function LogoutModal({ visible, onClose, onConfirm }: LogoutModal
 
   }, [recognizedText, step, visible]);
 
-  // Cleanup
   useEffect(() => {
     return () => {
       if (logoutTimeoutRef.current) {

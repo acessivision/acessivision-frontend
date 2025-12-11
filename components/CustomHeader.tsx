@@ -4,7 +4,7 @@ import {
   Text, 
   TouchableOpacity, 
   StyleSheet,
-  LayoutChangeEvent // Adicionado que estava faltando no seu import
+  LayoutChangeEvent
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -41,36 +41,27 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
 
     const [logoutModalVisible, setLogoutModalVisible] = useState(false);
     
-    // ✅ NOVO: Usar o estado global do microfone
     const { isMicrophoneEnabled, toggleMicrophone: toggleGlobalMic } = useMicrophone();
     
     const { reproduzirTutorial } = useTutorial();
 
-    // Hook para escuta local (apenas para o modal de logout, se necessário)
-    // Nota: O header em si não precisa "ouvir" comandos o tempo todo, 
-    // quem ouve comandos globais é a tela ativa.
     const { 
       speak,
       stopListening,
       stopSpeaking 
     } = useSpeech({
-      enabled: false, // O Header não ouve ativamente, só fala feedback
+      enabled: false,
       mode: 'local',
     });
 
     const handleToggleMicrofone = () => {
-      // ✅ Lê o estado ATUAL antes de alterá-lo
       const estadoAtual = isMicrophoneEnabled;
       
-      // Alterna o estado GLOBAL do microfone
       toggleGlobalMic();
       
-      // ✅ CORREÇÃO: Usa o estado capturado para dar o feedback correto
-      // Se estava ligado (true), agora vai desligar
       if (estadoAtual) {
         speak("Microfone desativado.");
       } else {
-        // Se estava desligado (false), agora vai ligar
         speak("Microfone ativado.");
       }
     };
@@ -100,7 +91,7 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
     
     const handleLogout = async () => {
       await logout();
-      fecharModalLogout(); // Fecha modal após logout
+      fecharModalLogout();
     };
 
     const styles = StyleSheet.create({
@@ -163,14 +154,13 @@ const CustomHeader = forwardRef<CustomHeaderHandle, CustomHeaderProps>(
           <TouchableOpacity
             onPress={handleToggleMicrofone}
             style={styles.iconButton}
-            // ✅ Usa o estado global para definir o ícone e label
             accessibilityLabel={isMicrophoneEnabled ? "Desativar Microfone" : "Ativar Microfone"}
             accessibilityRole="button"
           >
             <Ionicons 
               name={isMicrophoneEnabled ? "mic" : "mic-off"}
               size={getIconSize('medium')} 
-              color={isMicrophoneEnabled ? cores.texto : cores.icone} // Destaque visual quando ativo
+              color={isMicrophoneEnabled ? cores.texto : cores.icone}
             />
           </TouchableOpacity>
         </View>

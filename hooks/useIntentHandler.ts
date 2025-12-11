@@ -1,7 +1,3 @@
-// ===================================================================
-// CORREÇÃO: useIntentHandler.ts - Mantém microfone ativo durante navegação
-// ===================================================================
-
 import { useCallback, useRef, Dispatch, SetStateAction } from 'react';
 import { useRouter, usePathname, Href } from 'expo-router';
 import { AccessibilityInfo } from 'react-native';
@@ -56,7 +52,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
   const { user, logout } = useAuth();
   
 
-  // ✅ NOVO: Verifica se TalkBack está ativo
   const checkTalkBackActive = useCallback(async () => {
     try {
       return await AccessibilityInfo.isScreenReaderEnabled();
@@ -65,18 +60,15 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     }
   }, []);
 
-  // ✅ MODIFICADO: Reinicia listener sem desabilitar
   const restartListeningAfterSpeak = useCallback(async () => {
     console.log("[Intent] Ação/Fala concluída, retornando ao estado waiting_wake...");
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
     setRecognizedText("");
     
-    // ✅ NÃO chama startListening() - o SpeechManager já está ativo
     console.log("[Intent] Listener continua ativo em background.");
   }, [setVoiceState, setRecognizedText, isBusyRef]);
     
-  // ✅ MODIFICADO: Navegação SEM desabilitar microfone
   const checkAndNavigate = useCallback(async (targetPath: AppPath, alreadyMessage: string) => {
     const now = Date.now();
     
@@ -93,33 +85,23 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     
     console.log(`[Voice] 🚀 Iniciando navegação para ${targetPath}`);
     
-    // ✅ 1. REMOVIDO: Não desabilita mais o SpeechManager
-    // O microfone continua ativo em background
-    
-    // ✅ 2. Verifica se TalkBack está ativo
     const isTalkBackActive = await checkTalkBackActive();
     console.log(`[Voice] TalkBack status: ${isTalkBackActive ? 'ATIVO' : 'INATIVO'}`);
     
-    // ✅ 3. Navega
     router.push(targetPath as Href);
     lastNavigationRef.current = { route: targetPath, timestamp: now };
     
-    // ✅ 4. Aguarda navegação + renderização + TalkBack anunciar
     if (isTalkBackActive) {
-      // Aguarda: navegação (500ms) + CustomHeader forçar foco (500ms) + TalkBack falar (~2-3s)
       console.log('[Voice] ⏳ Aguardando navegação e anúncio do TalkBack...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // ✅ REDUZIDO: De 3.5s para 3s
+      await new Promise(resolve => setTimeout(resolve, 3000));
     } else {
-      // Sem TalkBack, aguarda apenas navegação
-      await new Promise(resolve => setTimeout(resolve, 600)); // ✅ REDUZIDO: De 800ms para 600ms
+      await new Promise(resolve => setTimeout(resolve, 600));
     }
     
-    // ✅ 5. Retorna ao estado waiting_wake (mas mantém reconhecimento ativo)
     console.log('[Voice] ✅ Navegação concluída, retornando ao estado waiting_wake');
     isBusyRef.current = false;
     setVoiceState("waiting_wake");
     setRecognizedText("");
-    // ✅ NÃO reativa - já está ativo!
     
     return true;
   }, [pathname, router, speak, restartListeningAfterSpeak, isBusyRef, setVoiceState, setRecognizedText, checkTalkBackActive]);
@@ -143,7 +125,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       }
     }
 
-    // ENVIAR ÁUDIO
     if (intent === 'enviar_audio') {
       if (pathname.startsWith('/conversa')) {
         console.log('[Intent] 🎙️ Ativando microfone para enviar áudio na conversa');
@@ -161,7 +142,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // ATIVAR MICROFONE
     if (intent === 'ativar_microfone') {
       if (pathname.startsWith('/conversa')) {
         console.log('[Intent] 🎤 Ativando microfone na conversa');
@@ -179,7 +159,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // TIRAR FOTO
     if (intent === 'tirar_foto') {
       setVoiceState('waiting_wake');
       setRecognizedText('');
@@ -200,7 +179,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // ABRIR CÂMERA
     if (intent === 'abrir_camera') {
       if (pathname.startsWith('/conversa') && onOpenCamera) {
         console.log('[Intent] 📷 Abrindo câmera na conversa (sem tirar foto)');
@@ -213,7 +191,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       return;
     }
 
-    // OUTROS INTENTS COM NAVEGAÇÃO
     switch (intent) {
       case 'ir_para_historico':
         await checkAndNavigate('/tabs/historico', "Você já está no histórico.");
@@ -266,7 +243,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       case 'tutorial':
         console.log('[Intent] 📚 Iniciando tutorial geral');
         
-        // ✅ Desabilita microfone
         SpeechManager.disable();
         console.log('[Intent] 🔇 Microfone DESABILITADO para tutorial');
         
@@ -293,11 +269,9 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
           targetPath = '/tabs';
         }
 
-        // ✅ CORREÇÃO: Usar checkAndNavigate e aguardar navegação completar
         if (targetPath && pathname !== targetPath) {
           console.log(`[Tutorial] Navegando para ${targetPath} antes de explicar.`);
           
-          // ✅ Desabilita microfone ANTES de navegar
           SpeechManager.disable();
           console.log('[Intent] 🔇 Microfone DESABILITADO antes de navegar para tutorial');
           
@@ -305,20 +279,17 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
           setVoiceState("waiting_wake");
           setRecognizedText("");
           
-          // ✅ Aguarda navegação completar
           const navigated = await checkAndNavigate(
             targetPath, 
             `Você já está ${targetPath === '/tabs/historico' ? 'no histórico' : targetPath === '/tabs/menu' ? 'no menu' : 'na câmera'}.`
           );
           
           if (!navigated) {
-            // Já estava na tela, apenas explica
             textoTutorial = tutoriaisDasTelas[pathname] || tutorialGeral;
             reproduzirTutorial(textoTutorial);
             return;
           }
           
-          // ✅ Aguarda renderização + foco antes de iniciar tutorial
           await new Promise(resolve => setTimeout(resolve, 800));
           
           textoTutorial = tutoriaisDasTelas[targetPath] || tutorialGeral;
@@ -326,7 +297,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         else {
           console.log('[Tutorial] Explicando tela atual.');
           
-          // ✅ Desabilita microfone
           SpeechManager.disable();
           console.log('[Intent] 🔇 Microfone DESABILITADO para tutorial de tela');
           
@@ -346,7 +316,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
           return;
         }
         
-        // Se já está no menu, abre o modal diretamente
         if (pathname === '/tabs/menu' || pathname === '/tabs/menu/') {
           console.log('[Intent] Já está no menu, enviando intent pendente');
           if (setPendingContext) {
@@ -354,7 +323,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
           }
           speak("Abrindo confirmação de exclusão de conta.", restartListeningAfterSpeak);
         } else {
-          // Navega para o menu e depois abre o modal
           console.log('[Intent] Navegando para menu para excluir conta');
           if (setPendingContext) {
             setPendingContext({ mode: 'excluir_conta' });
@@ -473,7 +441,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
         if (stopCurrentAudio) stopCurrentAudio();
         isBusyRef.current = false;
         
-        // ✅ SIMPLIFICADO: Apenas reseta o estado, não para/reinicia listener
         setVoiceState("waiting_wake");
         setRecognizedText("");
         return;
@@ -482,7 +449,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       if (voiceState === "waiting_wake") {
         if (stopCurrentAudio) stopCurrentAudio();
         
-        // ✅ Verifica se speak está disponível
         if (speak) {
           speak("Escutando", () => {
             setVoiceState("listening_command");
@@ -506,7 +472,6 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
       if (stopCurrentAudio) stopCurrentAudio();
       isBusyRef.current = false;
       
-      // ✅ SIMPLIFICADO: Apenas reseta o estado
       setVoiceState("waiting_wake");
       setRecognizedText("");
       return;
@@ -517,19 +482,16 @@ export function useIntentHandler(props: UseIntentHandlerProps) {
     lastProcessedCommandRef.current = trimmedText;
     lastProcessedTimeRef.current = now;
     
-    // Para qualquer áudio tocando
     if (stopCurrentAudio) stopCurrentAudio();
     
-    // Navega para trás
     if (router.canGoBack()) {
       speak("Voltando.", () => {
         router.back();
-        // Reseta o estado após navegação
         setTimeout(() => {
           isBusyRef.current = false;
           setVoiceState("waiting_wake");
           setRecognizedText("");
-        }, 600); // Aguarda navegação completar
+        }, 600);
       });
     } else {
       speak("Não é possível voltar.", () => {

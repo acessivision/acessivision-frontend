@@ -9,7 +9,6 @@ export function useAudioSetup() {
   const lastSpokenTextRef = useRef<string | null>(null);
   const speakTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  // Configurar áudio no mount
   useEffect(() => {
     const configureAudio = async () => {
       try {
@@ -37,11 +36,9 @@ export function useAudioSetup() {
     console.log('[Voice] Audio player unregistered');
   }, []);
 
-  // ✅ FUNÇÃO SPEAK COM PAUSA DO RECONHECIMENTO
   const speak = useCallback((text: string, onDone?: () => void) => {
     console.log('[useAudioSetup] 🔊 Speaking:', text);
     
-    // Para qualquer áudio em reprodução
     if (currentAudioPlayerRef.current) {
       try {
         currentAudioPlayerRef.current.pause();
@@ -51,20 +48,16 @@ export function useAudioSetup() {
       }
     }
 
-    // ✅ SEMPRE pausa o reconhecimento antes de falar (exceto "escutando")
     const shouldPauseRecognition = !text.toLowerCase().includes('escutando');
     
     console.log('[useAudioSetup] pauseRecognition:', shouldPauseRecognition);
 
-    // Usa o SpeechManager para falar
     SpeechManager.speak(text, onDone, shouldPauseRecognition);
   }, []);
 
-  // ✅ FUNÇÃO PARA PARAR ÁUDIO
   const stopCurrentAudio = useCallback(() => {
     console.log('[useAudioSetup] 🛑 Stopping current audio');
     
-    // Para o áudio player se existir
     if (currentAudioPlayerRef.current) {
       try {
         currentAudioPlayerRef.current.pause();
@@ -73,11 +66,9 @@ export function useAudioSetup() {
       }
     }
 
-    // Para o TTS
     SpeechManager.stopSpeaking();
   }, []);
 
-  // Cleanup
   useEffect(() => {
     return () => {
       Speech.stop();

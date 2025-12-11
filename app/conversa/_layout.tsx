@@ -1,5 +1,3 @@
-// app/conversa/_layout.tsx
-
 import { Stack } from 'expo-router';
 import { View, LayoutChangeEvent } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';
@@ -15,7 +13,6 @@ export default function ConversaLayout() {
   const [headerHeight, setHeaderHeight] = useState(0);
   const [headerKey, setHeaderKey] = useState(0);
   
-  // ✅ Força re-render do CustomHeader quando o título muda
   useEffect(() => {
     setHeaderKey(prev => prev + 1);
     console.log('[ConversaLayout] 🔄 Título mudou, forçando re-render do CustomHeader');

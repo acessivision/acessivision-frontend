@@ -1,4 +1,3 @@
-// app/tabs/_layout
 import { Tabs, usePathname, useRouter, useGlobalSearchParams } from 'expo-router';
 import { LayoutChangeEvent, View } from 'react-native';
 import CustomHeader from '../../components/CustomHeader';

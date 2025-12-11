@@ -2,7 +2,6 @@ import modelAltaRaw from './model_alta_acuracia.json';
 
 const model = modelAltaRaw as unknown as ModelData;
 
-// Interfaces (mantidas)
 interface VectorizerData {
   vocabulary: { [key: string]: number };
   idf: number[];
@@ -29,9 +28,6 @@ export interface PredictionResult {
 
 const classes = model.classes;
 
-// === MUDANÇA 1: Threshold mais tolerante para JS ===
-// 45% é seguro o suficiente. Se não fosse a intenção certa, 
-// a confiança estaria pulverizada (ex: 15%, 10%, 12%).
 const LOW_CONFIDENCE_THRESHOLD = 0.35; 
 
 function preprocessText(text: string): string {
@@ -39,7 +35,7 @@ function preprocessText(text: string): string {
   if (model.vectorizer.lowercase) {
     processed = processed.toLowerCase();
   }
-  // Normalização de acentos (NFD)
+
   processed = processed.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return processed;
 }
@@ -72,7 +68,6 @@ function calculateTfidf(tokens: string[], vectorizer: VectorizerData): number[] 
     }
   }
 
-  // Normalização L2
   const norm = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
   if (norm > 0) {
     for (let i = 0; i < vector.length; i++) {
@@ -92,10 +87,6 @@ function softmax(scores: number[]): number[] {
 function predictWithConfidence(text: string): PredictionResult {
   const processed = preprocessText(text);
   
-  // === MUDANÇA 2: Regex Universal ===
-  // O Python usa \b\w+\b que inclui letras, números e underscore.
-  // Em JS, \w não pega acentos (mas já normalizamos antes), então é seguro.
-  // O replace remove pontuação extra que poderia grudar (ex: "ola," -> "ola").
   const cleanText = processed.replace(/[^\w\s]/g, ''); 
   const tokens = cleanText.match(/\b\w+\b/g) || [];
 

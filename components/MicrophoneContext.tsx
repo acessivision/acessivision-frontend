@@ -1,4 +1,3 @@
-// MicrophoneContext.tsx - INICIA AUTOMATICAMENTE
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import SpeechManager from '../utils/speechManager';
 
@@ -12,14 +11,11 @@ interface MicrophoneContextType {
 const MicrophoneContext = createContext<MicrophoneContextType | undefined>(undefined);
 
 export const MicrophoneProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // ✅ CORRIGIDO: Começa LIGADO por padrão
   const [isMicrophoneEnabled, setIsMicrophoneEnabled] = useState(true);
 
-  // ✅ Inicializa o SpeechManager já ATIVADO
   useEffect(() => {
     console.log('[MicrophoneContext] 🎬 Inicializando com microfone LIGADO');
     
-    // Aguarda um pouco para garantir que as permissões foram solicitadas
     const initTimer = setTimeout(() => {
       SpeechManager.enable();
       console.log('[MicrophoneContext] ✅ Microfone ativado automaticamente');

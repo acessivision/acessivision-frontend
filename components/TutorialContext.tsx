@@ -25,11 +25,9 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const retomarReconhecimento = () => {
     console.log('[Tutorial] 🏁 Finalizando tutorial e reativando microfone');
     
-    // ✅ Primeiro fecha o modal
     setVisivel(false);
     setTextoAtual('');
     
-    // ✅ Aguarda 1 segundo antes de reativar
     setTimeout(() => {
       try {
         console.log('[Tutorial] 🎤 REABILITANDO microfone');
@@ -48,26 +46,21 @@ export const TutorialProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const reproduzirTutorial = (texto: string) => {
     console.log('[Tutorial] 🎓 Iniciando tutorial');
     
-    // ✅ Para qualquer áudio atual
     Speech.stop();
     
-    // ✅ DESABILITA o microfone COMPLETAMENTE
     try {
       console.log('[Tutorial] 🔇 DESABILITANDO microfone para tutorial');
       SpeechManager.disable();
       
-      // ✅ ADICIONAL: Para qualquer reconhecimento em andamento
       SpeechManager.stopRecognition();
     } catch (e) {
       console.warn('[Tutorial] ⚠️ Erro ao pausar reconhecimento:', e);
     }
     
-    // ✅ Aguarda um pouco antes de abrir o modal e falar
     setTimeout(() => {
       setTextoAtual(texto);
       setVisivel(true);
 
-      // ✅ Inicia o TTS depois que o modal já está visível
       setTimeout(() => {
         Speech.speak(texto, {
           language: 'pt-BR',

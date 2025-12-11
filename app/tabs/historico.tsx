@@ -53,7 +53,6 @@ const HistoryScreen: React.FC = () => {
 
   const wasMicEnabledBeforeScreenRef = useRef(false);
 
-  // ✅ Estados para edição de conversa
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [conversaParaEditar, setConversaParaEditar] = useState<{ id: string; titulo: string } | null>(null);
   const [editTituloInput, setEditTituloInput] = useState('');
@@ -62,10 +61,8 @@ const HistoryScreen: React.FC = () => {
   const editTituloProcessadoRef = useRef(false);
   const editTituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ Estados para confirmação de exclusão
   const [conversaParaExcluir, setConversaParaExcluir] = useState<{ id: string; titulo: string } | null>(null);
 
-  // ✅ Refs para timeouts
   const tituloProcessadoRef = useRef(false);
   const tituloTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confirmacaoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,7 +71,6 @@ const HistoryScreen: React.FC = () => {
   const deleteModalTitleRef = useRef(null);
 
   const isFocused = useIsFocused();
-  // const screenTitle = 'Histórico de Conversas';
 
   const [shouldListenLocally, setShouldListenLocally] = useState(false);
 
@@ -82,8 +78,6 @@ const HistoryScreen: React.FC = () => {
 
   const hasActiveModal = modalVisible || editModalVisible || !!conversaParaExcluir || isSearchListening;
 
-
-  // ✅ Hook de voz para modais (criação, edição e exclusão)
   const { 
     speak, 
     startListening, 
@@ -104,18 +98,9 @@ const HistoryScreen: React.FC = () => {
     mode: 'global',
   });
 
-  // useEffect(() => {
-  //   if (isFocused) {
-  //     const timer = setTimeout(() => {
-  //       AccessibilityInfo.announceForAccessibility(screenTitle);
-  //     }, 500);
-  //     return () => clearTimeout(timer);
-  //   }
-  // }, [isFocused, screenTitle]);
-
-  // ===================================================================
-  // BUSCAR CONVERSAS DO FIRESTORE
-  // ===================================================================
+  /*
+  carrega as conversas do usuário
+  */
   useEffect(() => {
     if (!user || isAuthLoading) return;
 
@@ -150,9 +135,6 @@ const HistoryScreen: React.FC = () => {
     return () => unsubscribe();
   }, [user, isAuthLoading]);
 
-  // ===================================================================
-  // FILTRAR CONVERSAS POR PESQUISA
-  // ===================================================================
   const filteredConversations = conversations.filter(conv => 
     conv.titulo.toLowerCase().includes(searchText.toLowerCase())
   );
@@ -164,12 +146,11 @@ const HistoryScreen: React.FC = () => {
     
     if (hasActiveModal) {
       console.log('[Histórico] 🛑 Modal aberto - parando reconhecimento local');
-      SpeechManager.stopRecognition(); // ✅ Só para, não desabilita
+      SpeechManager.stopRecognition();
     } else {
       console.log('[Histórico] ▶️ Modal fechado - verificando se deve reativar');
       
       setTimeout(() => {
-        // ✅ Só reativa se o microfone estiver habilitado GLOBALMENTE
         if (isMicrophoneEnabled) {
           console.log('[Histórico] ✅ Microfone habilitado, reativando reconhecimento');
           SpeechManager.startRecognition('global');
@@ -180,10 +161,6 @@ const HistoryScreen: React.FC = () => {
     }
   }, [modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, isScreenFocused, isMicrophoneEnabled]);
 
-
-// ===================================================================
-// PROCESSAR COMANDOS GLOBAIS COM DEBOUNCE (fora de modais)
-// ===================================================================
 useEffect(() => {
   if (!isScreenFocused) {
     console.log('[Histórico] ⏭️ Tela não focada, ignorando comando');
@@ -197,18 +174,15 @@ useEffect(() => {
   
   console.log(`[Histórico - Global] Texto sendo reconhecido: "${textoAtual}"`);
 
-  // ✅ NOVO: Detectar comando "pesquisar"
   if (textoLower.includes('pesquisar') || textoLower.includes('buscar') || textoLower.includes('procurar')) {
     console.log('[Histórico] 🔍 Comando "pesquisar" detectado');
     globalSpeech.setRecognizedText('');
     globalSpeech.stopListening();
     
-    // Ativa o microfone de pesquisa
     activateSearchMicrophone();
     return;
   }
 
-  // ✅ Detectar comando "criar nova conversa"
   if (textoLower.includes('criar') && (textoLower.includes('conversa') || textoLower.includes('nova'))) {
     if (textoLower.includes('botão')) {
       console.log('[Histórico] ⚠️ Ignorando - é leitura do botão, não comando');
@@ -244,7 +218,6 @@ useEffect(() => {
     
     console.log(`[Histórico] Step: ${step}, EditStep: ${editStep}, Texto: "${textoAtual}"`);
 
-    // ✅ BLACKLIST GLOBAL: Frases do leitor de tela e da UI
     const screenReaderBlacklist = [
       'gravar título',
       'digite ou fale o título',
@@ -277,18 +250,14 @@ useEffect(() => {
       return;
     }
 
-    // ===== FLUXO DE CRIAÇÃO DE CONVERSA =====
     if (modalVisible) {
-      // ✅ Etapa 1: Aguardando a palavra "título"
       if (step === 'aguardandoPalavraTitulo') {
-        // ✅ Ignora se ainda está falando
         if (isSpeakingRef.current) {
           console.log('⚠️ Ignorando - TTS ainda ativo');
           setRecognizedText('');
           return;
         }
         
-        // ✅ Aceita variações da palavra "título"
         const tituloVariations = ['titulo', 'título', 'dítulo', 'ditulo', 'titu', 'it'];
         const containsTitulo = tituloVariations.some(v => textoLower.includes(v));
         
@@ -314,7 +283,6 @@ useEffect(() => {
         }
       }
       
-      // ✅ Etapa 2: Capturando o título após palavra-chave
       if (step === 'aguardandoTitulo' && textoAtual && !tituloProcessadoRef.current) {
         console.log(`📝 Acumulando título: "${textoAtual}"`);
         
@@ -324,7 +292,6 @@ useEffect(() => {
           return;
         }
         
-        // ✅ Blacklist específica do TTS de título
         const ttsBlacklist = [
           'aguarde um momento',
           'fale o título',
@@ -372,18 +339,14 @@ useEffect(() => {
       }
     }
 
-    // ===== FLUXO DE EDIÇÃO DE CONVERSA =====
     if (editModalVisible) {
-      // ✅ Etapa 1: Aguardando a palavra "título"
       if (editStep === 'aguardandoPalavraTitulo') {
-        // ✅ Ignora se ainda está falando
         if (isSpeakingRef.current) {
           console.log('⚠️ [Edição] Ignorando - TTS ainda ativo');
           setRecognizedText('');
           return;
         }
         
-        // ✅ Aceita variações da palavra "título"
         const tituloVariations = ['titulo', 'título', 'dítulo', 'ditulo', 'titu', 'it'];
         const containsTitulo = tituloVariations.some(v => textoLower.includes(v));
         
@@ -409,7 +372,6 @@ useEffect(() => {
         }
       }
       
-      // ✅ Etapa 2: Capturando o título após palavra-chave
       if (editStep === 'aguardandoTitulo' && textoAtual && !editTituloProcessadoRef.current) {
         console.log(`📝 [Edição] Acumulando título: "${textoAtual}"`);
         
@@ -467,7 +429,6 @@ useEffect(() => {
       }
     }
 
-    // ===== FLUXO DE EXCLUSÃO DE CONVERSA =====
     if (conversaParaExcluir && step === 'aguardandoConfirmacaoExclusao') {
       console.log(`🗑️ Processando resposta de exclusão: "${textoAtual}"`);
       
@@ -510,7 +471,6 @@ useEffect(() => {
       return;
     }
 
-    // ===== FLUXO DE PESQUISA POR VOZ =====
     if (isSearchListening && searchStep === 'aguardandoPesquisa') {
       if (textoAtual && !searchProcessadoRef.current) {
         console.log(`🔍 [Pesquisa] Acumulando termo: "${textoAtual}"`);
@@ -564,7 +524,6 @@ useEffect(() => {
   }, [recognizedText, step, editStep, modalVisible, editModalVisible, conversaParaExcluir, isSearchListening, searchStep]);
 
 
-  // ✅ Cleanup dos timeouts
   useEffect(() => {
     return () => {
       if (tituloTimeoutRef.current) clearTimeout(tituloTimeoutRef.current);
@@ -644,9 +603,6 @@ useEffect(() => {
     renomearConversaComTitulo(editTituloInput);
   };
 
-  // ===================================================================
-  // EXCLUIR CONVERSA - COM VOZ
-  // ===================================================================
   const excluirConversa = (conversationId: string, titulo: string) => {
     if (!user) return;
 
@@ -654,22 +610,19 @@ useEffect(() => {
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     
     globalSpeech.stopListening();
-    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
+    stopSpeaking();
     
     setStep('aguardandoConfirmacaoExclusao');
     setRecognizedText('');
-    isSpeakingRef.current = false; // ✅ Reset do flag
+    isSpeakingRef.current = false;
     
-    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal
     setTimeout(() => {
       setConversaParaExcluir({ id: conversationId, titulo });
       
-      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
       setTimeout(() => {
-        isSpeakingRef.current = true; // ✅ Marca que está falando
+        isSpeakingRef.current = true;
         speak(`Tem certeza que deseja excluir a conversa ${titulo}? Diga sim ou não.`, () => {
-          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
-          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          isSpeakingRef.current = false;
           setTimeout(() => {
             console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (exclusão)');
             startListening(true);
@@ -728,9 +681,6 @@ useEffect(() => {
     }
   };
 
-  // ===================================================================
-  // CRIAR CONVERSA NO FIRESTORE
-  // ===================================================================
   const isNavigatingToConversaRef = useRef(false);
   const criarConversaComTitulo = async (titulo: string) => {
     if (!user) return;
@@ -740,7 +690,6 @@ useEffect(() => {
       return;
     }
     
-    // ✅ NOVO: Previne criação se título contém frases do TTS
     const tituloLower = titulo.toLowerCase();
     const ttsBlacklist = [
       'escutando o título',
@@ -766,7 +715,6 @@ useEffect(() => {
       return;
     }
 
-    // ✅ NOVO: Previne múltiplas criações simultâneas
     isNavigatingToConversaRef.current = true;
 
     console.log(`📝 Criando conversa "${tituloFinal}" para ${user.uid}`);
@@ -800,7 +748,6 @@ useEffect(() => {
           pathname: '/conversa',
           params: { conversaId: newConversationRef.id, titulo: tituloFinal }
         });
-        // ✅ CRÍTICO: Reset após navegação bem-sucedida
         setTimeout(() => {
           isNavigatingToConversaRef.current = false;
         }, 1000);
@@ -809,7 +756,7 @@ useEffect(() => {
     } catch (error) {
       console.error("❌ Erro ao criar conversa:", error);
       Alert.alert('Erro', 'Não foi possível criar a conversa. Tente novamente.');
-      isNavigatingToConversaRef.current = false; // ✅ NOVO: Reset em caso de erro
+      isNavigatingToConversaRef.current = false;
     } finally {
       setIsSaving(false);
     }
@@ -819,16 +766,13 @@ useEffect(() => {
     criarConversaComTitulo(tituloInput);
   };
 
-  // ===================================================================
-  // ABRIR/FECHAR MODAL DE CRIAÇÃO
-  // ===================================================================
   const abrirModal = () => {
     console.log('[Histórico] 📂 Abrindo modal de criação');
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     console.log(`[Histórico] 🎤 Estado do microfone antes: ${wasListeningBeforeModalRef.current ? 'ATIVO' : 'INATIVO'}`);
     
     globalSpeech.stopListening();
-    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
+    stopSpeaking();
     console.log('[Histórico] 🛑 Reconhecimento global pausado');
     
     setTituloInput('');
@@ -836,18 +780,15 @@ useEffect(() => {
     setIsSaving(false);
     setRecognizedText('');
     tituloProcessadoRef.current = false;
-    isSpeakingRef.current = false; // ✅ Reset do flag
+    isSpeakingRef.current = false;
     
-    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal (dá tempo do global parar)
     setTimeout(() => {
       setModalVisible(true);
       
-      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
       setTimeout(() => {
-        isSpeakingRef.current = true; // ✅ Marca que está falando
+        isSpeakingRef.current = true;
         speak("Por favor, digite o título ou diga. 'título'. para informá-lo por voz.", () => {
-          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
-          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          isSpeakingRef.current = false;
           setTimeout(() => {
             console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS');
             startListening(true);
@@ -888,9 +829,6 @@ useEffect(() => {
     }, 500);
   };
 
-  // ===================================================================
-  // EDITAR CONVERSA
-  // ===================================================================
   const editarConversa = (conversationId: string, titulo: string) => {
     if (!user) return;
 
@@ -898,25 +836,22 @@ useEffect(() => {
     
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     globalSpeech.stopListening();
-    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
+    stopSpeaking();
     
     setConversaParaEditar({ id: conversationId, titulo });
     setEditTituloInput(titulo);
     setEditStep('aguardandoPalavraTitulo');
     setRecognizedText('');
     editTituloProcessadoRef.current = false;
-    isSpeakingRef.current = false; // ✅ Reset do flag
+    isSpeakingRef.current = false;
     
-    // ✅ CRÍTICO: Aguarda 300ms antes de abrir o modal
     setTimeout(() => {
       setEditModalVisible(true);
       
-      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
       setTimeout(() => {
-        isSpeakingRef.current = true; // ✅ Marca que está falando
+        isSpeakingRef.current = true;
         speak("Por favor, digite o novo título ou diga. 'título'. para informá-lo por voz.", () => {
-          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
-          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          isSpeakingRef.current = false;
           setTimeout(() => {
             console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (edição)');
             startListening(true);
@@ -982,23 +917,20 @@ useEffect(() => {
     console.log('[Histórico] 🎤 Ativando microfone de pesquisa');
     wasListeningBeforeModalRef.current = globalSpeech.isListening;
     globalSpeech.stopListening();
-    stopSpeaking(); // ✅ CRÍTICO: Para qualquer TTS anterior
+    stopSpeaking();
     
     setSearchStep('aguardandoPesquisa');
     setRecognizedText('');
     searchProcessadoRef.current = false;
-    isSpeakingRef.current = false; // ✅ Reset do flag
+    isSpeakingRef.current = false;
     
-    // ✅ CRÍTICO: Aguarda 300ms antes de ativar o estado
     setTimeout(() => {
       setIsSearchListening(true);
       
-      // ✅ CRÍTICO: Aguarda mais 500ms antes de iniciar TTS
       setTimeout(() => {
-        isSpeakingRef.current = true; // ✅ Marca que está falando
+        isSpeakingRef.current = true;
         speak("Microfone de pesquisa ativado. Fale o termo de busca.", () => {
-          isSpeakingRef.current = false; // ✅ Marca que terminou de falar
-          // ✅ CRÍTICO: Aguarda 800ms APÓS o TTS terminar
+          isSpeakingRef.current = false;
           setTimeout(() => {
             console.log('[Histórico] 🎤 Iniciando reconhecimento local APÓS TTS (pesquisa)');
             startListening(true);
@@ -1022,7 +954,6 @@ useEffect(() => {
       searchTimeoutRef.current = null;
     }
     
-    // Reativa microfone global se estava ativo
     setTimeout(() => {
       if (wasListeningBeforeModalRef.current) {
         console.log('[Histórico] ✅ Reativando microfone global após desativar pesquisa');
@@ -1039,9 +970,6 @@ useEffect(() => {
     }
   }, [isSearchListening, activateSearchMicrophone, deactivateSearchMicrophone]);
 
-  // ===================================================================
-  // ESTILOS
-  // ===================================================================
   const styles = StyleSheet.create({
     centered: { 
       flex: 1, 
@@ -1347,9 +1275,6 @@ useEffect(() => {
     },
   });
 
-  // ===================================================================
-  // RENDERIZAÇÃO
-  // ===================================================================
   if (isAuthLoading) {
     return (
       <View style={styles.centered}>
@@ -1372,7 +1297,6 @@ useEffect(() => {
 
   return (
   <View style={styles.container}>
-    {/* BARRA DE PESQUISA */}
     <View style={styles.searchContainer}>
       <View style={styles.searchWrapper}>
         <Ionicons name="search" size={getIconSize('medium')} color={cores.texto} style={styles.searchIcon} />
@@ -1423,7 +1347,6 @@ useEffect(() => {
       )}
     </View>
 
-    {/* LISTA DE CONVERSAS */}
     {filteredConversations.length > 0 ? (
       <FlatList
         data={filteredConversations}
@@ -1486,7 +1409,6 @@ useEffect(() => {
       </View>
     )}
 
-    {/* BOTÃO FIXO - SEMPRE VISÍVEL */}
     <TouchableOpacity 
       style={styles.createButton} 
       onPress={abrirModal} 
@@ -1496,7 +1418,6 @@ useEffect(() => {
       <Text style={styles.createButtonText}>Criar Nova Conversa</Text>
     </TouchableOpacity>
 
-      {/* OVERLAY DE CONFIRMAÇÃO DE EXCLUSÃO */}
       {conversaParaExcluir && aguardandoConfirmacao && (
         <View style={styles.deleteOverlay} importantForAccessibility="yes">
           <View style={styles.deleteModal}>
@@ -1540,7 +1461,6 @@ useEffect(() => {
         </View>
       )}
 
-      {/* MODAL DE CRIAÇÃO */}
       <Modal visible={modalVisible} transparent={true} animationType="fade" onRequestClose={fecharModal} statusBarTranslucent={true}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]} activeOpacity={1} onPress={fecharModal} />
@@ -1582,13 +1502,11 @@ useEffect(() => {
                   onPress={() => {
                     console.log('[Histórico] 🎤 Botão de microfone pressionado');
                     
-                    // Se já está aguardando palavra-chave, não faz nada
                     if (step === 'aguardandoPalavraTitulo') {
                       console.log('[Histórico] ⚠️ Já está aguardando palavra "título"');
                       return;
                     }
                     
-                    // Reinicia o fluxo
                     setStep('aguardandoPalavraTitulo');
                     setRecognizedText('');
                     tituloProcessadoRef.current = false;
@@ -1625,7 +1543,6 @@ useEffect(() => {
         </View>
       </Modal>
 
-      {/* MODAL DE EDIÇÃO */}
       <Modal visible={editModalVisible} transparent={true} animationType="fade" onRequestClose={fecharEditModal} statusBarTranslucent={true}>
         <View style={styles.modalOverlay}>
           <TouchableOpacity style={[StyleSheet.absoluteFill, { backgroundColor: 'transparent' }]} activeOpacity={1} onPress={fecharEditModal} />
@@ -1664,13 +1581,11 @@ useEffect(() => {
                   onPress={() => {
                     console.log('[Histórico] 🎤 [Edição] Botão de microfone pressionado');
                     
-                    // Se já está aguardando palavra-chave, não faz nada
                     if (editStep === 'aguardandoPalavraTitulo') {
                       console.log('[Histórico] ⚠️ [Edição] Já está aguardando palavra "título"');
                       return;
                     }
                     
-                    // Reinicia o fluxo
                     setEditStep('aguardandoPalavraTitulo');
                     setRecognizedText('');
                     editTituloProcessadoRef.current = false;

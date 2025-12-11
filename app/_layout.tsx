@@ -1,4 +1,3 @@
-//app/_layout
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '../components/ThemeContext';
@@ -20,7 +19,6 @@ function ThemedSystemBars() {
     if (Platform.OS === 'android') {
       const setupNavigationBar = async () => {
         try {
-          // ✅ ÚNICA API SUPORTADA com edge-to-edge: setButtonStyleAsync
           await NavigationBar.setButtonStyleAsync(
             temaAplicado === 'dark' ? 'light' : 'dark'
           );

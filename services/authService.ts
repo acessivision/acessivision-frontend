@@ -1,4 +1,3 @@
-// services/authService.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import auth from "@react-native-firebase/auth";
 import type { FirebaseAuthTypes } from '@react-native-firebase/auth';
@@ -26,14 +25,11 @@ export interface AuthResponse {
 }
 
 class AuthService {
-  // Registrar novo usuário
   async register(email: string, password: string): Promise<AuthResponse> {
     try {
-      // 1. Cria o usuário no Firebase Authentication
       const userCredential = await auth().createUserWithEmailAndPassword(email, password);
       const user = userCredential.user;
 
-      // Feedback de sucesso com voz
       Speech.speak('Registro realizado com sucesso! Bem-vindo!', {
         language: 'pt-BR',
         pitch: 1.0,
@@ -50,10 +46,8 @@ class AuthService {
       };
 
     } catch (error: any) {
-      // Extrair código de erro da mensagem se necessário
       let errorCode = error?.code;
       
-      // Se não tem code, tentar extrair da mensagem
       if (!errorCode && error?.message) {
         if (error.message.includes('email-already-in-use')) {
           errorCode = 'auth/email-already-in-use';
@@ -93,7 +87,6 @@ class AuthService {
         return { success: false, message: '' };
       }
       
-      // Outros erros do Firebase
       const mensagemGenerica = 'Ocorreu um erro ao registrar. Por favor, tente novamente.';
       Speech.speak(mensagemGenerica, { language: 'pt-BR', rate: 0.85 });
       
@@ -104,11 +97,8 @@ class AuthService {
     }
   }
 
-  // Login tradicional (email e senha)
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
-      // 1. Faz login com o Firebase Authentication
-      // Corrigi: use auth() para invocar a instância do módulo
       const userCredential = await auth().signInWithEmailAndPassword(email, password);
       const user = userCredential.user;
 
@@ -124,7 +114,6 @@ class AuthService {
     } catch (error) {
       console.error('Erro no login do Firebase:', error);
       
-      // Corrigi: faz type narrowing do erro
       if (error && typeof error === 'object' && 'code' in error) {
         const firebaseError = error as FirebaseAuthTypes.NativeFirebaseAuthError;
         
@@ -148,13 +137,10 @@ class AuthService {
     }
   }
 
-  // Login com Google usando Firebase
   async loginWithGoogle(): Promise<AuthResponse> {
     try {
-      // 1️⃣ Garante que o Google Play Services está disponível
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-      // 2️⃣ Faz login com a conta Google
       const userInfo = await GoogleSignin.signIn();
       const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
 
@@ -165,23 +151,19 @@ class AuthService {
         };
       }
 
-      // 3️⃣ Cria a credencial do Google e autentica com Firebase
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
       const userCredential = await auth().signInWithCredential(googleCredential);
 
       const firebaseUser = userCredential.user;
 
-      // 4️⃣ Monta o objeto do usuário autenticado
       const usuario: Usuario = {
         uid: firebaseUser.uid,
         email: firebaseUser.email || '',
         fotoPerfil: firebaseUser.photoURL || undefined,
       };
 
-      // 5️⃣ Pega o ID Token do Firebase (usado nas requisições para o backend)
       const firebaseToken = await firebaseUser.getIdToken();
 
-      // 6️⃣ Salva localmente o token e os dados do usuário
       await this.saveToken(firebaseToken);
       await this.saveUser(usuario);
 
@@ -216,7 +198,6 @@ class AuthService {
   }
 
 
-  // Atualizar perfil
   async updateProfile(uid: string, dados: {
     nome?: string;
     telefone?: string;
@@ -244,7 +225,6 @@ class AuthService {
     }
   }
 
-  // Deletar conta
   async deleteAccount(): Promise<AuthResponse> {
     try {
       const currentUser = auth().currentUser;
@@ -263,15 +243,12 @@ class AuthService {
       console.log('[AuthService] Excluindo conta do usuário:', currentUser.uid);
       
       try {
-        // Tenta excluir diretamente
         await currentUser.delete();
         
         console.log('[AuthService] Conta excluída com sucesso');
         
-        // Limpa dados locais
         await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
         
-        // Faz logout do Google também
         try {
           await GoogleSignin.signOut();
         } catch (error) {
@@ -290,12 +267,10 @@ class AuthService {
         };
         
       } catch (deleteError: any) {
-        // Se o erro for que precisa re-autenticar
         if (deleteError.code === 'auth/requires-recent-login') {
           console.log('[AuthService] Requer re-autenticação. Tentando re-autenticar com Google...');
           
           try {
-            // Re-autentica com Google
             await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
             const userInfo = await GoogleSignin.signIn();
             const idToken = (userInfo as any)?.data?.idToken || (userInfo as any)?.idToken;
@@ -309,26 +284,17 @@ class AuthService {
             
             console.log('[AuthService] Re-autenticação bem-sucedida. Tentando excluir novamente...');
             
-            // Tenta excluir novamente após re-autenticação
             await currentUser.delete();
             
             console.log('[AuthService] Conta excluída com sucesso após re-autenticação');
             
-            // Limpa dados locais
             await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
             
-            // Faz logout do Google
             try {
               await GoogleSignin.signOut();
             } catch (error) {
               console.log('[AuthService] Erro ao fazer logout do Google');
             }
-            
-            // Speech.speak('Conta excluída com sucesso.', {
-            //   language: 'pt-BR',
-            //   pitch: 1.0,
-            //   rate: 1.0
-            // });
             
             return {
               success: true,
@@ -351,7 +317,6 @@ class AuthService {
           }
         }
         
-        // Outros erros
         throw deleteError;
       }
       
@@ -371,23 +336,18 @@ class AuthService {
     }
   }
 
-  // Logout
   async logout(): Promise<void> {
     try {
-      // Faz logout do Google
       await GoogleSignin.signOut();
       
-      // Faz logout do Firebase
       await auth().signOut();
       
-      // Remove dados locais
       await AsyncStorage.multiRemove(['@auth_token', '@user_data']);
     } catch (error) {
       console.error('Erro no logout:', error);
     }
   }
 
-  // Verificar se está logado
   async isLoggedIn(): Promise<boolean> {
     try {
       const token = await this.getToken();
@@ -398,7 +358,6 @@ class AuthService {
     }
   }
 
-  // Obter usuário atual
   async getCurrentUser(): Promise<Usuario | null> {
     try {
       const userData = await AsyncStorage.getItem('@user_data');
@@ -408,7 +367,6 @@ class AuthService {
     }
   }
 
-  // Métodos privados
   private async saveToken(token: string): Promise<void> {
     await AsyncStorage.setItem('@auth_token', token);
   }

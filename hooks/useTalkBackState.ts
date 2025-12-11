@@ -15,7 +15,6 @@ export const useTalkBackState = () => {
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Detecta se TalkBack está ativo
     const checkTalkBack = async () => {
       const isActive = await AccessibilityInfo.isScreenReaderEnabled();
       setState(prev => ({ ...prev, isActive }));
@@ -24,7 +23,6 @@ export const useTalkBackState = () => {
 
     checkTalkBack();
 
-    // Monitora mudanças
     const subscription = AccessibilityInfo.addEventListener(
       'screenReaderChanged',
       (isActive) => {
@@ -41,7 +39,6 @@ export const useTalkBackState = () => {
     };
   }, []);
 
-  // Função para marcar que TalkBack está falando
   const markAsSpeaking = useCallback((duration: number = 1000) => {
     setState(prev => ({ ...prev, isSpeaking: true }));
 

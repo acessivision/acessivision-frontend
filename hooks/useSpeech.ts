@@ -1,4 +1,3 @@
-// hooks/useSpeech.ts - VERSÃO CORRIGIDA (Não inicia automaticamente no modo local)
 import { useState, useEffect, useCallback, useRef } from 'react';
 import SpeechManager from '../utils/speechManager';
 import { useMicrophone } from '../components/MicrophoneContext'; 
@@ -10,24 +9,18 @@ interface UseSpeechProps {
 }
 
 export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpeechProps = {}) {
-  // Estado local sincronizado com o Manager
   const [recognizedText, setRecognizedText] = useState('');
   const [isListening, setIsListening] = useState(SpeechManager.getState().isRecognizing);
   const [isSpeaking, setIsSpeaking] = useState(SpeechManager.getState().isSpeaking);
   
-  // ✅ Obtém o estado real do interruptor mestre
   const { isMicrophoneEnabled } = useMicrophone(); 
 
   const localCallbackRef = useRef(onResult);
   
-  // Atualiza a ref do callback para não quebrar o useEffect
   useEffect(() => {
     localCallbackRef.current = onResult;
   }, [onResult]);
   
-  // ============================================
-  // 1. GERENCIAMENTO DA ASSINATURA (Ouvir Texto)
-  // ============================================
   const handleManagerResult = useCallback((text: string) => {
     setRecognizedText(text);
     setIsListening(true);
@@ -45,15 +38,9 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
     };
   }, [enabled, handleManagerResult]);
 
-  // ============================================
-  // 2. CONTROLE DO MOTOR (Ligar/Desligar)
-  // ============================================
   useEffect(() => {
-    // ✅ CRÍTICO: Modo LOCAL não inicia automaticamente
-    // Ele só inicia quando startListening() é chamado explicitamente
     if (mode === 'local') {
       console.log('[useSpeech] ℹ️ Modo local - aguardando startListening() explícito');
-      // Cleanup para modo local
       return () => {
         if (enabled) {
           const state = SpeechManager.getState();
@@ -65,7 +52,6 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
       };
     }
     
-    // ✅ Daqui pra baixo, mode só pode ser 'global'
     const shouldBeRunning = enabled && isMicrophoneEnabled;
     
     if (shouldBeRunning) {
@@ -76,15 +62,10 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
       }
     }
     
-    // Cleanup para modo global (não faz nada)
     return () => {
-      // Modo global NÃO para ao desmontar - deixa para outros usarem
     };
   }, [enabled, mode, isMicrophoneEnabled]);
 
-  // ============================================
-  // 3. SINCRONIA VISUAL (Polling)
-  // ============================================
   useEffect(() => {
      const interval = setInterval(() => {
         const state = SpeechManager.getState();
@@ -94,10 +75,6 @@ export function useSpeech({ enabled = true, mode = 'global', onResult }: UseSpee
      return () => clearInterval(interval);
   }, [isListening, isSpeaking]);
 
-  // ============================================
-  // 4. AÇÕES EXPOSTAS
-  // ============================================
-  
   const speak = useCallback(async (text: string, callback?: () => void) => {
     setIsListening(false); 
     setIsSpeaking(true);

@@ -14,9 +14,9 @@ interface VoiceContextProps {
   voiceState: VoiceState;
   pendingSpokenText: string | null;
   pendingContext: NavigationContext | null;
-  pendingIntent: string | null; // ✅ ADICIONADO
+  pendingIntent: string | null;
   clearPending: () => void;
-  clearPendingIntent: () => void; // ✅ ADICIONADO
+  clearPendingIntent: () => void;
   setPendingContext: (context: NavigationContext | null) => void;
   registerAudioPlayer: (player: any) => void;
   unregisterAudioPlayer: () => void;
@@ -87,23 +87,19 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     headerFocusCallbackRef.current = focusFn;
   }, []);
 
-  // ✅ NOVO: Wrapper para setPendingContext que também define o pendingIntent
   const setPendingContext = useCallback((context: NavigationContext | null) => {
     console.log('[VoiceContext] Setting pending context:', context);
     setPendingContextState(context);
     
-    // Se o mode for um intent válido, define também o pendingIntent
     if (context?.mode) {
       console.log('[VoiceContext] Setting pending intent from context.mode:', context.mode);
       setPendingIntentInternal(context.mode);
     }
   }, []);
 
-  // ✅ NOVO: Função para limpar apenas o pendingIntent
   const clearPendingIntent = useCallback(() => {
     console.log('[VoiceContext] Clearing pending intent');
     setPendingIntentInternal('');
-    // Também limpa o mode do context se existir
     if (pendingContext?.mode) {
       setPendingContextState(prev => prev ? { ...prev, mode: undefined } : null);
     }
@@ -269,9 +265,9 @@ export const VoiceCommandProvider: React.FC<{ children: React.ReactNode }> = ({ 
     voiceState,
     pendingSpokenText,
     pendingContext,
-    pendingIntent: pendingIntentInternal, // ✅ EXPOSTO
+    pendingIntent: pendingIntentInternal,
     clearPending,
-    clearPendingIntent, // ✅ EXPOSTO
+    clearPendingIntent,
     setPendingContext,
     registerAudioPlayer,
     unregisterAudioPlayer,

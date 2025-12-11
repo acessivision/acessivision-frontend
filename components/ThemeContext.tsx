@@ -29,7 +29,6 @@ export const Cores = {
   },
 };
 
-// Base font sizes (these will be the maximum sizes)
 export const BaseFontSizes = {
   small: 12,
   medium: 16,
@@ -38,7 +37,6 @@ export const BaseFontSizes = {
   xxlarge: 26,
 };
 
-// Base icon sizes (these will be the maximum sizes)
 export const BaseIconSizes = {
   small: 20,
   medium: 24,

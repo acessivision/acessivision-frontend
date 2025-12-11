@@ -74,10 +74,6 @@ const CameraScreen: React.FC = () => {
   
   const isSpeakingRef = useRef(false);
 
-  // ===================================================================
-  // CONFIGURAÇÃO DE VOZ
-  // ===================================================================
-
   const globalSpeech = useSpeech({
     enabled: isFocused && !questionModalVisible && !isSending && !isTutorialAtivo,
     mode: 'global',
@@ -123,6 +119,9 @@ const CameraScreen: React.FC = () => {
     }
   }, [globalSpeech.recognizedText, questionModalVisible, isSending, isTutorialAtivo]);
 
+  /*
+  reativa o microfone global caso ele tenha sido desligado
+  */
   useEffect(() => {
     if (!isFocused || questionModalVisible || isSending || isTutorialAtivo) return;
 
@@ -142,7 +141,9 @@ const CameraScreen: React.FC = () => {
     console.log('[Camera] 📋 Parâmetros recebidos:', { conversaId, mode, autoTakePhoto });
   }, [conversaIdFromUrl, modeFromUrl, pendingContext]);
 
-  // ✅ CORRIGIDO: Previne loop de auto-foto
+  /*
+  captura automática quando o comando de voz vem de outra tela
+  */
   useEffect(() => {
     if (!isFocused) {
       hasProcessedAutoPhotoRef.current = false;
@@ -163,6 +164,9 @@ const CameraScreen: React.FC = () => {
     }
   }, [isFocused, autoTakePhoto, question, isSending, isCameraReady]);
 
+  /**
+  Processa reconhecimento de voz dentro do modal, ativado quando o usuário tira a foto pelo botão, o que faz o modal abrir
+  */
   useEffect(() => {
     if (!recognizedText.trim() || !questionModalVisible) return;
     const textoAtual = recognizedText.trim();
@@ -241,9 +245,6 @@ const CameraScreen: React.FC = () => {
 
   const processarPerguntaManual = () => processarPergunta(questionInput);
 
-  // ===================================================================
-// ✅ UPLOAD CORRIGIDO COM FEEDBACK SONORO COMPLETO
-// ===================================================================
 const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
   if (isSending) {
     console.log('[Camera] ⚠️ Upload já em andamento - Ignorando');
@@ -255,22 +256,19 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
   stopListening();
 
   try {
-    // ✅ Fala "Processando" sem bloquear
     console.log('[Camera] 🔊 Falando: Processando');
     speak("Processando").catch(err => console.log('[Camera] ❌ TTS erro:', err));
 
     if (!photo.base64) throw new Error('Foto não contém base64.');
 
-    // ✅ Feedback periódico enquanto aguarda resposta da API
     const feedbackInterval = setInterval(() => {
       speak("Ainda processando").catch(err => console.log('[Camera] ❌ TTS erro:', err));
-    }, 8000); // A cada 8 segundos informa que ainda está processando
+    }, 8000);
     
-    // ✅ Timeout de 1 minuto
     const timeoutId = setTimeout(() => {
       clearInterval(feedbackInterval);
       throw new Error('TIMEOUT');
-    }, 60000); // 60 segundos
+    }, 60000);
     
     console.log('[Camera] 📤 Enviando para servidor...');
     
@@ -281,12 +279,9 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
         body: JSON.stringify({ image: photo.base64, prompt: prompt }),
       });
       
-      // ✅ Para o feedback periódico e timeout quando recebe resposta
       clearInterval(feedbackInterval);
       clearTimeout(timeoutId);
       
-      if (!response.ok) throw new Error('Erro do servidor');
-
       if (!response.ok) throw new Error('Erro do servidor');
 
       const result = await response.json();
@@ -297,7 +292,6 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
         console.log('[Camera] ✅ Resposta recebida do servidor');
 
       if (mode === 'chat' && conversaId) {
-        // ✅ Fala "Resposta recebida. Salvando." sem bloquear
         console.log('[Camera] 🔊 Falando: Resposta recebida. Salvando.');
         speak("Resposta recebida. Salvando.").catch(err => console.log('[Camera] ❌ TTS erro:', err));
         
@@ -358,11 +352,9 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
           });
         }, 100);
       } else {
-        // ✅ Lê a descrição no modo não-chat
         await speak(description);
       }
     } catch (fetchError) {
-      // ✅ Para o feedback em caso de erro no fetch
       clearInterval(feedbackInterval);
       clearTimeout(timeoutId);
       throw fetchError;
@@ -371,7 +363,6 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
   } catch (error) {
     console.error('[Camera] ❌ Erro no upload:', error);
     
-    // ✅ Mensagem específica para timeout
     if (error instanceof Error && error.message === 'TIMEOUT') {
       speak("Tempo esgotado. A operação demorou muito. Tente novamente.").catch(err => console.log('[Camera] TTS erro:', err));
       Alert.alert("Tempo Esgotado", "A operação demorou mais de 1 minuto. Por favor, tente novamente.");
@@ -427,28 +418,130 @@ const handleUploadAndProcess = async (photo: Photo, prompt: string) => {
   }, [isFocused, pendingSpokenText, mode]);
 
   const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: "center" },
-    message: { textAlign: "center", paddingBottom: 10, fontSize: 16, paddingHorizontal: 20 },
-    buttonContainer: { position: "absolute", bottom: 40, alignSelf: "center" },
-    button: { alignItems: "center" },
-    iconeCamera: { width: 100, height: 100 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    modalContent: { backgroundColor: cores.fundo, borderRadius: 20, padding: 28, width: '100%', maxWidth: 500, elevation: 8 },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    modalTitle: { fontSize: getFontSize('large'), fontWeight: 'bold', color: cores.texto },
-    closeButton: { padding: 4 },
-    inputContainer: { marginBottom: 20 },
-    label: { fontSize: getFontSize('medium'), marginBottom: 8, fontWeight: '500', color: cores.texto },
-    inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: cores.texto },
-    input: { flex: 1, paddingHorizontal: 16, paddingVertical: 12, fontSize: getFontSize('medium'), color: '#000' },
-    micButton: { padding: 12, marginRight: 4 },
-    modalListeningIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 12, backgroundColor: cores.fundo, borderRadius: 8, marginBottom: 16 },
-    modalListeningText: { marginLeft: 8, fontSize: getFontSize('medium'), fontWeight: '500', color: cores.texto },
-    modalActions: { flexDirection: 'row', gap: 12 },
-    cancelButton: { flex: 1, paddingVertical: 12, borderRadius: 8, borderWidth: 1, borderColor: cores.texto, alignItems: 'center' },
-    cancelButtonText: { color: cores.texto, fontSize: getFontSize('medium'), fontWeight: '600' },
-    sendButton: { flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: cores.texto, alignItems: 'center', justifyContent: 'center' },
-    sendButtonText: { color: cores.fundo, fontSize: getFontSize('medium'), fontWeight: '600' },
+    container: { 
+      flex: 1, 
+      justifyContent: "center" 
+    },
+    message: { 
+      textAlign: "center", 
+      paddingBottom: 10, 
+      fontSize: 16, 
+      paddingHorizontal: 20 
+    },
+    buttonContainer: { 
+      position: "absolute", 
+      bottom: 40, 
+      alignSelf: "center" 
+    },
+    button: { 
+      alignItems: "center" 
+    },
+    iconeCamera: { 
+      width: 100, 
+      height: 100 
+    },
+    modalOverlay: { 
+      flex: 1, 
+      backgroundColor: 'rgba(0,0,0,0.7)', 
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      padding: 20 
+    },
+    modalContent: { 
+      backgroundColor: cores.fundo, 
+      borderRadius: 20, 
+      padding: 28, 
+      width: '100%', 
+      maxWidth: 500, 
+      elevation: 8 
+    },
+    modalHeader: { 
+      flexDirection: 'row', 
+      justifyContent: 'space-between', 
+      alignItems: 'center', 
+      marginBottom: 20 
+    },
+    modalTitle: { 
+      fontSize: getFontSize('large'), 
+      fontWeight: 'bold', 
+      color: cores.texto 
+    },
+    closeButton: { 
+      padding: 4 
+    },
+    inputContainer: { 
+      marginBottom: 20 
+    },
+    label: { 
+      fontSize: getFontSize('medium'), 
+      marginBottom: 8, 
+      fontWeight: '500', 
+      color: cores.texto 
+    },
+    inputWrapper: { 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      backgroundColor: '#fff', 
+      borderRadius: 8, 
+      borderWidth: 1, 
+      borderColor: cores.texto 
+    },
+    input: { 
+      flex: 1, 
+      paddingHorizontal: 16, 
+      paddingVertical: 12, 
+      fontSize: getFontSize('medium'), 
+      color: '#000' 
+    },
+    micButton: { 
+      padding: 12, 
+      marginRight: 4 
+    },
+    modalListeningIndicator: { 
+      flexDirection: 'row',
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      paddingVertical: 12, 
+      backgroundColor: cores.fundo, 
+      borderRadius: 8, 
+      marginBottom: 16 
+    },
+    modalListeningText: { 
+      marginLeft: 8, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '500', 
+      color: cores.texto 
+    },
+    modalActions: { 
+      flexDirection: 'row', 
+      gap: 12 
+    },
+    cancelButton: { 
+      flex: 1, 
+      paddingVertical: 12, 
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: cores.texto, 
+      alignItems: 'center' 
+    },
+    cancelButtonText: { 
+      color: cores.texto, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '600' 
+    },
+    sendButton: { 
+      flex: 1, 
+      paddingVertical: 12, 
+      borderRadius: 8, 
+      backgroundColor: cores.texto, 
+      alignItems: 'center', 
+      justifyContent: 'center' 
+    },
+    sendButtonText: { 
+      color: cores.fundo, 
+      fontSize: getFontSize('medium'), 
+      fontWeight: '600' 
+    },
   });
 
   if (!permission) return <View />;

@@ -1,5 +1,3 @@
-// app/login.tsx - COMANDO DE VOZ INTELIGENTE E FLEXÍVEL
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -20,7 +18,7 @@ import { useAuth } from '../components/AuthContext';
 import { useIsFocused } from '@react-navigation/native';
 import { useSpeech } from '../hooks/useSpeech';
 import { useMicrophone } from '../components/MicrophoneContext';
-import { useTutorial } from '../components/TutorialContext'; // ✅ NOVO
+import { useTutorial } from '../components/TutorialContext';
 
 export default function LoginScreen() {
   const titleRef = useRef(null);
@@ -30,7 +28,7 @@ export default function LoginScreen() {
   const { loginWithGoogle, user, isLoading: isAuthLoading } = useAuth();
   
   const { isMicrophoneEnabled } = useMicrophone();
-  const { isTutorialAtivo } = useTutorial(); // ✅ NOVO
+  const { isTutorialAtivo } = useTutorial();
 
   const isFocused = useIsFocused();
   
@@ -40,15 +38,12 @@ export default function LoginScreen() {
     setRecognizedText, 
     stopListening 
   } = useSpeech({
-    enabled: isFocused && isMicrophoneEnabled && !isTutorialAtivo, // ✅ Adicionar tutorial
+    enabled: isFocused && isMicrophoneEnabled && !isTutorialAtivo,
     mode: 'global',
   });
   
   const hasSetInitialFocusRef = useRef(false);
 
-  // ===================================================================
-  // Lógica de Foco Inicial (Mantida igual)
-  // ===================================================================
   useEffect(() => {
     if (!isFocused) {
       hasSetInitialFocusRef.current = false;
@@ -84,9 +79,6 @@ export default function LoginScreen() {
     setInitialFocus();
   }, [isFocused]);
 
-  // ===================================================================
-  // ✅ DETECÇÃO DE COMANDO DE VOZ - INTELIGENTE E FLEXÍVEL
-  // ===================================================================
   useEffect(() => {
     if (!recognizedText.trim() || !isFocused || loading || isAuthLoading || user || isTutorialAtivo) return;
 
@@ -95,7 +87,6 @@ export default function LoginScreen() {
 
     console.log(`[Login] 🗣️ Texto reconhecido: "${textoAtual}"`);
 
-    // ✅ BLACKLIST: Ignora frases do leitor de tela
     const screenReaderBlacklist = [
       'voltar para página anterior',
       'voltar para a página anterior',
@@ -118,7 +109,6 @@ export default function LoginScreen() {
       return;
     }
 
-    // ✅ DETECÇÃO INTELIGENTE DE INTENÇÃO DE LOGIN
     const querLogar = detectarIntencaoDeLogin(textoLower);
 
     if (querLogar) {
@@ -134,17 +124,12 @@ export default function LoginScreen() {
 
   }, [recognizedText, isFocused, loading, isAuthLoading, user, isTutorialAtivo]);
 
-  // ===================================================================
-  // ✅ FUNÇÃO INTELIGENTE DE DETECÇÃO DE INTENÇÃO
-  // ===================================================================
   const detectarIntencaoDeLogin = (texto: string): boolean => {
-    // Remove pontuações e espaços extras
     const textoLimpo = texto
       .replace(/[.,!?;:]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Palavras-chave relacionadas a login
     const palavrasLogin = [
       'entrar', 'entra', 'entro', 'entre',
       'login', 'logar', 'loga', 'logo',
@@ -156,34 +141,27 @@ export default function LoginScreen() {
       'log in', 'sign in',
     ];
 
-    // Palavras relacionadas ao Google
     const palavrasGoogle = [
       'google',
-      'gugou', // pronúncia comum
-      'gogle',  // erro de dicção
+      'gugou',
+      'gogle',
       'conta google',
       'conta do google',
       'gmail',
       'email',
     ];
 
-    // Palavras relacionadas a "usar" ou "com"
     const palavrasConexao = [
       'com', 'no', 'na', 'pelo', 'pela', 'usando', 'usa', 'use', 'via', 'através',
     ];
 
-    // ✅ PADRÃO 1: Menção direta ao Google (mais simples)
-    // Ex: "Google", "Gmail", "Gugou"
     const mencionaGoogle = palavrasGoogle.some(palavra => textoLimpo.includes(palavra));
     
     if (mencionaGoogle && textoLimpo.split(' ').length <= 3) {
-      // Se menciona Google e tem poucas palavras, provavelmente quer logar
       console.log('[Login] ✅ Padrão 1: Menção direta ao Google');
       return true;
     }
-
-    // ✅ PADRÃO 2: Verbo de login + Google
-    // Ex: "Entrar com Google", "Login Google", "Fazer login no Gmail"
+    
     const temVerboLogin = palavrasLogin.some(palavra => textoLimpo.includes(palavra));
     
     if (temVerboLogin && mencionaGoogle) {
@@ -191,8 +169,6 @@ export default function LoginScreen() {
       return true;
     }
 
-    // ✅ PADRÃO 3: Verbo de login + palavra de conexão + Google
-    // Ex: "Entrar com o Google", "Login usando Gmail"
     const temConexao = palavrasConexao.some(palavra => textoLimpo.includes(palavra));
     
     if (temVerboLogin && temConexao && mencionaGoogle) {
@@ -200,7 +176,6 @@ export default function LoginScreen() {
       return true;
     }
 
-    // ✅ PADRÃO 4: Frases comuns específicas
     const frasesComuns = [
       'quero entrar',
       'quero logar',
@@ -223,8 +198,6 @@ export default function LoginScreen() {
       return true;
     }
 
-    // ✅ PADRÃO 5: Apenas verbo de login (na tela de login, contexto é claro)
-    // Ex: "Entrar", "Login", "Fazer login"
     if (temVerboLogin && textoLimpo.split(' ').length <= 3 && !mencionaGoogle) {
       console.log('[Login] ✅ Padrão 5: Apenas verbo de login (contexto claro)');
       return true;
@@ -233,9 +206,6 @@ export default function LoginScreen() {
     return false;
   };
 
-  // ===================================================================
-  // Funções de navegação e login
-  // ===================================================================
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
@@ -266,10 +236,7 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
-
-  // ===================================================================
-  // Estilos (mantidos iguais)
-  // ===================================================================
+  
   const styles = StyleSheet.create({
     header: {
       flexDirection: "row",

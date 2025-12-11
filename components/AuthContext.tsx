@@ -1,4 +1,3 @@
-// components/AuthContext.tsx
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
 import authService, { Usuario } from '../services/authService';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
@@ -31,12 +30,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth(), async (firebaseUser: FirebaseAuthTypes.User | null) => {
       if (firebaseUser) {
-        // Usuário está logado
         const userData = await authService.getCurrentUser();
         if (userData) {
           setUser(userData);
         } else {
-          // Cria a partir do Firebase se não houver dados locais
           const newUser: Usuario = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
@@ -45,13 +42,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(newUser);
         }
       } else {
-        // Usuário não está logado
         setUser(null);
       }
       setIsLoading(false);
     });
 
-    // Cleanup: remove o listener
     return unsubscribe;
   }, []);
   
@@ -70,10 +65,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (!result.success) {
         throw new Error(result.message);
       }
-      // Após exclusão, o onAuthStateChanged irá atualizar automaticamente o estado
     } catch (error) {
       console.error('[AuthContext] Erro ao excluir conta:', error);
-      throw error; // Repassa o erro para o componente tratar
+      throw error;
     }
   };
 

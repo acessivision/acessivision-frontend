@@ -21,7 +21,7 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
   const { cores, getFontSize } = useTheme();
   const [step, setStep] = useState<'idle' | 'aguardandoConfirmacao'>('idle');
   const deleteTimeoutRef = useRef<any>(null);
-  const isSpeakingRef = useRef(false); // ✅ Controla se está falando
+  const isSpeakingRef = useRef(false);
 
   const { 
     speak, 
@@ -37,7 +37,6 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     mode: 'local',
   });
 
-  // Reset quando abre/fecha
   useEffect(() => {
     if (visible) {
       setStep('aguardandoConfirmacao');
@@ -45,12 +44,12 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
       isSpeakingRef.current = false;
       
       setTimeout(() => {
-        isSpeakingRef.current = true; // ✅ Marca que está falando
+        isSpeakingRef.current = true;
         speak("Você tem certeza que deseja excluir sua conta? Esta ação não pode ser desfeita. Diga confirmar para excluir ou cancelar para voltar.", () => {
-          isSpeakingRef.current = false; // ✅ Terminou de falar
+          isSpeakingRef.current = false;
           setTimeout(() => {
             startListening(true);
-          }, 500); // ✅ Aguarda 500ms antes de ativar microfone
+          }, 500);
         });
       }, 300);
     } else {
@@ -60,7 +59,6 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
     }
   }, [visible]);
 
-  // ✅ Processa resposta de voz (SOMENTE quando não está falando)
   useEffect(() => {
     if (!recognizedText.trim() || step !== 'aguardandoConfirmacao' || isSpeakingRef.current || isSpeaking) {
       return;
@@ -68,7 +66,6 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
 
     const fala = recognizedText.toLowerCase().trim();
 
-    // Ignora leituras de botões pelo TalkBack
     const ignoredPhrases = ['cancelar botão', 'excluir botão', 'sair botão', 'confirmar botão'];
     if (ignoredPhrases.includes(fala)) {
       console.log('[DeleteModal] Ignorando leitura de botão:', fala);
@@ -76,7 +73,6 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
       return;
     }
 
-    // ✅ Ignora se contém palavras do próprio prompt do TTS
     const ttsWords = ['você tem certeza', 'não pode ser desfeita', 'diga confirmar', 'diga cancelar'];
     if (ttsWords.some(word => fala.includes(word))) {
       console.log('[DeleteModal] ⚠️ Ignorando echo do TTS:', fala);
@@ -125,7 +121,6 @@ export default function DeleteAccountModal({ visible, onClose, onConfirm }: Dele
 
   }, [recognizedText, step, visible, isSpeaking]);
 
-  // Cleanup
   useEffect(() => {
     return () => {
       if (deleteTimeoutRef.current) {

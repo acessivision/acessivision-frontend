@@ -23,7 +23,6 @@ export default function MenuScreen() {
   const { user, logout, deleteAccount } = useAuth();
   const { pendingIntent, clearPendingIntent } = useVoiceCommands();
 
-  // Processa intents pendentes (comandos de voz)
   useEffect(() => {
     if (pendingIntent) {
       console.log('[Menu] Processing pending intent:', pendingIntent);
@@ -56,13 +55,11 @@ export default function MenuScreen() {
       await deleteAccount();
       
       console.log('[Menu] Conta excluída, redirecionando para login...');
-      // Redireciona para tela de login após exclusão bem-sucedida
       router.replace('/login');
       
     } catch (error: any) {
       console.error('[Menu] Erro ao excluir conta:', error);
-      // O erro já é tratado pelo modal com feedback de voz
-      throw error; // Repassa o erro para o modal tratar
+      throw error;
     }
   };
 

@@ -25,7 +25,6 @@ import SpeechManager from '../../utils/speechManager';
 
 const SERVER_URL = 'https://www.acessivision.com.br/upload';
 
-// ✅ Tempo de silêncio antes de enviar automaticamente (3 segundos)
 const SILENCE_TIMEOUT = 3000;
 
 interface Message {
@@ -57,7 +56,6 @@ const ConversationScreen: React.FC = () => {
   const [micEnabled, setMicEnabled] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   
-  // ✅ Timer para detectar silêncio
   const silenceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMessageCountRef = useRef<number>(0);
   const localListenerRef = useRef<((text: string) => void) | null>(null);
@@ -143,9 +141,6 @@ const ConversationScreen: React.FC = () => {
     }
   }, [speakLastMessage, isScreenFocused]);
 
-  // ===================================================================
-  // ✅ LISTENER LOCAL - Atualiza input com resultados INTERIM
-  // ===================================================================
   useEffect(() => {
     if (!micEnabled || !isScreenFocused) return;
 
@@ -157,17 +152,13 @@ const ConversationScreen: React.FC = () => {
       const normalizedText = text.trim();
       if (!normalizedText) return;
 
-      // ✅ OTIMIZADO: Substitui texto completo ao invés de concatenar
-      // Isso funciona melhor com resultados interim
       setInputText(normalizedText);
       console.log('[Conversa] 📝 Texto no input:', normalizedText);
 
-      // ✅ Cancela timeout anterior e cria novo
       if (silenceTimeoutRef.current) {
         clearTimeout(silenceTimeoutRef.current);
       }
 
-      // ✅ Após 2 segundos de silêncio (reduzido de 3), envia automaticamente
       silenceTimeoutRef.current = setTimeout(() => {
         console.log('[Conversa] ⏰ Silêncio detectado - Enviando automaticamente');
         
@@ -184,17 +175,15 @@ const ConversationScreen: React.FC = () => {
             return '';
           }
           
-          // Desliga microfone local e para o reconhecimento
           setMicEnabled(false);
           stopListening();
           setRecognizedText('');
           
-          // ✅ Envia mensagem e reinicia reconhecimento global
           enviarMensagem(textoParaEnviar);
           
-          return ''; // Limpa input
+          return '';
         });
-      }, 2000); // ✅ Reduzido de 3000ms para 2000ms
+      }, 2000);
     };
 
     localListenerRef.current = localListener;
@@ -235,7 +224,6 @@ const ConversationScreen: React.FC = () => {
       }
       
       speak('Microfone desativado.', () => {
-        // ✅ Reinicia reconhecimento global após desativar mic local
         setTimeout(() => {
           console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após desativação manual');
           
@@ -349,7 +337,6 @@ const ConversationScreen: React.FC = () => {
       setMicEnabled(false);
       setInputText('');
       
-      // ✅ Reinicia reconhecimento global ao sair
       setTimeout(() => {
         console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL ao sair');
         enableGlobalMic();
@@ -363,6 +350,11 @@ const ConversationScreen: React.FC = () => {
     }
   }, [isScreenFocused, enableGlobalMic]);
 
+  /* 
+  ativa sempre que há uma mudança na conversa
+  fala a mensagem mais recente assim que é recebida
+  gerencia qual é a imagem ativa
+  */
   useEffect(() => {
     if (!conversaId || !isScreenFocused) return;
 
@@ -441,6 +433,13 @@ const ConversationScreen: React.FC = () => {
     });
   };
 
+  /*
+  ativa a flag de 'enviando' para desabilitar botões e mostrar o loading
+  salva a mensagem do usuário
+  associa a imagem ativa à pergunta
+  conversão da imagem para base64
+  salva a resposta obtida
+  */
   const enviarMensagem = async (textOverride?: string) => {
     const texto = (textOverride !== undefined ? textOverride : inputText).trim();
 
@@ -533,7 +532,6 @@ const ConversationScreen: React.FC = () => {
         timestamp: firestore.FieldValue.serverTimestamp(),
       });
 
-      // ✅ Aguarda resposta da API terminar antes de reiniciar reconhecimento
       setTimeout(() => {
         console.log('[Conversa] 🟢 Reiniciando reconhecimento GLOBAL após resposta da API');
         enableGlobalMic();
